@@ -1,4 +1,10 @@
-import { generateObject, generateImage, NoObjectGeneratedError, type LanguageModelUsage } from "ai";
+import {
+  generateObject,
+  generateImage,
+  experimental_generateSpeech as generateSpeech,
+  NoObjectGeneratedError,
+  type LanguageModelUsage,
+} from "ai";
 import { eq, inArray, desc } from "drizzle-orm";
 import { put } from "@vercel/blob";
 import { renderToBuffer } from "@react-pdf/renderer";
@@ -32,7 +38,7 @@ import {
   type GeneratedPage,
   type StyleBible,
 } from "@/lib/ai/schemas";
-import { BOOK_PIPELINE_MODEL, BOOK_PIPELINE_IMAGE_MODEL } from "@/lib/ai/model";
+import { BOOK_PIPELINE_MODEL, BOOK_PIPELINE_IMAGE_MODEL, BOOK_PIPELINE_SPEECH_MODEL } from "@/lib/ai/model";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
@@ -338,6 +344,92 @@ async function generateComplementarySide(
   return object;
 }
 
+// Teacher's Book side: pacing/teaching notes, common learner errors, and a
+// consolidated answer key - only generated when a Teacher's Book was
+// requested for this run.
+async function generateTeacherBookSide(
+  runId: string,
+  input: UnitGenerationContext & { studentPages: GeneratedPage[]; workbookPages: GeneratedPage[] },
+) {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: generatedComplementarySideSchema,
+      maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
+      system:
+        "You are an experienced teacher-trainer writing the Teacher's Book edition of a coursebook - practical guidance for the teacher delivering this unit, not more student-facing content.",
+      prompt: [
+        ...unitGenerationPromptHeader(input),
+        `Here is the already-written student book content for this unit:\n${JSON.stringify(input.studentPages)}`,
+        `Here is the already-written workbook content for this unit:\n${JSON.stringify(input.workbookPages)}`,
+        `Produce "pages" as Teacher's Book content for this unit (1-2 pages is enough): brief pacing/timing suggestions, notes on common learner errors for this topic, and a consolidated answer key covering every exercise above that has one. Do not repeat the student-facing text itself.`,
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "unitGeneration", usage);
+  return object;
+}
+
+// Test Booklet side: unit-level assessment questions with a separate answer
+// key - only generated when a Test Booklet was requested for this run.
+async function generateTestBookletSide(runId: string, input: UnitGenerationContext) {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: generatedComplementarySideSchema,
+      maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
+      system:
+        "You are an assessment writer producing a short test for a single coursebook unit, to be printed in a separate Test Booklet.",
+      prompt: [
+        ...unitGenerationPromptHeader(input),
+        `Produce "pages" as a short assessment for this unit (1 page is enough): questions covering this unit's learning objectives and key terms, with a complete answer key. Vary question types where appropriate for the subject.`,
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "unitGeneration", usage);
+  return object;
+}
+
+// Synthesizes speech for each listening/read-aloud script attached to a unit
+// and uploads the audio, filling in audioUrl on each entry. Best-effort: a
+// failed synthesis just leaves that entry without audio rather than failing
+// the whole unit.
+async function generateListeningAudio(
+  runId: string,
+  unitNumber: number,
+  listeningAudio: GeneratedUnit["listeningAudio"],
+): Promise<GeneratedUnit["listeningAudio"]> {
+  "use step";
+
+  if (!listeningAudio?.length) return listeningAudio;
+
+  const withAudio = [];
+  for (const [i, entry] of listeningAudio.entries()) {
+    try {
+      const { audio } = await generateSpeech({
+        model: BOOK_PIPELINE_SPEECH_MODEL,
+        text: entry.script,
+        outputFormat: "mp3",
+      });
+      const blob = await put(`generated/${runId}/unit-${unitNumber}-audio-${i}.mp3`, Buffer.from(audio.uint8Array), {
+        access: "public",
+        contentType: audio.mediaType,
+        addRandomSuffix: false,
+      });
+      withAudio.push({ ...entry, audioUrl: blob.url });
+    } catch {
+      withAudio.push(entry);
+    }
+  }
+  return withAudio;
+}
+
 async function reviewUnit(runId: string, unitNumber: number, outlineUnit: UnitOutline, generated: GeneratedUnit) {
   "use step";
 
@@ -636,13 +728,28 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           mirroredPages: mirrored.pages,
         });
 
+        const studentBookPages = ctx.upload.bookType === "student_book" ? mirrored.pages : complementary.pages;
+        const workbookPages = ctx.upload.bookType === "workbook" ? mirrored.pages : complementary.pages;
+
+        const [teacherBook, testBooklet, listeningAudio] = await Promise.all([
+          requestedVariants.includes("teacher_book")
+            ? generateTeacherBookSide(runId, { ...genContext, studentPages: studentBookPages, workbookPages })
+            : Promise.resolve(null),
+          requestedVariants.includes("test_booklet")
+            ? generateTestBookletSide(runId, genContext)
+            : Promise.resolve(null),
+          generateListeningAudio(runId, outlineUnit.number, mirrored.listeningAudio),
+        ]);
+
         return {
           unitNumber: outlineUnit.number,
           title: outlineUnit.title,
-          studentBookPages: ctx.upload.bookType === "student_book" ? mirrored.pages : complementary.pages,
-          workbookPages: ctx.upload.bookType === "workbook" ? mirrored.pages : complementary.pages,
+          studentBookPages,
+          workbookPages,
+          teacherBookPages: teacherBook?.pages,
+          testBookletPages: testBooklet?.pages,
           glossary: mirrored.glossary,
-          listeningAudio: mirrored.listeningAudio,
+          listeningAudio,
         };
       }
 

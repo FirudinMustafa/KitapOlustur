@@ -3,19 +3,9 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { projects, generationRuns } from "@/db/schema";
+import { STATUS_LABELS } from "@/lib/run-status";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Bekliyor",
-  extracting: "Dizelge çıkarılıyor",
-  analyzing: "Analiz ediliyor",
-  generating: "Üretiliyor",
-  reviewing: "İnceleniyor",
-  assembling: "Birleştiriliyor",
-  done: "Tamamlandı",
-  failed: "Hata",
-};
 
 export default async function ProjectsPage() {
   const allProjects = await db.query.projects.findMany({ orderBy: [desc(projects.createdAt)] });

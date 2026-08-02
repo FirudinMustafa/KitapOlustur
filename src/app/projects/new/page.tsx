@@ -12,6 +12,13 @@ type NiceToHaveItem = {
   isDefaultSelected: boolean;
 };
 
+const OUTPUT_BOOK_TYPES: { value: string; label: string }[] = [
+  { value: "student_book", label: "Student Book" },
+  { value: "workbook", label: "Workbook" },
+  { value: "teacher_book", label: "Teacher's Book" },
+  { value: "test_booklet", label: "Test Kitapçığı" },
+];
+
 export default function NewProjectPage() {
   const router = useRouter();
 
@@ -20,6 +27,7 @@ export default function NewProjectPage() {
   const [name, setName] = useState("");
   const [level, setLevel] = useState("");
   const [bookType, setBookType] = useState<"student_book" | "workbook">("student_book");
+  const [outputTypes, setOutputTypes] = useState<Set<string>>(new Set(["student_book", "workbook"]));
   const [customNotes, setCustomNotes] = useState("");
   const [unitLimit, setUnitLimit] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -45,6 +53,15 @@ export default function NewProjectPage() {
     });
   }
 
+  function toggleOutputType(value: string) {
+    setOutputTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -55,6 +72,10 @@ export default function NewProjectPage() {
     }
     if (!name.trim()) {
       setError("Lütfen bir proje adı girin.");
+      return;
+    }
+    if (!outputTypes.size) {
+      setError("Lütfen en az bir çıktı kitap tipi seçin.");
       return;
     }
 
@@ -75,6 +96,7 @@ export default function NewProjectPage() {
           bookType,
           customNotes,
           niceToHaveIds: Array.from(selected),
+          requestedBookTypes: Array.from(outputTypes),
           unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
           blobUrl: blob.url,
           filename: file.name,
@@ -96,8 +118,8 @@ export default function NewProjectPage() {
     <div className="mx-auto w-full max-w-2xl px-6 py-12">
       <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">Yeni kitap yükle</h1>
       <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-        Bir İngilizce kitabın PDF&apos;ini yükle; dizelgesi çıkarılıp aynı yapıdan daha iyi bir
-        versiyonu üretilecek.
+        Herhangi bir konudaki ders kitabının PDF&apos;ini yükle; konusu ve dili otomatik tespit
+        edilip aynı yapıdan yola çıkan özgün bir versiyonu üretilecek.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-6">
@@ -146,6 +168,24 @@ export default function NewProjectPage() {
 
         <fieldset className="flex flex-col gap-2">
           <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            Üretilecek kitap tipleri
+          </legend>
+          <div className="flex flex-wrap gap-4 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            {OUTPUT_BOOK_TYPES.map((type) => (
+              <label key={type.value} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={outputTypes.has(type.value)}
+                  onChange={() => toggleOutputType(type.value)}
+                />
+                {type.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
             Nice-to-have iyileştirmeler
           </legend>
           <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
@@ -177,7 +217,7 @@ export default function NewProjectPage() {
             value={customNotes}
             onChange={(e) => setCustomNotes(e.target.value)}
             rows={3}
-            placeholder="Örn. daha fazla telaffuz alıştırması, iş İngilizcesi bağlamı vb."
+            placeholder="Örn. daha fazla uygulama örneği, gerçek hayat bağlamı vb."
             className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
         </div>

@@ -6,6 +6,8 @@ import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
 
+const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
+
 export async function GET() {
   const rows = await db.query.projects.findMany({
     orderBy: [desc(projects.createdAt)],
@@ -31,7 +33,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Geçersiz istek" }, { status: 400 });
   }
 
-  const { name, level, customNotes, bookType, niceToHaveIds: niceToHaveIdsRaw, unitLimit: unitLimitRaw, blobUrl, filename } = body;
+  const {
+    name,
+    level,
+    customNotes,
+    bookType,
+    niceToHaveIds: niceToHaveIdsRaw,
+    requestedBookTypes: requestedBookTypesRaw,
+    unitLimit: unitLimitRaw,
+    blobUrl,
+    filename,
+  } = body;
 
   if (typeof name !== "string" || !name.trim()) {
     return NextResponse.json({ error: "Proje adı gerekli" }, { status: 400 });
@@ -46,6 +58,14 @@ export async function POST(request: Request) {
   let niceToHaveIds: string[] = [];
   if (Array.isArray(niceToHaveIdsRaw)) {
     niceToHaveIds = niceToHaveIdsRaw.filter((x): x is string => typeof x === "string");
+  }
+
+  let requestedBookTypes: string[] = ["student_book", "workbook"];
+  if (Array.isArray(requestedBookTypesRaw)) {
+    const filtered = requestedBookTypesRaw.filter(
+      (x): x is string => typeof x === "string" && VALID_BOOK_TYPES.includes(x),
+    );
+    if (filtered.length) requestedBookTypes = filtered;
   }
 
   let unitLimit: number | null = null;
@@ -73,6 +93,7 @@ export async function POST(request: Request) {
       selectedNiceToHaveIds: niceToHaveIds,
       customNotes: typeof customNotes === "string" && customNotes.trim() ? customNotes.trim() : null,
       unitLimit,
+      requestedBookTypes,
     })
     .returning();
 

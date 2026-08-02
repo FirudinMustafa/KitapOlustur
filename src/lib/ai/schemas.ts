@@ -119,6 +119,10 @@ export type GlossaryEntry = z.infer<typeof glossaryEntrySchema>;
 export const listeningAudioSchema = z.object({
   blockRef: z.string().describe("Heading of the content block this audio script belongs to"),
   script: z.string(),
+  audioUrl: z
+    .string()
+    .optional()
+    .describe("Not set by the writer - filled in later once the script is synthesized into speech"),
 });
 export type ListeningAudio = z.infer<typeof listeningAudioSchema>;
 

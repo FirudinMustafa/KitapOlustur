@@ -9,8 +9,8 @@ export default function Home() {
             Kitap Orkestrası
           </h1>
           <p className="text-lg leading-7 text-zinc-600 dark:text-zinc-400">
-            İngilizce student book / workbook PDF&apos;lerini yükle, aynı dizelgeden yola çıkan
-            daha iyi bir versiyonunu otomatik olarak ürettir.
+            Herhangi bir ders kitabının student book / workbook PDF&apos;ini yükle, konusunu ve dilini
+            otomatik tespit edip aynı yapıdan yola çıkan özgün bir versiyonunu ürettir.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">

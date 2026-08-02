@@ -1,13 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { STATUS_LABELS, BOOK_TYPE_LABELS } from "@/lib/run-status";
+
+type ListeningAudioEntry = { blockRef: string; script: string; audioUrl?: string };
+export type GeneratedUnitContent = { unitNumber: number; listeningAudio?: ListeningAudioEntry[] };
 
 type GeneratedBook = {
   id: string;
   bookType: "student_book" | "workbook" | "teacher_book" | "test_booklet";
   markdown: string | null;
   pdfBlobUrl: string | null;
+  content?: GeneratedUnitContent[] | null;
 };
+
+function audioTracksFor(book: GeneratedBook): { unitNumber: number; blockRef: string; audioUrl: string }[] {
+  if (!Array.isArray(book.content)) return [];
+  return book.content.flatMap((unit) =>
+    (unit.listeningAudio ?? [])
+      .filter((entry): entry is ListeningAudioEntry & { audioUrl: string } => Boolean(entry.audioUrl))
+      .map((entry) => ({ unitNumber: unit.unitNumber, blockRef: entry.blockRef, audioUrl: entry.audioUrl })),
+  );
+}
 
 type Run = {
   id: string;
@@ -40,27 +54,6 @@ type ProjectData = {
   run: Run | null;
   outline: Outline;
   books: GeneratedBook[];
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Bekliyor",
-  mapping_pages: "Sayfalar haritalanıyor",
-  extracting: "Dizelge çıkarılıyor",
-  analyzing: "Analiz ediliyor",
-  awaiting_outline_approval: "Onay bekleniyor",
-  generating: "Üretiliyor",
-  reviewing: "İnceleniyor",
-  generating_images: "Görseller üretiliyor",
-  assembling: "Birleştiriliyor",
-  done: "Tamamlandı",
-  failed: "Hata",
-};
-
-const BOOK_TYPE_LABELS: Record<string, string> = {
-  student_book: "Student Book",
-  workbook: "Workbook",
-  teacher_book: "Teacher's Book",
-  test_booklet: "Test Kitapçığı",
 };
 
 const TERMINAL_STATUSES = new Set(["done", "failed"]);
@@ -304,7 +297,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       {books.length > 0 && (
         <div className="mt-6 flex flex-col gap-4">
           <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">Üretilen kitaplar</h2>
-          {books.map((book) => (
+          {books.map((book) => {
+            const audioTracks = audioTracksFor(book);
+            return (
             <div key={book.id} className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
               <div className="flex items-center justify-between">
                 <span className="font-medium text-zinc-900 dark:text-zinc-100">
@@ -338,8 +333,22 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                   {book.markdown}
                 </pre>
               )}
+              {audioTracks.length > 0 && (
+                <div className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Dinleme sesleri</p>
+                  {audioTracks.map((track, i) => (
+                    <div key={i} className="flex flex-col gap-1">
+                      <span className="text-xs text-zinc-500">
+                        Ünite {track.unitNumber} · {track.blockRef}
+                      </span>
+                      <audio controls src={track.audioUrl} className="h-8 w-full" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns, extractedOutlines, generatedBooks } from "@/db/schema";
-import { RunStatusView, type OutlineDocument } from "./RunStatusView";
+import { RunStatusView, type OutlineDocument, type GeneratedUnitContent } from "./RunStatusView";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +54,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           bookType: b.bookType,
           markdown: b.markdown,
           pdfBlobUrl: b.pdfBlobUrl,
+          content: b.content as GeneratedUnitContent[] | null,
         })),
       }}
     />
