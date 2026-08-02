@@ -28,6 +28,7 @@ export default function NewProjectPage() {
   const [level, setLevel] = useState("");
   const [bookType, setBookType] = useState<"student_book" | "workbook">("student_book");
   const [outputTypes, setOutputTypes] = useState<Set<string>>(new Set(["student_book", "workbook"]));
+  const [variantCount, setVariantCount] = useState("1");
   const [customNotes, setCustomNotes] = useState("");
   const [unitLimit, setUnitLimit] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -97,6 +98,7 @@ export default function NewProjectPage() {
           customNotes,
           niceToHaveIds: Array.from(selected),
           requestedBookTypes: Array.from(outputTypes),
+          variantCount: Number(variantCount) || 1,
           unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
           blobUrl: blob.url,
           filename: file.name,
@@ -222,18 +224,36 @@ export default function NewProjectPage() {
           />
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-            Ünite sınırı (opsiyonel)
-          </label>
-          <input
-            type="number"
-            min={1}
-            value={unitLimit}
-            onChange={(e) => setUnitLimit(e.target.value)}
-            placeholder="Örn. 4 - hızlı test için sadece ilk N üniteyi üretir"
-            className="h-10 w-40 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+              Ünite sınırı (opsiyonel)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={unitLimit}
+              onChange={(e) => setUnitLimit(e.target.value)}
+              placeholder="Örn. 4 - hızlı test için sadece ilk N üniteyi üretir"
+              className="h-10 w-40 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+              Ünite başına varyant sayısı
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={4}
+              value={variantCount}
+              onChange={(e) => setVariantCount(e.target.value)}
+              className="h-10 w-40 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <span className="text-xs text-zinc-500">
+              1&apos;den fazlaysa her ünite için aralarından seçim yapman istenir.
+            </span>
+          </div>
         </div>
 
         {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}

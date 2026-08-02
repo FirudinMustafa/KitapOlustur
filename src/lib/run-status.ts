@@ -4,6 +4,7 @@ export const STATUS_LABELS: Record<string, string> = {
   extracting: "Dizelge çıkarılıyor",
   analyzing: "Analiz ediliyor",
   awaiting_outline_approval: "Onay bekleniyor",
+  awaiting_variant_selection: "Varyant seçimi bekleniyor",
   generating: "Üretiliyor",
   reviewing: "İnceleniyor",
   generating_images: "Görseller üretiliyor",

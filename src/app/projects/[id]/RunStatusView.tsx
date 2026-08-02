@@ -23,6 +23,15 @@ function audioTracksFor(book: GeneratedBook): { unitNumber: number; blockRef: st
   );
 }
 
+type PendingVariantPage = { blocks: { heading: string; body: string }[] };
+type PendingVariantUnit = {
+  title: string;
+  studentBookPages: PendingVariantPage[];
+  workbookPages: PendingVariantPage[];
+};
+type PendingVariant = { index: number; unit: PendingVariantUnit; issues: string[]; passed: boolean };
+export type PendingVariants = { unitNumber: number; variants: PendingVariant[] } | null;
+
 type Run = {
   id: string;
   status: string;
@@ -31,6 +40,7 @@ type Run = {
   updatedAt: string;
   modelVersion?: string | null;
   tokenUsage?: Record<string, number> | null;
+  pendingVariants?: PendingVariants;
 };
 
 type OutlineUnit = { number: number; title: string; level: string };
@@ -67,6 +77,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const [approvalUnitLimit, setApprovalUnitLimit] = useState("");
   const [assembleTypes, setAssembleTypes] = useState<Set<string>>(new Set());
   const [assembling, setAssembling] = useState(false);
+  const [selectingVariant, setSelectingVariant] = useState(false);
 
   useEffect(() => {
     if (!data.run || TERMINAL_STATUSES.has(data.run.status)) return;
@@ -119,6 +130,20 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       if (res.ok) await refresh();
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function handleSelectVariant(unitNumber: number, selectedIndex: number) {
+    setSelectingVariant(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/select-variant`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unitNumber, selectedIndex }),
+      });
+      if (res.ok) await refresh();
+    } finally {
+      setSelectingVariant(false);
     }
   }
 
@@ -238,6 +263,63 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             >
               Reddet
             </button>
+          </div>
+        </div>
+      )}
+
+      {run?.status === "awaiting_variant_selection" && run.pendingVariants && (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Ünite {run.pendingVariants.unitNumber} için bir varyant seç
+          </h2>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {run.pendingVariants.variants.map((v) => {
+              const firstBlock = v.unit.studentBookPages[0]?.blocks[0];
+              return (
+                <div
+                  key={v.index}
+                  className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      Varyant {v.index + 1}
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        v.passed
+                          ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                          : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                      }`}
+                    >
+                      {v.passed ? "Kontrolden geçti" : `${v.issues.length} not`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    {v.unit.studentBookPages.length} Student Book + {v.unit.workbookPages.length} Workbook sayfası
+                  </p>
+                  {firstBlock && (
+                    <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                      <p className="font-medium">{firstBlock.heading}</p>
+                      <p className="mt-0.5 line-clamp-3">{firstBlock.body}</p>
+                    </div>
+                  )}
+                  {v.issues.length > 0 && (
+                    <ul className="list-disc pl-4 text-[11px] text-amber-800 dark:text-amber-300">
+                      {v.issues.slice(0, 3).map((issue, i) => (
+                        <li key={i}>{issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <button
+                    onClick={() => handleSelectVariant(run.pendingVariants!.unitNumber, v.index)}
+                    disabled={selectingVariant}
+                    className="mt-1 h-8 rounded-full bg-amber-600 px-3 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    Bunu seç
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

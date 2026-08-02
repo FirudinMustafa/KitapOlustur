@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     bookType,
     niceToHaveIds: niceToHaveIdsRaw,
     requestedBookTypes: requestedBookTypesRaw,
+    variantCount: variantCountRaw,
     unitLimit: unitLimitRaw,
     blobUrl,
     filename,
@@ -73,6 +74,11 @@ export async function POST(request: Request) {
     unitLimit = unitLimitRaw;
   }
 
+  let variantCount = 1;
+  if (Number.isInteger(variantCountRaw) && variantCountRaw >= 1 && variantCountRaw <= 4) {
+    variantCount = variantCountRaw;
+  }
+
   const [project] = await db
     .insert(projects)
     .values({ name: name.trim(), level: typeof level === "string" && level.trim() ? level.trim() : null })
@@ -94,6 +100,7 @@ export async function POST(request: Request) {
       customNotes: typeof customNotes === "string" && customNotes.trim() ? customNotes.trim() : null,
       unitLimit,
       requestedBookTypes,
+      variantCount,
     })
     .returning();
 

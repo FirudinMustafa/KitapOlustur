@@ -264,6 +264,7 @@ type UnitGenerationContext = {
   improvements: string[];
   styleBible: StyleBible;
   feedback?: string[];
+  variantHint?: string;
 };
 
 function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
@@ -277,6 +278,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
     `Shared style bible for this book - reuse these characters/setting and this terminology consistently (this unit is one of several written independently, so consistency matters):\n${JSON.stringify(input.styleBible)}`,
     `Unit outline (JSON):\n${JSON.stringify(input.outlineUnit)}`,
     `Improvements to apply to this unit:\n${input.improvements.map((i) => `- ${i}`).join("\n") || "- (no specific notes, use general best practice)"}`,
+    input.variantHint ?? "",
     input.feedback?.length
       ? `A previous draft of this unit had these issues - fix them:\n${input.feedback.map((f) => `- ${f}`).join("\n")}`
       : "",
@@ -428,6 +430,16 @@ async function generateListeningAudio(
     }
   }
   return withAudio;
+}
+
+async function savePendingVariants(runId: string, pendingVariants: PendingVariants) {
+  "use step";
+  await db.update(generationRuns).set({ pendingVariants }).where(eq(generationRuns.id, runId));
+}
+
+async function clearPendingVariants(runId: string) {
+  "use step";
+  await db.update(generationRuns).set({ pendingVariants: null }).where(eq(generationRuns.id, runId));
 }
 
 async function reviewUnit(runId: string, unitNumber: number, outlineUnit: UnitOutline, generated: GeneratedUnit) {
@@ -630,6 +642,11 @@ async function loadAssembledRunAssets(sourceRunId: string) {
 
 type WorkflowScope = { mode: "full" } | { mode: "assemble"; sourceRunId: string };
 
+type PendingVariants = {
+  unitNumber: number;
+  variants: { index: number; unit: GeneratedUnit; issues: string[]; passed: boolean }[];
+};
+
 // ---- Workflow ----
 
 export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope = { mode: "full" }) {
@@ -684,6 +701,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     const effectiveUnitLimit = approval.unitLimit !== undefined ? approval.unitLimit : ctx.run.unitLimit;
 
     const styleBible = await buildStyleBible(runId, outline);
+    const variantCount = Math.max(1, Math.min(4, ctx.run.variantCount || 1));
 
     const unitsToGenerate = effectiveUnitLimit ? outline.units.slice(0, effectiveUnitLimit) : outline.units;
     const totalUnits = unitsToGenerate.length;
@@ -705,7 +723,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       const complementaryType: "student_book" | "workbook" =
         ctx.upload.bookType === "student_book" ? "workbook" : "student_book";
 
-      async function buildUnit(feedback?: string[]): Promise<GeneratedUnit> {
+      async function buildUnit(feedback?: string[], variantHint?: string): Promise<GeneratedUnit> {
         const genContext: UnitGenerationContext = {
           bookTitle: outline.bookTitle,
           subject: outline.subject,
@@ -719,6 +737,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           improvements,
           styleBible,
           feedback,
+          variantHint,
         };
 
         const mirrored = await generateMirroredSide(runId, genContext);
@@ -753,19 +772,56 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         };
       }
 
-      await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: içerik üretiliyor`);
-      let generated = await buildUnit();
+      let generated: GeneratedUnit;
 
-      await setRunStatus(runId, "reviewing", `Ünite ${n}/${totalUnits}: kalite ve dil kontrolü yapılıyor`);
-      const [structureReview, languageReview] = await Promise.all([
-        reviewUnit(runId, n, outlineUnit, generated),
-        reviewLanguageAccuracy(runId, n, outline.contentLanguage, generated),
-      ]);
+      if (variantCount === 1) {
+        await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: içerik üretiliyor`);
+        generated = await buildUnit();
 
-      const issues = [...structureReview.issues, ...languageReview.issues];
-      if ((!structureReview.passed || !languageReview.passed) && issues.length) {
-        await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: geri bildirimle yeniden üretiliyor`);
-        generated = await buildUnit(issues);
+        await setRunStatus(runId, "reviewing", `Ünite ${n}/${totalUnits}: kalite ve dil kontrolü yapılıyor`);
+        const [structureReview, languageReview] = await Promise.all([
+          reviewUnit(runId, n, outlineUnit, generated),
+          reviewLanguageAccuracy(runId, n, outline.contentLanguage, generated),
+        ]);
+
+        const issues = [...structureReview.issues, ...languageReview.issues];
+        if ((!structureReview.passed || !languageReview.passed) && issues.length) {
+          await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: geri bildirimle yeniden üretiliyor`);
+          generated = await buildUnit(issues);
+        }
+      } else {
+        await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: ${variantCount} varyant üretiliyor`);
+
+        const variants = await Promise.all(
+          Array.from({ length: variantCount }, async (_, i) => {
+            const unit = await buildUnit(
+              undefined,
+              `This is candidate variant ${i + 1} of ${variantCount} for this unit. Take a distinctly different creative angle (different examples, scenarios, or exercise styles) from the other variants while still meeting every requirement above.`,
+            );
+            const [structureReview, languageReview] = await Promise.all([
+              reviewUnit(runId, n, outlineUnit, unit),
+              reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),
+            ]);
+            return {
+              index: i,
+              unit,
+              issues: [...structureReview.issues, ...languageReview.issues],
+              passed: structureReview.passed && languageReview.passed,
+            };
+          }),
+        );
+
+        await savePendingVariants(runId, { unitNumber: n, variants });
+        await setRunStatus(runId, "awaiting_variant_selection", `Ünite ${n}/${totalUnits}: varyant seçimi bekleniyor`);
+
+        const variantHook = createHook<{ selectedIndex: number }>({
+          token: `variant-selection:${runId}:${n}`,
+        });
+        const selection = await variantHook;
+        const chosen = variants[selection.selectedIndex] ?? variants[0];
+        generated = chosen.unit;
+
+        await clearPendingVariants(runId);
       }
 
       await setRunStatus(runId, "generating_images", `Ünite ${n}/${totalUnits}: görseller üretiliyor`);

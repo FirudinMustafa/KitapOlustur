@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns, extractedOutlines, generatedBooks } from "@/db/schema";
-import { RunStatusView, type OutlineDocument, type GeneratedUnitContent } from "./RunStatusView";
+import { RunStatusView, type OutlineDocument, type GeneratedUnitContent, type PendingVariants } from "./RunStatusView";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +46,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               updatedAt: run.updatedAt.toISOString(),
               modelVersion: run.modelVersion,
               tokenUsage: run.tokenUsage,
+              pendingVariants: run.pendingVariants as PendingVariants,
             }
           : null,
         outline: outline ? { outline: outline.outline as OutlineDocument["outline"] } : null,
