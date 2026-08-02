@@ -1,0 +1,469 @@
+import { generateObject, generateImage } from "ai";
+import { eq, inArray, desc } from "drizzle-orm";
+import { put } from "@vercel/blob";
+import { renderToBuffer } from "@react-pdf/renderer";
+import { FatalError } from "workflow";
+
+import { db } from "@/db/client";
+import {
+  generationRuns,
+  projects,
+  sourceUploads,
+  niceToHaveItems,
+  extractedOutlines,
+  sourcePageMaps,
+  generatedBooks,
+  type RunStatus,
+} from "@/db/schema";
+import {
+  pageMapSchema,
+  bookOutlineSchema,
+  improvementPlanSchema,
+  generatedUnitSchema,
+  unitReviewSchema,
+  type PageMap,
+  type SourcePage,
+  type BookOutline,
+  type ImprovementPlan,
+  type GeneratedUnit,
+} from "@/lib/ai/schemas";
+import { BOOK_PIPELINE_MODEL, BOOK_PIPELINE_IMAGE_MODEL } from "@/lib/ai/model";
+import { unitsToMarkdown } from "@/lib/markdown";
+import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
+import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
+
+type UnitOutline = BookOutline["units"][number];
+
+const ALL_VARIANTS: Variant[] = ["student_book", "workbook", "teacher_book", "test_booklet"];
+
+// ---- Steps ----
+
+async function fetchRunContext(runId: string) {
+  "use step";
+
+  const run = await db.query.generationRuns.findFirst({ where: eq(generationRuns.id, runId) });
+  if (!run) throw new FatalError(`Generation run ${runId} not found`);
+
+  const project = await db.query.projects.findFirst({ where: eq(projects.id, run.projectId) });
+  if (!project) throw new FatalError(`Project ${run.projectId} not found`);
+
+  const upload = await db.query.sourceUploads.findFirst({
+    where: eq(sourceUploads.projectId, run.projectId),
+    orderBy: [desc(sourceUploads.createdAt)],
+  });
+  if (!upload) throw new FatalError(`No source upload found for project ${run.projectId}`);
+
+  const niceToHave = run.selectedNiceToHaveIds.length
+    ? await db.query.niceToHaveItems.findMany({
+        where: inArray(niceToHaveItems.id, run.selectedNiceToHaveIds),
+      })
+    : [];
+
+  return { run, project, upload, niceToHave };
+}
+
+async function setRunStatus(runId: string, status: RunStatus, stage?: string, errorMessage?: string) {
+  "use step";
+
+  await db
+    .update(generationRuns)
+    .set({ status, currentStage: stage ?? null, errorMessage: errorMessage ?? null, updatedAt: new Date() })
+    .where(eq(generationRuns.id, runId));
+}
+
+async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
+  "use step";
+
+  const { object } = await generateObject({
+    model: BOOK_PIPELINE_MODEL,
+    schema: pageMapSchema,
+    system:
+      "You are a meticulous document analyst. You scan an educational coursebook PDF page by page and produce a precise structural map of every single page - you never skip a page.",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Go through this PDF page by page, in order, and classify EVERY page (cover, contents, unit_opener, content, exercise, glossary, review, answer_key, assessment, back_cover, or other). For each page, note which unit number it belongs to (or null if it isn't part of a unit), summarize what's on it, and if it carries a photo or illustration, describe it precisely - subject, scene, style - so it could be reimagined later as new artwork. Do not skip any pages: totalPages must equal the number of page entries you return.",
+          },
+          { type: "file", mediaType: "application/pdf", data: new URL(pdfUrl) },
+        ],
+      },
+    ],
+  });
+
+  await db.insert(sourcePageMaps).values({ runId, totalPages: object.totalPages, pages: object.pages });
+
+  return object;
+}
+
+async function extractOutline(runId: string, pdfUrl: string, pageMap: PageMap): Promise<BookOutline> {
+  "use step";
+
+  const { object } = await generateObject({
+    model: BOOK_PIPELINE_MODEL,
+    schema: bookOutlineSchema,
+    system:
+      "You are an expert curriculum analyst. You read coursebooks in any academic subject and extract their complete structure precisely and faithfully, cross-referencing a pre-computed page-by-page map.",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: [
+              "Extract the full unit-by-unit structure of this coursebook PDF: book title, academic subject (e.g. 'English Language Teaching', 'Mathematics', 'Physics'), content language (as a BCP-47 code, e.g. 'en' or 'tr', matching the language the book is actually written in), overall level, tone, and target audience.",
+              "For every unit, give its title, level, the exact source page range it spans (derive start/end page numbers from the page map below), learning objectives, and key terms (vocabulary, formulas, or concepts introduced).",
+              `Pre-computed page map (JSON):\n${JSON.stringify(pageMap)}`,
+              "Be thorough - do not skip units, and make sure every unit's sourcePageRange is consistent with the page map's unitNumber assignments.",
+            ].join("\n\n"),
+          },
+          { type: "file", mediaType: "application/pdf", data: new URL(pdfUrl) },
+        ],
+      },
+    ],
+  });
+
+  await db.insert(extractedOutlines).values({ runId, outline: { outline: object } });
+
+  return object;
+}
+
+async function analyzeImprovements(
+  runId: string,
+  outline: BookOutline,
+  niceToHave: { key: string; label: string; description: string }[],
+  customNotes: string | null,
+) {
+  "use step";
+
+  const { object } = await generateObject({
+    model: BOOK_PIPELINE_MODEL,
+    schema: improvementPlanSchema,
+    system:
+      "You are a senior instructional design consultant for the given subject. You take an existing coursebook outline and produce a concrete, unit-by-unit improvement plan for a rewrite that keeps the same overall structure but raises quality.",
+    prompt: [
+      `Book outline (JSON):\n${JSON.stringify(outline)}`,
+      niceToHave.length
+        ? `Standard improvements to apply where relevant to this subject:\n${niceToHave
+            .map((n) => `- ${n.label}: ${n.description}`)
+            .join("\n")}`
+        : "No standard improvement checklist was selected.",
+      customNotes ? `Additional user notes:\n${customNotes}` : "No additional user notes.",
+      "For every unit number present in the outline, list concrete, actionable improvements to apply while rewriting that unit's content. Keep the same unit numbers, titles intent, and overall progression - only improve depth, variety, and pedagogy. Ignore any standard improvement that doesn't apply to this subject.",
+    ].join("\n\n"),
+  });
+
+  await db
+    .update(extractedOutlines)
+    .set({ outline: { outline, improvementPlan: object } })
+    .where(eq(extractedOutlines.runId, runId));
+
+  return object;
+}
+
+async function generateUnit(input: {
+  bookTitle: string;
+  subject: string;
+  contentLanguage: string;
+  level: string;
+  tone: string;
+  targetAudience: string;
+  outlineUnit: UnitOutline;
+  sourceBookType: "student_book" | "workbook";
+  unitSourcePages: SourcePage[];
+  improvements: string[];
+  feedback?: string[];
+}): Promise<GeneratedUnit> {
+  "use step";
+
+  const complementaryType = input.sourceBookType === "student_book" ? "workbook" : "student_book";
+
+  const { object } = await generateObject({
+    model: BOOK_PIPELINE_MODEL,
+    schema: generatedUnitSchema,
+    system:
+      "You are an expert instructional materials writer and editor for the given subject. You write complete, publication-quality content for a single unit, mirroring a source book's page-by-page structure while writing entirely original content - you draw inspiration from the source's topics and structure, but never copy it verbatim.",
+    prompt: [
+      `Book title: ${input.bookTitle}`,
+      `Subject: ${input.subject}`,
+      `Write ALL content in this language (BCP-47): ${input.contentLanguage}`,
+      `Overall level: ${input.level}`,
+      `Tone: ${input.tone}`,
+      `Target audience: ${input.targetAudience}`,
+      `Unit outline (JSON):\n${JSON.stringify(input.outlineUnit)}`,
+      `Improvements to apply to this unit:\n${input.improvements.map((i) => `- ${i}`).join("\n") || "- (no specific notes, use general best practice)"}`,
+      input.feedback?.length
+        ? `A previous draft of this unit had these issues - fix them:\n${input.feedback.map((f) => `- ${f}`).join("\n")}`
+        : "",
+      `The uploaded source book was the "${input.sourceBookType}". Here is the page-by-page blueprint of THIS unit's pages from that source:\n${JSON.stringify(input.unitSourcePages)}`,
+      `Produce "${input.sourceBookType}Pages" with exactly one generated page per source page listed above, in the same order, using the same sourcePageNumber and the same pageType. Write entirely new, original content for each page, inspired by (never copied from) its summary and topic.`,
+      `Also produce "${complementaryType}Pages": original, independent material of comparable page count, complementary to (not a duplicate of) the ${input.sourceBookType} content.`,
+      "For any page that should carry a photo or illustration (mirroring one that had an image in the source, or wherever it naturally helps), set imagePrompt to a vivid description of a NEW, original image reimagining that scene - never a copy of the source image.",
+      "If content includes a dialogue, story, or a listening/read-aloud passage, also add a matching entry to listeningAudio with the exact text to be read aloud.",
+      "Provide a unit-level glossary of key terms with definitions and examples.",
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+  });
+
+  return object;
+}
+
+async function reviewUnit(outlineUnit: UnitOutline, generated: GeneratedUnit) {
+  "use step";
+
+  const { object } = await generateObject({
+    model: BOOK_PIPELINE_MODEL,
+    schema: unitReviewSchema,
+    system:
+      "You are a meticulous instructional editor. You check generated coursebook unit content against its planned outline and flag concrete structural and pedagogical problems.",
+    prompt: [
+      `Planned unit outline (JSON):\n${JSON.stringify(outlineUnit)}`,
+      `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+      "Check: (1) content matches the outline's learning objectives and key terms, (2) the level is consistent throughout, (3) practice items are pedagogically sound with clear instructions, (4) the complementary side (student book vs workbook) is genuinely independent, distinct content, with a complete answer key where applicable. List concrete issues if any. Set passed=true only if there are no significant issues.",
+    ].join("\n\n"),
+  });
+
+  return object;
+}
+
+async function reviewLanguageAccuracy(contentLanguage: string, generated: GeneratedUnit) {
+  "use step";
+
+  const { object } = await generateObject({
+    model: BOOK_PIPELINE_MODEL,
+    schema: unitReviewSchema,
+    system:
+      "You are a meticulous native-level proofreader and language editor. You check generated educational content strictly for language correctness - grammar, natural phrasing, spelling, punctuation, and terminology accuracy - not pedagogy or structure.",
+    prompt: [
+      `Content language (BCP-47): ${contentLanguage}`,
+      `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+      "Read every heading, body text, practice item, answer key entry, and glossary entry. Flag any grammar mistakes, unnatural or awkward phrasing, spelling errors, or incorrect terminology. Be strict - this content will be printed in a real coursebook. Set passed=true only if the language is fully correct and natural throughout.",
+    ].join("\n\n"),
+  });
+
+  return object;
+}
+
+async function generateUnitImages(runId: string, unit: GeneratedUnit): Promise<Record<number, string>> {
+  "use step";
+
+  const allPages = [
+    ...unit.studentBookPages,
+    ...unit.workbookPages,
+    ...(unit.teacherBookPages ?? []),
+    ...(unit.testBookletPages ?? []),
+  ];
+
+  const images: Record<number, string> = {};
+
+  for (const page of allPages) {
+    if (!page.imagePrompt || images[page.sourcePageNumber]) continue;
+
+    const { image } = await generateImage({
+      model: BOOK_PIPELINE_IMAGE_MODEL,
+      prompt: `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
+      aspectRatio: "16:9",
+    });
+
+    const blob = await put(
+      `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
+      Buffer.from(image.uint8Array),
+      { access: "public", contentType: image.mediaType, addRandomSuffix: false },
+    );
+
+    images[page.sourcePageNumber] = blob.url;
+  }
+
+  return images;
+}
+
+async function generateCoverImage(
+  runId: string,
+  bookTitle: string,
+  subject: string,
+  coverPage: SourcePage | undefined,
+): Promise<string> {
+  "use step";
+
+  const scenePrompt = coverPage?.imageDescription
+    ? `A book cover illustration inspired by this scene: ${coverPage.imageDescription}. Reimagine it as entirely new, original artwork for "${bookTitle}", a ${subject} coursebook.`
+    : `A warm, professional, modern coursebook cover illustration for "${bookTitle}", a ${subject} coursebook.`;
+
+  const { image } = await generateImage({
+    model: BOOK_PIPELINE_IMAGE_MODEL,
+    prompt: `${scenePrompt} Style: welcoming, modern educational textbook cover art, no text or letters in the image.`,
+    aspectRatio: "16:9",
+  });
+
+  const blob = await put(`generated/${runId}/cover.png`, Buffer.from(image.uint8Array), {
+    access: "public",
+    contentType: image.mediaType,
+    addRandomSuffix: false,
+  });
+
+  return blob.url;
+}
+
+function buildContentsUnits(outline: BookOutline): CourseUnitSummary[] {
+  return outline.units.map((u) => ({
+    number: u.number,
+    title: u.title,
+    topic: u.learningObjectives[0] ?? "",
+    keyTerms: u.keyTerms.join(", "),
+    objectives: u.learningObjectives.join("; "),
+    level: u.level,
+  }));
+}
+
+async function assembleAndSaveBooks(
+  runId: string,
+  bookTitle: string,
+  level: string,
+  units: GeneratedUnit[],
+  contentsUnits: CourseUnitSummary[],
+  requestedVariants: Variant[],
+  coverImageSrc: string,
+  pageImages: Record<number, string>,
+) {
+  "use step";
+
+  for (const variant of requestedVariants) {
+    const markdown = unitsToMarkdown(bookTitle, units, variant);
+    const pdfBuffer = await renderToBuffer(
+      <BookDocument
+        bookTitle={bookTitle}
+        variant={variant}
+        units={units}
+        level={level}
+        contentsUnits={contentsUnits}
+        coverImageSrc={coverImageSrc}
+        pageImages={pageImages}
+      />,
+    );
+    const blob = await put(`generated/${runId}/${variant}.pdf`, pdfBuffer, {
+      access: "public",
+      contentType: "application/pdf",
+      addRandomSuffix: false,
+    });
+
+    await db.insert(generatedBooks).values({
+      runId,
+      bookType: variant,
+      content: units,
+      markdown,
+      pdfBlobUrl: blob.url,
+    });
+  }
+}
+
+// ---- Workflow ----
+
+export async function bookPipelineWorkflow(runId: string) {
+  "use workflow";
+
+  try {
+    const ctx = await fetchRunContext(runId);
+    const requestedVariants = (
+      ctx.run.requestedBookTypes.length ? ctx.run.requestedBookTypes : ["student_book", "workbook"]
+    ).filter((v): v is Variant => (ALL_VARIANTS as string[]).includes(v));
+
+    await setRunStatus(runId, "mapping_pages", "Kaynak PDF sayfa sayfa haritalanıyor");
+    const pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
+
+    await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) çıkarılıyor");
+    const outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap);
+
+    await setRunStatus(runId, "analyzing", "Nice-to-have listesine göre iyileştirme planı hazırlanıyor");
+    const improvementPlan: ImprovementPlan = await analyzeImprovements(
+      runId,
+      outline,
+      ctx.niceToHave,
+      ctx.run.customNotes,
+    );
+
+    const unitsToGenerate = ctx.run.unitLimit ? outline.units.slice(0, ctx.run.unitLimit) : outline.units;
+    const totalUnits = unitsToGenerate.length;
+    const units: GeneratedUnit[] = [];
+    const pageImages: Record<number, string> = {};
+
+    await setRunStatus(runId, "generating_images", "Kapak görseli üretiliyor");
+    const coverPage = pageMap.pages.find((p) => p.pageType === "cover");
+    const coverImageSrc = await generateCoverImage(runId, outline.bookTitle, outline.subject, coverPage);
+
+    for (const outlineUnit of unitsToGenerate) {
+      const n = outlineUnit.number;
+      const unitPlan = improvementPlan.unitPlans.find((p) => p.unitNumber === n);
+      const improvements = unitPlan?.improvements ?? [];
+      const unitSourcePages = pageMap.pages.filter(
+        (p) => p.pageNumber >= outlineUnit.sourcePageRange.start && p.pageNumber <= outlineUnit.sourcePageRange.end,
+      );
+
+      await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: içerik üretiliyor`);
+      let generated = await generateUnit({
+        bookTitle: outline.bookTitle,
+        subject: outline.subject,
+        contentLanguage: outline.contentLanguage,
+        level: outline.level,
+        tone: outline.tone,
+        targetAudience: outline.targetAudience,
+        outlineUnit,
+        sourceBookType: ctx.upload.bookType,
+        unitSourcePages,
+        improvements,
+      });
+
+      await setRunStatus(runId, "reviewing", `Ünite ${n}/${totalUnits}: kalite ve dil kontrolü yapılıyor`);
+      const [structureReview, languageReview] = await Promise.all([
+        reviewUnit(outlineUnit, generated),
+        reviewLanguageAccuracy(outline.contentLanguage, generated),
+      ]);
+
+      const issues = [...structureReview.issues, ...languageReview.issues];
+      if ((!structureReview.passed || !languageReview.passed) && issues.length) {
+        await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: geri bildirimle yeniden üretiliyor`);
+        generated = await generateUnit({
+          bookTitle: outline.bookTitle,
+          subject: outline.subject,
+          contentLanguage: outline.contentLanguage,
+          level: outline.level,
+          tone: outline.tone,
+          targetAudience: outline.targetAudience,
+          outlineUnit,
+          sourceBookType: ctx.upload.bookType,
+          unitSourcePages,
+          improvements,
+          feedback: issues,
+        });
+      }
+
+      await setRunStatus(runId, "generating_images", `Ünite ${n}/${totalUnits}: görseller üretiliyor`);
+      const unitImages = await generateUnitImages(runId, generated);
+      Object.assign(pageImages, unitImages);
+
+      units.push(generated);
+    }
+
+    await setRunStatus(runId, "assembling", "Kitaplar oluşturuluyor");
+    const contentsUnits = buildContentsUnits(outline);
+    await assembleAndSaveBooks(
+      runId,
+      outline.bookTitle,
+      outline.level,
+      units,
+      contentsUnits,
+      requestedVariants,
+      coverImageSrc,
+      pageImages,
+    );
+
+    await setRunStatus(runId, "done", "Tamamlandı");
+
+    return { runId, status: "done" as const };
+  } catch (err) {
+    await setRunStatus(runId, "failed", undefined, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+}

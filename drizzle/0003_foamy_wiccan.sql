@@ -1,0 +1,2 @@
+CREATE TYPE "public"."source_book_type" AS ENUM('student_book', 'workbook');--> statement-breakpoint
+ALTER TABLE "source_uploads" ALTER COLUMN "book_type" SET DATA TYPE "public"."source_book_type" USING "book_type"::text::"public"."source_book_type";
