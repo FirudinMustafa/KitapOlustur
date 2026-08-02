@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 import { start } from "workflow/api";
 import { desc, eq } from "drizzle-orm";
 
@@ -26,43 +25,32 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const formData = await request.formData();
+  const body = await request.json().catch(() => null);
 
-  const name = formData.get("name");
-  const level = formData.get("level");
-  const customNotes = formData.get("customNotes");
-  const bookType = formData.get("bookType");
-  const niceToHaveIdsRaw = formData.get("niceToHaveIds");
-  const unitLimitRaw = formData.get("unitLimit");
-  const file = formData.get("file");
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Geçersiz istek" }, { status: 400 });
+  }
+
+  const { name, level, customNotes, bookType, niceToHaveIds: niceToHaveIdsRaw, unitLimit: unitLimitRaw, blobUrl, filename } = body;
 
   if (typeof name !== "string" || !name.trim()) {
     return NextResponse.json({ error: "Proje adı gerekli" }, { status: 400 });
   }
-  if (!(file instanceof File)) {
+  if (typeof blobUrl !== "string" || !blobUrl || typeof filename !== "string" || !filename) {
     return NextResponse.json({ error: "PDF dosyası gerekli" }, { status: 400 });
-  }
-  if (file.type !== "application/pdf") {
-    return NextResponse.json({ error: "Sadece PDF dosyaları desteklenir" }, { status: 400 });
   }
   if (bookType !== "student_book" && bookType !== "workbook") {
     return NextResponse.json({ error: "Geçersiz kitap tipi" }, { status: 400 });
   }
 
   let niceToHaveIds: string[] = [];
-  if (typeof niceToHaveIdsRaw === "string" && niceToHaveIdsRaw.length) {
-    try {
-      const parsed = JSON.parse(niceToHaveIdsRaw);
-      if (Array.isArray(parsed)) niceToHaveIds = parsed.filter((x) => typeof x === "string");
-    } catch {
-      return NextResponse.json({ error: "Geçersiz nice-to-have seçimi" }, { status: 400 });
-    }
+  if (Array.isArray(niceToHaveIdsRaw)) {
+    niceToHaveIds = niceToHaveIdsRaw.filter((x): x is string => typeof x === "string");
   }
 
   let unitLimit: number | null = null;
-  if (typeof unitLimitRaw === "string" && unitLimitRaw.trim()) {
-    const parsed = Number(unitLimitRaw);
-    if (Number.isInteger(parsed) && parsed > 0) unitLimit = parsed;
+  if (Number.isInteger(unitLimitRaw) && unitLimitRaw > 0) {
+    unitLimit = unitLimitRaw;
   }
 
   const [project] = await db
@@ -70,16 +58,10 @@ export async function POST(request: Request) {
     .values({ name: name.trim(), level: typeof level === "string" && level.trim() ? level.trim() : null })
     .returning();
 
-  const blob = await put(`sources/${project.id}/${file.name}`, file, {
-    access: "public",
-    contentType: "application/pdf",
-    addRandomSuffix: false,
-  });
-
   await db.insert(sourceUploads).values({
     projectId: project.id,
-    blobUrl: blob.url,
-    filename: file.name,
+    blobUrl,
+    filename,
     bookType,
   });
 

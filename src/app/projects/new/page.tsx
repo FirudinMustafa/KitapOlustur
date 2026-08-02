@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { upload } from "@vercel/blob/client";
 
 type NiceToHaveItem = {
   id: string;
@@ -59,16 +60,26 @@ export default function NewProjectPage() {
 
     setSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.set("name", name);
-      formData.set("level", level);
-      formData.set("bookType", bookType);
-      formData.set("customNotes", customNotes);
-      formData.set("niceToHaveIds", JSON.stringify(Array.from(selected)));
-      if (unitLimit.trim()) formData.set("unitLimit", unitLimit.trim());
-      formData.set("file", file);
+      const blob = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/blob/upload",
+        contentType: "application/pdf",
+      });
 
-      const res = await fetch("/api/projects", { method: "POST", body: formData });
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          level,
+          bookType,
+          customNotes,
+          niceToHaveIds: Array.from(selected),
+          unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
+          blobUrl: blob.url,
+          filename: file.name,
+        }),
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Bir hata oluştu.");
