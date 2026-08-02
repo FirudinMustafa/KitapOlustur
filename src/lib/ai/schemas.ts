@@ -149,6 +149,22 @@ export const generatedUnitSchema = z.object({
 });
 export type GeneratedUnit = z.infer<typeof generatedUnitSchema>;
 
+// A single unit is generated in two smaller calls (mirrored source-side +
+// complementary side) instead of one large call, so a rich unit's output
+// doesn't risk exceeding the model's output token budget mid-JSON.
+
+export const generatedMirroredSideSchema = z.object({
+  pages: z.array(generatedPageSchema),
+  glossary: z.array(glossaryEntrySchema),
+  listeningAudio: z.array(listeningAudioSchema).optional(),
+});
+export type GeneratedMirroredSide = z.infer<typeof generatedMirroredSideSchema>;
+
+export const generatedComplementarySideSchema = z.object({
+  pages: z.array(generatedPageSchema),
+});
+export type GeneratedComplementarySide = z.infer<typeof generatedComplementarySideSchema>;
+
 export const unitReviewSchema = z.object({
   unitNumber: z.number(),
   passed: z.boolean(),
