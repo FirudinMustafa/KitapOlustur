@@ -1,8 +1,8 @@
-import { generateObject, generateImage, NoObjectGeneratedError } from "ai";
+import { generateObject, generateImage, NoObjectGeneratedError, type LanguageModelUsage } from "ai";
 import { eq, inArray, desc } from "drizzle-orm";
 import { put } from "@vercel/blob";
 import { renderToBuffer } from "@react-pdf/renderer";
-import { FatalError } from "workflow";
+import { FatalError, createHook } from "workflow";
 
 import { db } from "@/db/client";
 import {
@@ -12,6 +12,7 @@ import {
   niceToHaveItems,
   extractedOutlines,
   sourcePageMaps,
+  unitReviews,
   generatedBooks,
   type RunStatus,
 } from "@/db/schema";
@@ -21,6 +22,7 @@ import {
   improvementPlanSchema,
   generatedMirroredSideSchema,
   generatedComplementarySideSchema,
+  styleBibleSchema,
   unitReviewSchema,
   type PageMap,
   type SourcePage,
@@ -28,6 +30,7 @@ import {
   type ImprovementPlan,
   type GeneratedUnit,
   type GeneratedPage,
+  type StyleBible,
 } from "@/lib/ai/schemas";
 import { BOOK_PIPELINE_MODEL, BOOK_PIPELINE_IMAGE_MODEL } from "@/lib/ai/model";
 import { unitsToMarkdown } from "@/lib/markdown";
@@ -47,10 +50,12 @@ const UNIT_SIDE_MAX_OUTPUT_TOKENS = 16000;
 // output got cut off before valid JSON closed) surfaces the raw finish reason
 // and a snippet of what the model actually returned, instead of just "response
 // did not match schema" - much easier to diagnose from run.errorMessage alone.
-async function withObjectDiagnostics<T>(fn: () => Promise<{ object: T }>): Promise<T> {
+// Also returns usage so callers can feed it to recordUsage for cost tracking.
+async function withObjectDiagnostics<T>(
+  fn: () => Promise<{ object: T; usage: LanguageModelUsage }>,
+): Promise<{ object: T; usage: LanguageModelUsage }> {
   try {
-    const { object } = await fn();
-    return object;
+    return await fn();
   } catch (err) {
     if (NoObjectGeneratedError.isInstance(err)) {
       const snippet = err.text ? err.text.slice(0, 500) : "(no raw text captured)";
@@ -60,6 +65,21 @@ async function withObjectDiagnostics<T>(fn: () => Promise<{ object: T }>): Promi
     }
     throw err;
   }
+}
+
+// Best-effort token usage accumulation onto the run row, keyed by step name.
+// Read-modify-write, so concurrent steps (e.g. the two parallel reviews) can
+// occasionally undercount - acceptable for an approximate cost indicator.
+async function recordUsage(runId: string, key: string, usage: LanguageModelUsage) {
+  const tokens = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+  if (!tokens) return;
+
+  const run = await db.query.generationRuns.findFirst({ where: eq(generationRuns.id, runId) });
+  const current = { ...(run?.tokenUsage ?? {}) };
+  current[key] = (current[key] ?? 0) + tokens;
+  current.total = (current.total ?? 0) + tokens;
+
+  await db.update(generationRuns).set({ tokenUsage: current }).where(eq(generationRuns.id, runId));
 }
 
 // ---- Steps ----
@@ -85,6 +105,8 @@ async function fetchRunContext(runId: string) {
       })
     : [];
 
+  await db.update(generationRuns).set({ modelVersion: BOOK_PIPELINE_MODEL }).where(eq(generationRuns.id, runId));
+
   return { run, project, upload, niceToHave };
 }
 
@@ -100,7 +122,7 @@ async function setRunStatus(runId: string, status: RunStatus, stage?: string, er
 async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
   "use step";
 
-  const object = await withObjectDiagnostics(() =>
+  const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
       model: BOOK_PIPELINE_MODEL,
       schema: pageMapSchema,
@@ -122,6 +144,7 @@ async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
     }),
   );
 
+  await recordUsage(runId, "pageMap", usage);
   await db.insert(sourcePageMaps).values({ runId, totalPages: object.totalPages, pages: object.pages });
 
   return object;
@@ -130,7 +153,7 @@ async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
 async function extractOutline(runId: string, pdfUrl: string, pageMap: PageMap): Promise<BookOutline> {
   "use step";
 
-  const object = await withObjectDiagnostics(() =>
+  const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
       model: BOOK_PIPELINE_MODEL,
       schema: bookOutlineSchema,
@@ -157,6 +180,7 @@ async function extractOutline(runId: string, pdfUrl: string, pageMap: PageMap): 
     }),
   );
 
+  await recordUsage(runId, "outline", usage);
   await db.insert(extractedOutlines).values({ runId, outline: { outline: object } });
 
   return object;
@@ -170,7 +194,7 @@ async function analyzeImprovements(
 ) {
   "use step";
 
-  const object = await withObjectDiagnostics(() =>
+  const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
       model: BOOK_PIPELINE_MODEL,
       schema: improvementPlanSchema,
@@ -189,11 +213,35 @@ async function analyzeImprovements(
     }),
   );
 
+  await recordUsage(runId, "improvementPlan", usage);
   await db
     .update(extractedOutlines)
     .set({ outline: { outline, improvementPlan: object } })
     .where(eq(extractedOutlines.runId, runId));
 
+  return object;
+}
+
+// Builds a shared "style bible" (recurring characters/setting + terminology)
+// once per book, after the outline is approved, so units generated by
+// independent AI calls stay consistent with each other.
+async function buildStyleBible(runId: string, outline: BookOutline): Promise<StyleBible> {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: styleBibleSchema,
+      system:
+        "You are a series editor. Given a coursebook's full outline, define a shared 'style bible' so every unit - each written independently - reads as one coherent book.",
+      prompt: [
+        `Book outline (JSON):\n${JSON.stringify(outline)}`,
+        "Define: (1) a short paragraph describing shared characters/setting/narrative context to reuse across units (names, ages, relationships, world) where relevant to the subject, (2) a glossary of key recurring terms/formulas and their definitions to keep terminology consistent across units.",
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "styleBible", usage);
   return object;
 }
 
@@ -208,6 +256,7 @@ type UnitGenerationContext = {
   sourceBookType: "student_book" | "workbook";
   unitSourcePages: SourcePage[];
   improvements: string[];
+  styleBible: StyleBible;
   feedback?: string[];
 };
 
@@ -219,6 +268,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
     `Overall level: ${input.level}`,
     `Tone: ${input.tone}`,
     `Target audience: ${input.targetAudience}`,
+    `Shared style bible for this book - reuse these characters/setting and this terminology consistently (this unit is one of several written independently, so consistency matters):\n${JSON.stringify(input.styleBible)}`,
     `Unit outline (JSON):\n${JSON.stringify(input.outlineUnit)}`,
     `Improvements to apply to this unit:\n${input.improvements.map((i) => `- ${i}`).join("\n") || "- (no specific notes, use general best practice)"}`,
     input.feedback?.length
@@ -230,10 +280,10 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
 // Produces the side that mirrors the uploaded source book page-for-page
 // (plus the unit's glossary and any listening scripts) - kept as its own
 // call so its output stays well within the model's token budget.
-async function generateMirroredSide(input: UnitGenerationContext) {
+async function generateMirroredSide(runId: string, input: UnitGenerationContext) {
   "use step";
 
-  return withObjectDiagnostics(() =>
+  const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
       model: BOOK_PIPELINE_MODEL,
       schema: generatedMirroredSideSchema,
@@ -252,17 +302,21 @@ async function generateMirroredSide(input: UnitGenerationContext) {
         .join("\n\n"),
     }),
   );
+
+  await recordUsage(runId, "unitGeneration", usage);
+  return object;
 }
 
 // Produces the complementary side (workbook if the source was the student
 // book, or vice versa) as a separate, smaller call, referencing the already
 // generated mirrored pages so it stays complementary rather than duplicate.
 async function generateComplementarySide(
+  runId: string,
   input: UnitGenerationContext & { complementaryType: "student_book" | "workbook"; mirroredPages: GeneratedPage[] },
 ) {
   "use step";
 
-  return withObjectDiagnostics(() =>
+  const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
       model: BOOK_PIPELINE_MODEL,
       schema: generatedComplementarySideSchema,
@@ -279,12 +333,15 @@ async function generateComplementarySide(
         .join("\n\n"),
     }),
   );
+
+  await recordUsage(runId, "unitGeneration", usage);
+  return object;
 }
 
-async function reviewUnit(outlineUnit: UnitOutline, generated: GeneratedUnit) {
+async function reviewUnit(runId: string, unitNumber: number, outlineUnit: UnitOutline, generated: GeneratedUnit) {
   "use step";
 
-  return withObjectDiagnostics(() =>
+  const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
       model: BOOK_PIPELINE_MODEL,
       schema: unitReviewSchema,
@@ -297,12 +354,21 @@ async function reviewUnit(outlineUnit: UnitOutline, generated: GeneratedUnit) {
       ].join("\n\n"),
     }),
   );
+
+  await recordUsage(runId, "review", usage);
+  await db.insert(unitReviews).values({ runId, unitNumber, reviewType: "structure", passed: object.passed, issues: object.issues });
+  return object;
 }
 
-async function reviewLanguageAccuracy(contentLanguage: string, generated: GeneratedUnit) {
+async function reviewLanguageAccuracy(
+  runId: string,
+  unitNumber: number,
+  contentLanguage: string,
+  generated: GeneratedUnit,
+) {
   "use step";
 
-  return withObjectDiagnostics(() =>
+  const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
       model: BOOK_PIPELINE_MODEL,
       schema: unitReviewSchema,
@@ -315,6 +381,10 @@ async function reviewLanguageAccuracy(contentLanguage: string, generated: Genera
       ].join("\n\n"),
     }),
   );
+
+  await recordUsage(runId, "review", usage);
+  await db.insert(unitReviews).values({ runId, unitNumber, reviewType: "language", passed: object.passed, issues: object.issues });
+  return object;
 }
 
 async function generateUnitImages(runId: string, unit: GeneratedUnit): Promise<Record<number, string>> {
@@ -400,6 +470,15 @@ async function assembleAndSaveBooks(
 ) {
   "use step";
 
+  // Persisted so a later "assemble-only" rerun (Faz A.4) can rebuild
+  // additional book types from this run without regenerating any AI content.
+  await db
+    .update(generationRuns)
+    .set({ coverImageUrl: coverImageSrc, pageImageUrls: pageImages })
+    .where(eq(generationRuns.id, runId));
+
+  const generatedAt = new Date().toLocaleDateString("tr-TR", { year: "numeric", month: "long", day: "numeric" });
+
   for (const variant of requestedVariants) {
     const markdown = unitsToMarkdown(bookTitle, units, variant);
     const pdfBuffer = await renderToBuffer(
@@ -411,6 +490,7 @@ async function assembleAndSaveBooks(
         contentsUnits={contentsUnits}
         coverImageSrc={coverImageSrc}
         pageImages={pageImages}
+        generatedAt={generatedAt}
       />,
     );
     const blob = await put(`generated/${runId}/${variant}.pdf`, pdfBuffer, {
@@ -429,9 +509,38 @@ async function assembleAndSaveBooks(
   }
 }
 
+// Loads everything needed to reassemble a previously-generated run's books
+// without any AI calls: the outline (for title/level/contents), and the
+// units + cover/page images that were persisted at the end of a full run.
+async function loadAssembledRunAssets(sourceRunId: string) {
+  "use step";
+
+  const sourceRun = await db.query.generationRuns.findFirst({ where: eq(generationRuns.id, sourceRunId) });
+  if (!sourceRun) throw new FatalError(`Source run ${sourceRunId} not found`);
+
+  const outlineRow = await db.query.extractedOutlines.findFirst({ where: eq(extractedOutlines.runId, sourceRunId) });
+  if (!outlineRow) throw new FatalError(`No outline found for source run ${sourceRunId}`);
+  const outline = (outlineRow.outline as { outline: BookOutline }).outline;
+
+  const existingBook = await db.query.generatedBooks.findFirst({
+    where: eq(generatedBooks.runId, sourceRunId),
+    orderBy: [desc(generatedBooks.createdAt)],
+  });
+  if (!existingBook?.content) throw new FatalError(`No previously generated units found for source run ${sourceRunId}`);
+
+  return {
+    outline,
+    units: existingBook.content as GeneratedUnit[],
+    coverImageSrc: sourceRun.coverImageUrl ?? "",
+    pageImages: sourceRun.pageImageUrls ?? {},
+  };
+}
+
+type WorkflowScope = { mode: "full" } | { mode: "assemble"; sourceRunId: string };
+
 // ---- Workflow ----
 
-export async function bookPipelineWorkflow(runId: string) {
+export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope = { mode: "full" }) {
   "use workflow";
 
   try {
@@ -439,6 +548,24 @@ export async function bookPipelineWorkflow(runId: string) {
     const requestedVariants = (
       ctx.run.requestedBookTypes.length ? ctx.run.requestedBookTypes : ["student_book", "workbook"]
     ).filter((v): v is Variant => (ALL_VARIANTS as string[]).includes(v));
+
+    if (scope.mode === "assemble") {
+      await setRunStatus(runId, "assembling", "Seçilen kitap tipleri mevcut içerikten yeniden derleniyor");
+      const assets = await loadAssembledRunAssets(scope.sourceRunId);
+      const contentsUnits = buildContentsUnits(assets.outline);
+      await assembleAndSaveBooks(
+        runId,
+        assets.outline.bookTitle,
+        assets.outline.level,
+        assets.units,
+        contentsUnits,
+        requestedVariants,
+        assets.coverImageSrc,
+        assets.pageImages,
+      );
+      await setRunStatus(runId, "done", "Tamamlandı");
+      return { runId, status: "done" as const };
+    }
 
     await setRunStatus(runId, "mapping_pages", "Kaynak PDF sayfa sayfa haritalanıyor");
     const pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
@@ -454,7 +581,19 @@ export async function bookPipelineWorkflow(runId: string) {
       ctx.run.customNotes,
     );
 
-    const unitsToGenerate = ctx.run.unitLimit ? outline.units.slice(0, ctx.run.unitLimit) : outline.units;
+    await setRunStatus(runId, "awaiting_outline_approval", "Dizelge onayı bekleniyor");
+    const outlineApprovalHook = createHook<{ approved: boolean; unitLimit?: number | null }>({
+      token: `outline-approval:${runId}`,
+    });
+    const approval = await outlineApprovalHook;
+    if (!approval.approved) {
+      throw new FatalError("Kullanıcı dizelgeyi onaylamadı, üretim iptal edildi.");
+    }
+    const effectiveUnitLimit = approval.unitLimit !== undefined ? approval.unitLimit : ctx.run.unitLimit;
+
+    const styleBible = await buildStyleBible(runId, outline);
+
+    const unitsToGenerate = effectiveUnitLimit ? outline.units.slice(0, effectiveUnitLimit) : outline.units;
     const totalUnits = unitsToGenerate.length;
     const units: GeneratedUnit[] = [];
     const pageImages: Record<number, string> = {};
@@ -486,11 +625,12 @@ export async function bookPipelineWorkflow(runId: string) {
           sourceBookType: ctx.upload.bookType,
           unitSourcePages,
           improvements,
+          styleBible,
           feedback,
         };
 
-        const mirrored = await generateMirroredSide(genContext);
-        const complementary = await generateComplementarySide({
+        const mirrored = await generateMirroredSide(runId, genContext);
+        const complementary = await generateComplementarySide(runId, {
           ...genContext,
           complementaryType,
           mirroredPages: mirrored.pages,
@@ -511,8 +651,8 @@ export async function bookPipelineWorkflow(runId: string) {
 
       await setRunStatus(runId, "reviewing", `Ünite ${n}/${totalUnits}: kalite ve dil kontrolü yapılıyor`);
       const [structureReview, languageReview] = await Promise.all([
-        reviewUnit(outlineUnit, generated),
-        reviewLanguageAccuracy(outline.contentLanguage, generated),
+        reviewUnit(runId, n, outlineUnit, generated),
+        reviewLanguageAccuracy(runId, n, outline.contentLanguage, generated),
       ]);
 
       const issues = [...structureReview.issues, ...languageReview.issues];

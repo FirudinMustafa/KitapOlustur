@@ -179,6 +179,10 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     fontFamily: "Helvetica",
   },
+  imprintBlock: { marginTop: 220 },
+  imprintTitle: { fontFamily: "Helvetica-Bold", fontSize: 16, marginBottom: 6 },
+  imprintLine: { fontSize: 9.5, color: "#4b5563", marginBottom: 4 },
+  imprintDisclosure: { fontSize: 9, color: "#6b7280", lineHeight: 1.5, marginTop: 16, maxWidth: 340 },
   answerKeyTitleBand: { paddingVertical: 20, marginBottom: 18, borderRadius: 8, alignItems: "center" },
   answerKeyTitle: { fontFamily: "Helvetica-Bold", fontSize: 18, color: "#ffffff" },
   answerKeyUnitHeading: { fontFamily: "Helvetica-Bold", fontSize: 11.5, marginTop: 14, marginBottom: 6 },
@@ -265,6 +269,36 @@ function Footer({ bookTitle, variantLabel }: { bookTitle: string; variantLabel: 
   );
 }
 
+function ImprintPage({
+  bookTitle,
+  variantLabel,
+  level,
+  generatedAt,
+  palette,
+}: {
+  bookTitle: string;
+  variantLabel: string;
+  level: string;
+  generatedAt: string;
+  palette: Palette;
+}) {
+  return (
+    <Page size="A4" style={styles.page}>
+      <View style={styles.imprintBlock}>
+        <Text style={[styles.imprintTitle, { color: palette.primaryDark }]}>{bookTitle}</Text>
+        <Text style={styles.imprintLine}>{variantLabel} · {level}</Text>
+        <Text style={styles.imprintLine}>Oluşturulma tarihi: {generatedAt}</Text>
+        <Text style={styles.imprintDisclosure}>
+          Bu içerik, kullanıcı tarafından yüklenen bir kaynak ders kitabının sayfa yapısından esinlenerek
+          yapay zeka (Kitap Orkestrası) ile üretilmiştir. Metin ve görseller orijinaldir; kaynak eserin
+          birebir kopyası değildir.
+        </Text>
+      </View>
+      <Footer bookTitle={bookTitle} variantLabel={variantLabel} />
+    </Page>
+  );
+}
+
 function pagesForVariant(unit: GeneratedUnit, variant: Variant): GeneratedPage[] {
   switch (variant) {
     case "student_book":
@@ -286,6 +320,7 @@ export function BookDocument({
   contentsUnits,
   coverImageSrc,
   pageImages,
+  generatedAt,
 }: {
   bookTitle: string;
   variant: Variant;
@@ -294,6 +329,7 @@ export function BookDocument({
   contentsUnits: CourseUnitSummary[];
   coverImageSrc?: string;
   pageImages?: Record<number, string>;
+  generatedAt?: string;
 }) {
   const variantLabel = VARIANT_LABELS[variant];
   const palette = PALETTE[variant];
@@ -328,6 +364,14 @@ export function BookDocument({
           </View>
         </View>
       </Page>
+
+      <ImprintPage
+        bookTitle={bookTitle}
+        variantLabel={variantLabel}
+        level={level}
+        generatedAt={generatedAt ?? ""}
+        palette={palette}
+      />
 
       <ContentsPageContent bookTitle={bookTitle} level={level} variant={variant} units={contentsUnits} />
 

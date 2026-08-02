@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns, extractedOutlines, generatedBooks } from "@/db/schema";
-import { RunStatusView } from "./RunStatusView";
+import { RunStatusView, type OutlineDocument } from "./RunStatusView";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +44,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               currentStage: run.currentStage,
               errorMessage: run.errorMessage,
               updatedAt: run.updatedAt.toISOString(),
+              modelVersion: run.modelVersion,
+              tokenUsage: run.tokenUsage,
             }
           : null,
-        outline: outline ? { outline: outline.outline } : null,
+        outline: outline ? { outline: outline.outline as OutlineDocument["outline"] } : null,
         books: books.map((b) => ({
           id: b.id,
           bookType: b.bookType,

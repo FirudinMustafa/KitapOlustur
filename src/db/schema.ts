@@ -23,6 +23,7 @@ export const runStatusEnum = pgEnum("run_status", [
   "mapping_pages",
   "extracting",
   "analyzing",
+  "awaiting_outline_approval",
   "generating",
   "reviewing",
   "generating_images",
@@ -32,6 +33,8 @@ export const runStatusEnum = pgEnum("run_status", [
 ]);
 export type RunStatus = (typeof runStatusEnum.enumValues)[number];
 export type BookType = (typeof bookTypeEnum.enumValues)[number];
+
+export const reviewTypeEnum = pgEnum("review_type", ["structure", "language"]);
 
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -76,6 +79,10 @@ export const generationRuns = pgTable("generation_runs", {
     .notNull()
     .default(["student_book", "workbook"]),
   variantCount: integer("variant_count").notNull().default(2),
+  modelVersion: text("model_version"),
+  tokenUsage: jsonb("token_usage").$type<Record<string, number>>(),
+  coverImageUrl: text("cover_image_url"),
+  pageImageUrls: jsonb("page_image_urls").$type<Record<number, string>>(),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -97,6 +104,18 @@ export const sourcePageMaps = pgTable("source_page_maps", {
     .references(() => generationRuns.id, { onDelete: "cascade" }),
   totalPages: integer("total_pages").notNull(),
   pages: jsonb("pages").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const unitReviews = pgTable("unit_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id")
+    .notNull()
+    .references(() => generationRuns.id, { onDelete: "cascade" }),
+  unitNumber: integer("unit_number").notNull(),
+  reviewType: reviewTypeEnum("review_type").notNull(),
+  passed: boolean("passed").notNull(),
+  issues: jsonb("issues").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

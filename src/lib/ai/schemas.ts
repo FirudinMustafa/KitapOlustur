@@ -165,6 +165,19 @@ export const generatedComplementarySideSchema = z.object({
 });
 export type GeneratedComplementarySide = z.infer<typeof generatedComplementarySideSchema>;
 
+// A shared "style bible" built once per book, after the outline is approved,
+// so units - each written in an independent AI call - stay consistent with
+// each other (same character names/setting, same terminology).
+export const styleBibleSchema = z.object({
+  charactersAndSetting: z
+    .string()
+    .describe("Shared characters, setting/world, and narrative context to reuse consistently across all units"),
+  terminology: z
+    .array(z.object({ term: z.string(), definition: z.string() }))
+    .describe("Key recurring terms/formulas and their definitions, to keep usage consistent across units"),
+});
+export type StyleBible = z.infer<typeof styleBibleSchema>;
+
 export const unitReviewSchema = z.object({
   unitNumber: z.number(),
   passed: z.boolean(),
