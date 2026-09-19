@@ -295,9 +295,12 @@ export default function NewProjectPage() {
                 className="mt-0.5"
               />
               <span>
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">Final (Sonnet 5)</span>
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                  Final (Sonnet 5 + Nano Banana Pro)
+                </span>
                 <span className="block text-xs text-zinc-500 dark:text-zinc-400">
-                  Tam kalite, basılabilir sonuç için. Varsayılan.
+                  Tam kalite, basılabilir sonuç için — metin Sonnet 5, görseller Nano Banana Pro (Gemini 3 Pro
+                  Image) ile üretilir. Varsayılan.
                 </span>
               </span>
             </label>
@@ -310,10 +313,12 @@ export default function NewProjectPage() {
                 className="mt-0.5"
               />
               <span>
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">Taslak (Haiku 4.5, daha ucuz)</span>
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                  Taslak (Haiku 4.5 + Imagen 4, daha ucuz)
+                </span>
                 <span className="block text-xs text-zinc-500 dark:text-zinc-400">
-                  Ünite içeriği daha ucuz bir modelle yazılır — yapıyı hızlıca önizlemek için. Kalite/dil
-                  incelemesi (review) her zaman tam kalite modeliyle yapılır.
+                  Ünite içeriği ve görseller daha ucuz modellerle üretilir — yapıyı hızlıca önizlemek için.
+                  Kalite/dil incelemesi (review) her zaman tam kalite modeliyle yapılır.
                 </span>
               </span>
             </label>

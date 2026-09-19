@@ -50,9 +50,9 @@ import {
 } from "@/lib/ai/schemas";
 import {
   BOOK_PIPELINE_MODEL,
-  BOOK_PIPELINE_IMAGE_MODEL,
-  BOOK_PIPELINE_SPEECH_MODEL,
   resolveTextModel,
+  resolveImageModel,
+  resolveSpeechModel,
 } from "@/lib/ai/model";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
@@ -499,10 +499,13 @@ async function generateListeningAudio(
   runId: string,
   unitNumber: number,
   listeningAudio: GeneratedUnit["listeningAudio"],
+  qualityMode: "draft" | "final",
 ): Promise<GeneratedUnit["listeningAudio"]> {
   "use step";
 
   if (!listeningAudio?.length) return listeningAudio;
+
+  const speechModel = resolveSpeechModel(qualityMode);
 
   // Steps in this workflow are retried automatically by the platform on any
   // thrown error that isn't a FatalError (see FatalError's own doc comment
@@ -522,7 +525,7 @@ async function generateListeningAudio(
     for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
       try {
         const { audio } = await generateSpeech({
-          model: BOOK_PIPELINE_SPEECH_MODEL,
+          model: speechModel,
           text: entry.script,
           outputFormat: "mp3",
         });
@@ -760,13 +763,14 @@ async function generateReviewedImage(
   pageContext: string,
   initialPrompt: string,
   storagePath: string,
+  qualityMode: "draft" | "final",
 ): Promise<string> {
   let prompt = initialPrompt;
   let lastBlobUrl: string | null = null;
 
   for (let attempt = 1; attempt <= MAX_IMAGE_ATTEMPTS; attempt++) {
     const { image } = await generateImage({
-      model: BOOK_PIPELINE_IMAGE_MODEL,
+      model: resolveImageModel(qualityMode),
       prompt,
       aspectRatio: "16:9",
     });
@@ -786,7 +790,11 @@ async function generateReviewedImage(
   return lastBlobUrl as string;
 }
 
-async function generateUnitImages(runId: string, unit: GeneratedUnit): Promise<Record<number, string>> {
+async function generateUnitImages(
+  runId: string,
+  unit: GeneratedUnit,
+  qualityMode: "draft" | "final",
+): Promise<Record<number, string>> {
   "use step";
 
   const allPages = [
@@ -812,6 +820,7 @@ async function generateUnitImages(runId: string, unit: GeneratedUnit): Promise<R
       pageContext,
       `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
       `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
+      qualityMode,
     );
   }
 
@@ -823,6 +832,7 @@ async function generateCoverImage(
   bookTitle: string,
   subject: string,
   coverPage: SourcePage | undefined,
+  qualityMode: "draft" | "final",
 ): Promise<string> {
   "use step";
 
@@ -837,6 +847,7 @@ async function generateCoverImage(
     `Front cover of "${bookTitle}", a ${subject} coursebook.`,
     `${scenePrompt} Style: welcoming, modern educational textbook cover art, no text or letters in the image.`,
     `generated/${runId}/cover.png`,
+    qualityMode,
   );
 }
 
@@ -999,7 +1010,13 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
 
     await setRunStatus(runId, "generating_images", "Kapak görseli üretiliyor");
     const coverPage = pageMap.pages.find((p) => p.pageType === "cover");
-    const coverImageSrc = await generateCoverImage(runId, outline.bookTitle, outline.subject, coverPage);
+    const coverImageSrc = await generateCoverImage(
+      runId,
+      outline.bookTitle,
+      outline.subject,
+      coverPage,
+      ctx.run.qualityMode,
+    );
 
     for (const outlineUnit of unitsToGenerate) {
       const n = outlineUnit.number;
@@ -1048,7 +1065,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           requestedVariants.includes("test_booklet")
             ? generateTestBookletSide(runId, genContext)
             : Promise.resolve(null),
-          generateListeningAudio(runId, outlineUnit.number, mirrored.listeningAudio),
+          generateListeningAudio(runId, outlineUnit.number, mirrored.listeningAudio, ctx.run.qualityMode),
         ]);
 
         return {
@@ -1116,7 +1133,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       }
 
       await setRunStatus(runId, "generating_images", `Ünite ${n}/${totalUnits}: görseller üretiliyor`);
-      const unitImages = await generateUnitImages(runId, generated);
+      const unitImages = await generateUnitImages(runId, generated, ctx.run.qualityMode);
       Object.assign(pageImages, unitImages);
 
       units.push(generated);
