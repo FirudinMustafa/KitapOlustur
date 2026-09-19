@@ -12,8 +12,11 @@ import {
   bookCoherenceReviews,
   originalityChecks,
   teacherFeedback,
+  unitReviews,
 } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
+import { computeUnitProgress } from "@/lib/unit-progress";
+import type { OutlineDocument } from "@/app/projects/[id]/RunStatusView";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -83,6 +86,22 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       })
     : [];
 
+  // Faz "Panel/Çizelge": per-unit progress reconstructed from unitReviews +
+  // imageReviews (see computeUnitProgress's doc comment for why - there's no
+  // per-unit signal until generatedBooks rows exist at the very end).
+  let unitProgress: ReturnType<typeof computeUnitProgress> = [];
+  if (run) {
+    const outlineUnits = (outline?.outline as OutlineDocument["outline"] | undefined)?.outline?.units ?? [];
+    const limitedUnits = run.unitLimit ? outlineUnits.slice(0, run.unitLimit) : outlineUnits;
+    if (limitedUnits.length) {
+      const [allUnitReviews, allImageReviews] = await Promise.all([
+        db.query.unitReviews.findMany({ where: eq(unitReviews.runId, run.id) }),
+        db.query.imageReviews.findMany({ where: eq(imageReviews.runId, run.id) }),
+      ]);
+      unitProgress = computeUnitProgress(limitedUnits, run.status, run.currentStage, allUnitReviews, allImageReviews);
+    }
+  }
+
   return NextResponse.json({
     project,
     upload,
@@ -93,5 +112,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     coherenceReview,
     flaggedOriginalityCount,
     feedback,
+    unitProgress,
   });
 }

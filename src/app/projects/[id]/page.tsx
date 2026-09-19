@@ -13,8 +13,10 @@ import {
   bookCoherenceReviews,
   originalityChecks,
   teacherFeedback,
+  unitReviews,
 } from "@/db/schema";
 import { RunStatusView, type OutlineDocument, type GeneratedUnitContent, type PendingVariants } from "./RunStatusView";
+import { computeUnitProgress } from "@/lib/unit-progress";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +82,21 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       })
     : [];
 
+  // Faz "Panel/Çizelge": same reconstruction as /api/projects/[id], kept in
+  // sync manually (matches this file's existing dual-query pattern).
+  let unitProgress: ReturnType<typeof computeUnitProgress> = [];
+  if (run) {
+    const outlineUnits = (outline?.outline as OutlineDocument["outline"] | undefined)?.outline?.units ?? [];
+    const limitedUnits = run.unitLimit ? outlineUnits.slice(0, run.unitLimit) : outlineUnits;
+    if (limitedUnits.length) {
+      const [allUnitReviews, allImageReviews] = await Promise.all([
+        db.query.unitReviews.findMany({ where: eq(unitReviews.runId, run.id) }),
+        db.query.imageReviews.findMany({ where: eq(imageReviews.runId, run.id) }),
+      ]);
+      unitProgress = computeUnitProgress(limitedUnits, run.status, run.currentStage, allUnitReviews, allImageReviews);
+    }
+  }
+
   return (
     <RunStatusView
       projectId={project.id}
@@ -103,6 +120,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         outline: outline ? { outline: outline.outline as OutlineDocument["outline"] } : null,
         flaggedImageCount,
         flaggedOriginalityCount,
+        unitProgress,
         feedback: feedback.map((f) => ({ id: f.id, rating: f.rating, comment: f.comment })),
         coherenceReview: coherenceReview
           ? {

@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { STATUS_LABELS, BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
+import { BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
+import type { UnitProgress } from "@/lib/unit-progress";
+import { PipelineStageTracker } from "./PipelineStageTracker";
+import { Badge } from "@/components/ui/badge";
 
 type ListeningAudioEntry = { blockRef: string; script: string; audioUrl?: string };
 export type GeneratedUnitContent = { unitNumber: number; listeningAudio?: ListeningAudioEntry[] };
@@ -82,6 +85,7 @@ type ProjectData = {
   flaggedOriginalityCount?: number;
   coherenceReview?: CoherenceReview | null;
   feedback?: FeedbackEntry[];
+  unitProgress?: UnitProgress[];
 };
 
 const TERMINAL_STATUSES = new Set(["done", "failed"]);
@@ -159,6 +163,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
     flaggedOriginalityCount,
     coherenceReview,
     feedback,
+    unitProgress,
   } = data;
 
   const tokenBreakdown = Object.entries(run?.tokenUsage ?? {})
@@ -279,47 +284,18 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         {upload ? `Kaynak: ${upload.filename}` : ""}
       </p>
 
-      <div className="mt-8 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Pipeline durumu</span>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
-              run?.status === "done"
-                ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                : run?.status === "failed"
-                  ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-                  : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-            }`}
-          >
-            {run ? STATUS_LABELS[run.status] ?? run.status : "—"}
-          </span>
-        </div>
-        {run?.currentStage && (
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{run.currentStage}</p>
-        )}
-        {run?.status === "failed" && run.errorMessage && (
-          <p className="mt-2 text-sm text-red-600 dark:text-red-400">{run.errorMessage}</p>
-        )}
-        {unitCount !== undefined && (
-          <p className="mt-2 text-xs text-zinc-500">Dizelgede {unitCount} ünite bulundu.</p>
-        )}
-        {run?.tokenUsage?.total && (
-          <p className="mt-1 text-xs text-zinc-400">
-            Tahmini kullanım: ~{run.tokenUsage.total.toLocaleString("tr-TR")} token
-            {run.modelVersion ? ` · ${run.modelVersion}` : ""}
-          </p>
-        )}
-        {!!flaggedImageCount && (
-          <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
-            {flaggedImageCount} görsel otomatik kalite kontrolünden geçemedi — manuel incelemesi önerilir.
-          </p>
-        )}
-        {!!flaggedOriginalityCount && (
-          <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-400">
-            {flaggedOriginalityCount} sayfada kaynak kitapla yüksek metin benzerliği tespit edildi — bu bir hukuki
-            değerlendirme değildir, manuel incelemesi önerilir.
-          </p>
-        )}
+      <div className="mt-8">
+        <PipelineStageTracker
+          status={run?.status ?? "pending"}
+          currentStage={run?.currentStage ?? null}
+          errorMessage={run?.errorMessage}
+          unitCount={unitCount}
+          tokenUsageTotal={run?.tokenUsage?.total}
+          modelVersion={run?.modelVersion}
+          flaggedImageCount={flaggedImageCount}
+          flaggedOriginalityCount={flaggedOriginalityCount}
+          unitProgress={unitProgress}
+        />
       </div>
 
       {coherenceReview && (
@@ -420,13 +396,35 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
             {outlineData.bookTitle} · {outlineData.subject}
           </p>
-          <ol className="mt-3 flex flex-col gap-1 text-sm text-zinc-800 dark:text-zinc-200">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {outlineData.units.map((u) => (
-              <li key={u.number}>
-                {u.number}. {u.title} <span className="text-xs text-zinc-500">({u.level})</span>
-              </li>
+              <div
+                key={u.number}
+                className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    {u.number}. {u.title}
+                  </span>
+                  <span className="text-xs text-zinc-500">{u.level}</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge variant="outline" className="border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    İçerik
+                  </Badge>
+                  <Badge variant="outline" className="border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    Görsel
+                  </Badge>
+                  <Badge variant="outline" className="border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    Ses
+                  </Badge>
+                  <Badge variant="outline" className="border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    İnceleme
+                  </Badge>
+                </div>
+              </div>
             ))}
-          </ol>
+          </div>
           {improvementPlan?.overallNotes && (
             <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-400">
               <span className="font-medium">İyileştirme planı: </span>

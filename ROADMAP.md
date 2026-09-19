@@ -473,6 +473,26 @@ Kullanıcı H6'yı seçti (maliyet/kalite modu). Roadmap'in kendi önerisinden *
 - Doğrulama: `tsc`/`eslint`/`vitest` (31 test)/`next build` temiz (26 step değişmedi — mevcut step'lerin imzası değişti, yeni step eklenmedi).
 - **Yapılmadı / bilinçli olarak ertelendi:** görsel (Imagen) ve ses (TTS) için ayrı bir ucuz/kaliteli mod yok — sadece metin modeli değişiyor; roadmap'in "hızlı/ucuz taslak vs yüksek kalite final" ifadesi burada sadece metin üretimini kapsayacak şekilde daraltıldı. Proje sayfasında seçilen quality mode'u gösteren bir UI etiketi yok (sadece oluşturma formunda seçiliyor).
 
+---
+
+## FAZ "Panel/Çizelge" — Pipeline Görselleştirmesi + Higgsfield Video (2026-09-19)
+
+Kullanıcı, mevcut pipeline'ın (içerik→görsel→ses→alıştırma) panelde çok daha kullanışlı görselleştirilmesini ve gerçek bir video-üretim aşaması (Higgsfield entegrasyonu) eklenmesini istedi. Detaylı plan `C:\Users\DELL\.claude\plans\wobbly-questing-nest.md` dosyasında — burada sadece özet ve tamamlanma notu var.
+
+**Karar:** Faz 1 (panel görselleştirmesi) önce yapıldı — dış bağımlılığı yok. Faz 2 (Higgsfield video) kullanıcının kendi hesabı/API key'i + tam endpoint şeması olmadan **başlanmadı** (araştırıldı: Higgsfield'ın interaktif MCP sunucusu var ama bizim otomatik backend'imiz için gereken şey ayrı bir server-to-server REST API, `api.higgsfield.ai`, API key ile — kullanıcının henüz hesabı yok).
+
+### Faz 1 — Tamamlanma Notu (2026-09-19)
+- **shadcn/ui kuruldu** (`npx shadcn@latest init -d`, Base UI primitifleriyle — bu CLI sürümünde varsayılan Radix değil Base UI çıktı) + `Badge`/`Progress`/`Tooltip`/`Collapsible` bileşenleri eklendi. `TooltipProvider` `src/app/layout.tsx`'e sarmalandı.
+  - **Gerçek bir bulgu:** shadcn init, `globals.css`'teki `--font-sans` değişkenini `var(--font-sans)` (kendine referans veren, çözülmeyen) olarak yeniden yazdı. Bu proje `next/font/google` kullandığı için (npm'deki `geist` paketi değil), gerçek font sadece `--font-geist-sans` runtime CSS değişkeni üzerinden erişilebilir — literal `"Geist"` font-family adı diye bir şey yok. Düzeltme: `--font-sans: var(--font-geist-sans);` (eski, çalışan davranışa geri döndürüldü, shadcn'in genel "literal isim kullan" tavsiyesi bu projenin font kurulumuna uymuyor).
+- `src/lib/run-status.ts`: `PIPELINE_STAGES` (6 aşamalı üst rayı) + `getPipelineStageIndex`/`getPipelineNodeStates`. Ünite döngüsü içinde tekrar eden durumlar (`generating`/`reviewing`/`generating_images`/`awaiting_variant_selection`) bilinçli olarak tek bir "Ünite üretimi" mega-aşamasına toplandı — ayrı ayrı üst-ray node'ları olsaydı her ünitede ileri-geri zıplardı; ince-taneli içerik/görsel/ses/inceleme ayrımı üst rayda değil ünite-bazlı chip grid'inde.
+- `src/lib/unit-progress.ts` (yeni): `computeUnitProgress` — ünite-bazlı ilerlemeyi mevcut `unitReviews`/`imageReviews` satırlarından yeniden inşa ediyor. **Önemli bir kısıtlama, açıkça belgelendi:** `generatedBooks` (gerçek içerik) sadece run'ın en sonunda (assembly) yazılıyor, yani aktif bir run sırasında ünite-bazlı gerçek bir sinyal yok — `unitReviews` satırı varlığı "içerik+ses tamam" için proxy olarak kullanılıyor (kod pipeline sırasına göre doğrulandı: `generateListeningAudio` her zaman `reviewUnit`'ten önce tamamlanıyor). Ses için ayrı bir gerçek sinyal yok, içerikle birlikte raporlanıyor — bu bir yaklaşıklama, gizlenmeden yorum satırında belirtildi.
+- `src/app/api/projects/[id]/route.ts` + `src/app/projects/[id]/page.tsx`: `unitProgress` hesaplanıp response'a eklendi (mevcut ikili-sorgu deseniyle tutarlı).
+- `src/app/projects/[id]/PipelineStageTracker.tsx` (yeni): üst aşama rayı + ünite-bazlı chip grid'i (Badge+Tooltip). `RunStatusView.tsx`'teki eski tek-rozet kartının yerini aldı (maliyet/flag mesajları korunarak).
+- Dizelge onayı görünümü (`RunStatusView.tsx`): düz `<ol>` yerine, her ünite için başlık/seviye + pasif (hepsi "beklemede") önizleme chip'leri gösteren kart grid'i.
+- **Gerçek veriyle doğrulandı (Chrome, yerel dev server):** "Firudin WorkBook" projesi (gerçek, durdurulmuş bir run, `unitLimit=4`, 8 ünitelik dizelge) açılıp incelendi — üst ray tüm aşamaları doğru gri gösterdi (failed durumda pozisyon uydurmuyor, tasarlandığı gibi), ünite 1'in İçerik+Ses chip'leri doğru şekilde mavi "active" çıktı (currentStage metninden doğru parse edildi), Tooltip hover'da doğru metni gösterdi, konsol hatasız.
+- Doğrulama: `tsc`/`eslint`/`vitest` (44 test, 6 dosya)/`next build` temiz. Migration gerekmedi (sadece mevcut veriden hesaplama).
+- **Yapılmadı / bilinçli olarak ertelendi:** Faz 2 (Higgsfield video) — kullanıcının Higgsfield hesabı/API key'i yok, tam image-to-video şeması doğrulanmadı; detaylar plan dosyasında.
+
 ## Bağımlılık ve Sıralama Özeti
 
 ```

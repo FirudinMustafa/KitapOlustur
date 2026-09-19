@@ -32,6 +32,63 @@ export function formatElapsedTurkish(from: Date, now: Date = new Date()): string
   return `${days} gündür`;
 }
 
+// Faz "Panel/Çizelge": a coarse top-level stage rail for the pipeline
+// tracker. Several runStatusEnum values recur multiple times per run (e.g.
+// "generating"/"reviewing"/"generating_images" all repeat once per unit,
+// interleaved), so they're deliberately bucketed into one "generate" mega
+// stage here - a rail that ping-ponged between separate "content" and
+// "images" nodes across every unit would be noisier than useful. Per-unit
+// content/image/audio granularity belongs in the per-unit chip grid
+// (PipelineStageTracker), not this top rail.
+export type PipelineStageKey = "extract" | "approval" | "generate" | "coherence" | "assemble" | "done";
+
+export const PIPELINE_STAGES: { key: PipelineStageKey; label: string }[] = [
+  { key: "extract", label: "Kaynak analizi" },
+  { key: "approval", label: "Dizelge onayı" },
+  { key: "generate", label: "Ünite üretimi" },
+  { key: "coherence", label: "Tutarlılık kontrolü" },
+  { key: "assemble", label: "Derleme" },
+  { key: "done", label: "Tamamlandı" },
+];
+
+const STATUS_TO_STAGE_INDEX: Record<string, number> = {
+  pending: 0,
+  mapping_pages: 0,
+  extracting: 0,
+  analyzing: 0,
+  awaiting_outline_approval: 1,
+  generating: 2,
+  reviewing: 2,
+  generating_images: 2,
+  awaiting_variant_selection: 2,
+  reviewing_coherence: 3,
+  assembling: 4,
+  done: 5,
+};
+
+export function getPipelineStageIndex(status: string): number {
+  return STATUS_TO_STAGE_INDEX[status] ?? 0;
+}
+
+export type PipelineNodeState = "done" | "active" | "pending";
+
+// "failed" is deliberately not positioned on the rail: the run row only
+// stores the current status, which gets overwritten to "failed" - there's no
+// preserved record of which stage it was in when it failed - so pretending
+// to pinpoint a failed node would fabricate precision the data doesn't have.
+// The failure itself is already surfaced separately via run.errorMessage.
+export function getPipelineNodeStates(status: string): PipelineNodeState[] {
+  if (status === "failed") {
+    return PIPELINE_STAGES.map(() => "pending" as const);
+  }
+  const currentIndex = getPipelineStageIndex(status);
+  return PIPELINE_STAGES.map((_, i) => {
+    if (i < currentIndex) return "done";
+    if (i === currentIndex) return status === "done" ? "done" : "active";
+    return "pending";
+  });
+}
+
 export const BOOK_TYPE_LABELS: Record<string, string> = {
   student_book: "Student Book",
   workbook: "Workbook",
