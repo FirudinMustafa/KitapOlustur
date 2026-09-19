@@ -5,7 +5,7 @@ import {
   NoObjectGeneratedError,
   type LanguageModelUsage,
 } from "ai";
-import { eq, inArray, desc } from "drizzle-orm";
+import { eq, inArray, desc, sql } from "drizzle-orm";
 import { put } from "@vercel/blob";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { FatalError, createHook } from "workflow";
@@ -19,9 +19,15 @@ import {
   extractedOutlines,
   sourcePageMaps,
   unitReviews,
+  imageReviews,
+  bookCoherenceReviews,
+  originalityChecks,
+  styleProfiles,
+  variantHistory,
   generatedBooks,
   type RunStatus,
 } from "@/db/schema";
+import { ngramJaccardSimilarity } from "@/lib/originality";
 import {
   pageMapSchema,
   bookOutlineSchema,
@@ -30,6 +36,10 @@ import {
   generatedComplementarySideSchema,
   styleBibleSchema,
   unitReviewSchema,
+  imageReviewSchema,
+  bookCoherenceReviewSchema,
+  type ImageReview,
+  type BookCoherenceReview,
   type PageMap,
   type SourcePage,
   type BookOutline,
@@ -38,7 +48,12 @@ import {
   type GeneratedPage,
   type StyleBible,
 } from "@/lib/ai/schemas";
-import { BOOK_PIPELINE_MODEL, BOOK_PIPELINE_IMAGE_MODEL, BOOK_PIPELINE_SPEECH_MODEL } from "@/lib/ai/model";
+import {
+  BOOK_PIPELINE_MODEL,
+  BOOK_PIPELINE_IMAGE_MODEL,
+  BOOK_PIPELINE_SPEECH_MODEL,
+  resolveTextModel,
+} from "@/lib/ai/model";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
@@ -73,19 +88,30 @@ async function withObjectDiagnostics<T>(
   }
 }
 
-// Best-effort token usage accumulation onto the run row, keyed by step name.
-// Read-modify-write, so concurrent steps (e.g. the two parallel reviews) can
-// occasionally undercount - acceptable for an approximate cost indicator.
+// Token usage accumulation onto the run row, keyed by step name. Concurrent
+// steps (e.g. the two parallel reviews, or teacher-book/test-booklet/audio
+// generation) call this at the same time, so it's a single atomic UPDATE
+// (jsonb_set computed from the row's own current value in one statement)
+// rather than JS-side read-modify-write, which would lose updates under
+// concurrency. See ROADMAP.md Faz G1.
 async function recordUsage(runId: string, key: string, usage: LanguageModelUsage) {
   const tokens = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
   if (!tokens) return;
 
-  const run = await db.query.generationRuns.findFirst({ where: eq(generationRuns.id, runId) });
-  const current = { ...(run?.tokenUsage ?? {}) };
-  current[key] = (current[key] ?? 0) + tokens;
-  current.total = (current.total ?? 0) + tokens;
-
-  await db.update(generationRuns).set({ tokenUsage: current }).where(eq(generationRuns.id, runId));
+  await db
+    .update(generationRuns)
+    .set({
+      tokenUsage: sql`jsonb_set(
+        jsonb_set(
+          coalesce(${generationRuns.tokenUsage}, '{}'::jsonb),
+          ARRAY[${key}::text],
+          to_jsonb(coalesce((${generationRuns.tokenUsage}->>${key})::bigint, 0) + ${tokens}::bigint)
+        ),
+        ARRAY['total'],
+        to_jsonb(coalesce((coalesce(${generationRuns.tokenUsage}, '{}'::jsonb)->>'total')::bigint, 0) + ${tokens}::bigint)
+      )`,
+    })
+    .where(eq(generationRuns.id, runId));
 }
 
 // ---- Steps ----
@@ -111,9 +137,22 @@ async function fetchRunContext(runId: string) {
       })
     : [];
 
-  await db.update(generationRuns).set({ modelVersion: BOOK_PIPELINE_MODEL }).where(eq(generationRuns.id, runId));
+  // Faz H5: falls back to the "neutral" default profile when the run has
+  // none set (older runs created before this feature, or the user left it
+  // unselected) so buildStyleBible always has guidance to work with.
+  const styleProfile =
+    (run.styleProfileId
+      ? await db.query.styleProfiles.findFirst({ where: eq(styleProfiles.id, run.styleProfileId) })
+      : undefined) ?? (await db.query.styleProfiles.findFirst({ where: eq(styleProfiles.isDefault, true) }));
 
-  return { run, project, upload, niceToHave };
+  // Faz H6: modelVersion now reflects the model actually used for this
+  // run's bulk generation steps (draft -> Haiku 4.5, final -> Sonnet 5),
+  // instead of always being hardcoded to BOOK_PIPELINE_MODEL - closing the
+  // gap noted in ROADMAP.md Faz G ("this field exists but wasn't used").
+  const textModel = resolveTextModel(run.qualityMode);
+  await db.update(generationRuns).set({ modelVersion: textModel }).where(eq(generationRuns.id, runId));
+
+  return { run, project, upload, niceToHave, styleProfile, textModel };
 }
 
 async function setRunStatus(runId: string, status: RunStatus, stage?: string, errorMessage?: string) {
@@ -141,7 +180,7 @@ async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
           content: [
             {
               type: "text",
-              text: "Go through this PDF page by page, in order, and classify EVERY page (cover, contents, unit_opener, content, exercise, glossary, review, answer_key, assessment, back_cover, or other). For each page, note which unit number it belongs to (or null if it isn't part of a unit), summarize what's on it, and if it carries a photo or illustration, describe it precisely - subject, scene, style - so it could be reimagined later as new artwork. Do not skip any pages: totalPages must equal the number of page entries you return.",
+              text: "Go through this PDF page by page, in order, and classify EVERY page (cover, contents, unit_opener, content, exercise, glossary, review, answer_key, assessment, back_cover, or other). For each page, note which unit number it belongs to (or null if it isn't part of a unit), summarize what's on it, and if it carries a photo or illustration, describe it precisely - subject, scene, style - so it could be reimagined later as new artwork. Also transcribe the page's substantive running text into sourceText (headings, body copy, exercise prompts, dialogue) as closely to verbatim as practical - this is reference material for a later originality check, not a paraphrase; omit it only for pages with no real body text. Do not skip any pages: totalPages must equal the number of page entries you return.",
             },
             { type: "file", mediaType: "application/pdf", data: new URL(pdfUrl) },
           ],
@@ -156,7 +195,12 @@ async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
   return object;
 }
 
-async function extractOutline(runId: string, pdfUrl: string, pageMap: PageMap): Promise<BookOutline> {
+async function extractOutline(
+  runId: string,
+  pdfUrl: string,
+  pageMap: PageMap,
+  targetLanguage?: string | null,
+): Promise<BookOutline> {
   "use step";
 
   const { object, usage } = await withObjectDiagnostics(() =>
@@ -173,10 +217,13 @@ async function extractOutline(runId: string, pdfUrl: string, pageMap: PageMap): 
             {
               type: "text",
               text: [
-                "Extract the full unit-by-unit structure of this coursebook PDF: book title, academic subject (e.g. 'English Language Teaching', 'Mathematics', 'Physics'), content language (as a BCP-47 code, e.g. 'en' or 'tr', matching the language the book is actually written in), overall level, tone, and target audience.",
+                "Extract the full unit-by-unit structure of this coursebook PDF: book title, academic subject (e.g. 'English Language Teaching', 'Mathematics', 'Physics'), overall level, tone, and target audience.",
                 "For every unit, give its title, level, the exact source page range it spans (derive start/end page numbers from the page map below), learning objectives, and key terms (vocabulary, formulas, or concepts introduced).",
                 `Pre-computed page map (JSON):\n${JSON.stringify(pageMap)}`,
                 "Be thorough - do not skip units, and make sure every unit's sourcePageRange is consistent with the page map's unitNumber assignments.",
+                targetLanguage
+                  ? `Faz H1 - localization: the generated book will be produced in "${targetLanguage}", NOT the source PDF's own language. Set contentLanguage to the correct BCP-47 code for "${targetLanguage}" (e.g. "de" for German), and write bookTitle, tone, targetAudience, and every unit's title/learningObjectives/keyTerms in that language - translated and localized, not copied from the source. sourcePageRange stays numeric and is unaffected.`
+                  : "Set contentLanguage to the BCP-47 code (e.g. 'en' or 'tr') matching the language the book is actually written in, and write all extracted text in that same language.",
               ].join("\n\n"),
             },
             { type: "file", mediaType: "application/pdf", data: new URL(pdfUrl) },
@@ -231,7 +278,11 @@ async function analyzeImprovements(
 // Builds a shared "style bible" (recurring characters/setting + terminology)
 // once per book, after the outline is approved, so units generated by
 // independent AI calls stay consistent with each other.
-async function buildStyleBible(runId: string, outline: BookOutline): Promise<StyleBible> {
+async function buildStyleBible(
+  runId: string,
+  outline: BookOutline,
+  styleProfileGuidance?: string,
+): Promise<StyleBible> {
   "use step";
 
   const { object, usage } = await withObjectDiagnostics(() =>
@@ -243,7 +294,10 @@ async function buildStyleBible(runId: string, outline: BookOutline): Promise<Sty
       prompt: [
         `Book outline (JSON):\n${JSON.stringify(outline)}`,
         "Define: (1) a short paragraph describing shared characters/setting/narrative context to reuse across units (names, ages, relationships, world) where relevant to the subject, (2) a glossary of key recurring terms/formulas and their definitions to keep terminology consistent across units.",
-      ].join("\n\n"),
+        styleProfileGuidance ? `House style to follow (Faz H5 style profile): ${styleProfileGuidance}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     }),
   );
 
@@ -265,6 +319,8 @@ type UnitGenerationContext = {
   styleBible: StyleBible;
   feedback?: string[];
   variantHint?: string;
+  // Faz H6: which model writes this unit's content - see resolveTextModel.
+  textModel: string;
 };
 
 function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
@@ -293,7 +349,7 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: input.textModel,
       schema: generatedMirroredSideSchema,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
       system:
@@ -326,7 +382,7 @@ async function generateComplementarySide(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: input.textModel,
       schema: generatedComplementarySideSchema,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
       system:
@@ -346,6 +402,43 @@ async function generateComplementarySide(
   return object;
 }
 
+// Faz F1: deterministic (no LLM call), cheap text-overlap check between each
+// mirrored page and its source page's transcribed text. Only checks the
+// mirrored side, since that's the one explicitly reproducing the source's
+// page-by-page structure and is therefore the actual copying-risk surface -
+// the complementary side is independently-written new material by design.
+// Informational only (recorded, not blocking) - see ROADMAP.md Faz F. This
+// is a risk signal, not a legal determination.
+const ORIGINALITY_NGRAM_THRESHOLD = 0.15;
+
+async function checkOriginality(
+  runId: string,
+  unitNumber: number,
+  generatedPages: GeneratedPage[],
+  sourcePages: SourcePage[],
+): Promise<void> {
+  "use step";
+
+  for (const page of generatedPages) {
+    const source = sourcePages.find((p) => p.pageNumber === page.sourcePageNumber);
+    if (!source?.sourceText) continue;
+
+    const generatedText = page.blocks
+      .map((b) => [b.heading, b.body, ...(b.items ?? [])].join("\n"))
+      .join("\n\n");
+    const ngramOverlapScore = ngramJaccardSimilarity(source.sourceText, generatedText, 5);
+    const flagged = ngramOverlapScore > ORIGINALITY_NGRAM_THRESHOLD;
+
+    await db.insert(originalityChecks).values({
+      runId,
+      unitNumber,
+      pageNumber: page.sourcePageNumber,
+      ngramOverlapScore,
+      flagged,
+    });
+  }
+}
+
 // Teacher's Book side: pacing/teaching notes, common learner errors, and a
 // consolidated answer key - only generated when a Teacher's Book was
 // requested for this run.
@@ -357,7 +450,7 @@ async function generateTeacherBookSide(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: input.textModel,
       schema: generatedComplementarySideSchema,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
       system:
@@ -382,7 +475,7 @@ async function generateTestBookletSide(runId: string, input: UnitGenerationConte
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: input.textModel,
       schema: generatedComplementarySideSchema,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
       system:
@@ -411,23 +504,41 @@ async function generateListeningAudio(
 
   if (!listeningAudio?.length) return listeningAudio;
 
+  // Steps in this workflow are retried automatically by the platform on any
+  // thrown error that isn't a FatalError (see FatalError's own doc comment
+  // in @workflow/errors: "an error that cannot be retried"). This loop is a
+  // deliberate exception to that default: losing narration for one line
+  // shouldn't fail the whole unit's assembly, so a persistently-broken
+  // script degrades to no-audio instead of the platform retrying the whole
+  // step indefinitely. But a merely transient failure (a momentary 5xx)
+  // deserves a couple of quick attempts before giving up - see ROADMAP.md
+  // Faz G4.
+  const MAX_AUDIO_ATTEMPTS = 3;
+
   const withAudio = [];
   for (const [i, entry] of listeningAudio.entries()) {
-    try {
-      const { audio } = await generateSpeech({
-        model: BOOK_PIPELINE_SPEECH_MODEL,
-        text: entry.script,
-        outputFormat: "mp3",
-      });
-      const blob = await put(`generated/${runId}/unit-${unitNumber}-audio-${i}.mp3`, Buffer.from(audio.uint8Array), {
-        access: "public",
-        contentType: audio.mediaType,
-        addRandomSuffix: false,
-      });
-      withAudio.push({ ...entry, audioUrl: blob.url });
-    } catch {
-      withAudio.push(entry);
+    let audioUrl: string | undefined;
+
+    for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
+      try {
+        const { audio } = await generateSpeech({
+          model: BOOK_PIPELINE_SPEECH_MODEL,
+          text: entry.script,
+          outputFormat: "mp3",
+        });
+        const blob = await put(
+          `generated/${runId}/unit-${unitNumber}-audio-${i}.mp3`,
+          Buffer.from(audio.uint8Array),
+          { access: "public", contentType: audio.mediaType, addRandomSuffix: false },
+        );
+        audioUrl = blob.url;
+        break;
+      } catch {
+        if (attempt < MAX_AUDIO_ATTEMPTS) await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
     }
+
+    withAudio.push(audioUrl ? { ...entry, audioUrl } : entry);
   }
   return withAudio;
 }
@@ -437,8 +548,30 @@ async function savePendingVariants(runId: string, pendingVariants: PendingVarian
   await db.update(generationRuns).set({ pendingVariants }).where(eq(generationRuns.id, runId));
 }
 
-async function clearPendingVariants(runId: string) {
+// Faz H4: archives every generated variant (see variantHistory in
+// src/db/schema.ts) before clearing the run's pendingVariants scratch
+// column, so unselected variants aren't silently discarded - replaces the
+// old clearPendingVariants, which just nulled the column.
+async function archiveVariants(
+  runId: string,
+  unitNumber: number,
+  variants: { index: number; unit: GeneratedUnit; issues: string[]; passed: boolean }[],
+  selectedIndex: number,
+) {
   "use step";
+
+  await db.insert(variantHistory).values(
+    variants.map((v) => ({
+      runId,
+      unitNumber,
+      variantIndex: v.index,
+      selected: v.index === selectedIndex,
+      passed: v.passed,
+      issues: v.issues,
+      unit: v.unit,
+    })),
+  );
+
   await db.update(generationRuns).set({ pendingVariants: null }).where(eq(generationRuns.id, runId));
 }
 
@@ -491,6 +624,168 @@ async function reviewLanguageAccuracy(
   return object;
 }
 
+// Faz E: one book-wide pedagogical review, run once after every unit has
+// been generated - catches cross-unit problems (difficulty progression,
+// vocabulary repetition/spacing, grammar sequencing, thematic consistency)
+// that per-unit reviewUnit/reviewLanguageAccuracy structurally can't see,
+// since each of those only ever looks at a single unit. Informational only
+// for now (does not block assembly) - see ROADMAP.md Faz E open question #2:
+// scores need calibrating against real projects before this can safely gate
+// the pipeline.
+async function reviewBookCoherence(
+  runId: string,
+  outline: BookOutline,
+  units: GeneratedUnit[],
+): Promise<BookCoherenceReview> {
+  "use step";
+
+  // Summaries only (outline + glossary), not full page text, to keep this
+  // single call's input bounded regardless of how many units the book has.
+  const unitSummaries = units.map((u) => {
+    const outlineUnit = outline.units.find((ou) => ou.number === u.unitNumber);
+    return {
+      unitNumber: u.unitNumber,
+      title: u.title,
+      level: outlineUnit?.level,
+      learningObjectives: outlineUnit?.learningObjectives,
+      keyTerms: outlineUnit?.keyTerms,
+      glossary: u.glossary,
+    };
+  });
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: bookCoherenceReviewSchema,
+      system:
+        "You are the head editor of an educational publisher, reviewing a finished coursebook's overall pedagogical coherence across ALL of its units together - not any single unit in isolation.",
+      prompt: [
+        `Book: "${outline.bookTitle}" (${outline.subject}, level ${outline.level}).`,
+        `Per-unit summary, in unit order (JSON):\n${JSON.stringify(unitSummaries)}`,
+        [
+          "Evaluate, across the WHOLE book:",
+          "(1) difficulty progression - does each unit build sensibly on the last, without abrupt jumps or plateaus?",
+          "(2) vocabulary repetition - are key terms from earlier units reinforced later, rather than introduced once and never seen again?",
+          "(3) grammar/concept sequencing - are topics introduced in a pedagogically sound order (simpler/foundational before dependent/advanced)?",
+          "(4) thematic consistency - do the units read as a coherent series rather than disconnected pieces?",
+          "Score each dimension 0-100. List concrete issues tied to specific unit numbers with a severity. Set passed=true only if there are no 'high' severity issues.",
+        ].join(" "),
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "bookCoherence", usage);
+  await db.insert(bookCoherenceReviews).values({
+    runId,
+    passed: object.passed,
+    difficultyProgressionScore: object.difficultyProgressionScore,
+    vocabularyRepetitionScore: object.vocabularyRepetitionScore,
+    grammarSequencingScore: object.grammarSequencingScore,
+    thematicConsistencyScore: object.thematicConsistencyScore,
+    issues: object.issues,
+  });
+
+  return object;
+}
+
+// Faz D: how many total attempts (1 initial + retries) a single illustration
+// gets before we give up and ship the last one produced, flagged for manual
+// review instead of blocking the run. See ROADMAP.md "Faz D".
+const MAX_IMAGE_ATTEMPTS = 3;
+
+// Vision-based art-director check: does the generated image actually match
+// what was asked for and the page/context it's going on? Runs after every
+// image generation (unit pages and cover) so bad art gets retried instead of
+// silently shipped. Soft-warn by design (see ROADMAP.md Faz D open question
+// #1) - a persistently failing image still ships after MAX_IMAGE_ATTEMPTS,
+// just flagged in image_reviews for the project page to surface.
+async function reviewImage(
+  runId: string,
+  unitNumber: number | null,
+  pageNumber: number | null,
+  imageUrl: string,
+  prompt: string,
+  pageContext: string,
+  attempt: number,
+): Promise<ImageReview> {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: imageReviewSchema,
+      system:
+        "You are a meticulous art director reviewing AI-generated illustrations for a printed educational coursebook. You check that the image matches what was requested and is appropriate for the page it accompanies.",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: [
+                `The image was generated from this prompt: "${prompt}"`,
+                `Page context (what this image should support): ${pageContext}`,
+                "Check: (1) the image matches the prompt's subject and scene, (2) it is appropriate for a school-age audience (no violence, unsafe, or inappropriate content), (3) it contains no garbled or unreadable text/letters baked into the artwork, (4) it plausibly fits the described page context. List concrete issues if any, and if passed=false, suggest a revised prompt that would fix them. Set passed=true only if there are no significant issues.",
+              ].join("\n\n"),
+            },
+            { type: "image", image: new URL(imageUrl) },
+          ],
+        },
+      ],
+    }),
+  );
+
+  await recordUsage(runId, "imageReview", usage);
+  await db.insert(imageReviews).values({
+    runId,
+    unitNumber,
+    pageNumber,
+    imageUrl,
+    prompt,
+    passed: object.passed,
+    issues: object.issues,
+    attempt,
+  });
+
+  return object;
+}
+
+// Generates an image, runs it through reviewImage, and retries with a
+// revised prompt (up to MAX_IMAGE_ATTEMPTS) if it fails QA. Ships the last
+// attempt regardless so a flaky vision check never blocks the whole run.
+async function generateReviewedImage(
+  runId: string,
+  unitNumber: number | null,
+  pageNumber: number | null,
+  pageContext: string,
+  initialPrompt: string,
+  storagePath: string,
+): Promise<string> {
+  let prompt = initialPrompt;
+  let lastBlobUrl: string | null = null;
+
+  for (let attempt = 1; attempt <= MAX_IMAGE_ATTEMPTS; attempt++) {
+    const { image } = await generateImage({
+      model: BOOK_PIPELINE_IMAGE_MODEL,
+      prompt,
+      aspectRatio: "16:9",
+    });
+
+    const blob = await put(storagePath, Buffer.from(image.uint8Array), {
+      access: "public",
+      contentType: image.mediaType,
+      addRandomSuffix: false,
+    });
+    lastBlobUrl = blob.url;
+
+    const review = await reviewImage(runId, unitNumber, pageNumber, blob.url, prompt, pageContext, attempt);
+    if (review.passed || attempt === MAX_IMAGE_ATTEMPTS) break;
+    if (review.suggestedPromptFix) prompt = review.suggestedPromptFix;
+  }
+
+  return lastBlobUrl as string;
+}
+
 async function generateUnitImages(runId: string, unit: GeneratedUnit): Promise<Record<number, string>> {
   "use step";
 
@@ -506,19 +801,18 @@ async function generateUnitImages(runId: string, unit: GeneratedUnit): Promise<R
   for (const page of allPages) {
     if (!page.imagePrompt || images[page.sourcePageNumber]) continue;
 
-    const { image } = await generateImage({
-      model: BOOK_PIPELINE_IMAGE_MODEL,
-      prompt: `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
-      aspectRatio: "16:9",
-    });
+    const pageContext = `Unit ${unit.unitNumber} ("${unit.title}"), page type: ${page.pageType}. ${
+      page.blocks[0] ? `First content block: "${page.blocks[0].heading}" - ${page.blocks[0].body.slice(0, 200)}` : ""
+    }`;
 
-    const blob = await put(
+    images[page.sourcePageNumber] = await generateReviewedImage(
+      runId,
+      unit.unitNumber,
+      page.sourcePageNumber,
+      pageContext,
+      `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
       `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
-      Buffer.from(image.uint8Array),
-      { access: "public", contentType: image.mediaType, addRandomSuffix: false },
     );
-
-    images[page.sourcePageNumber] = blob.url;
   }
 
   return images;
@@ -536,22 +830,17 @@ async function generateCoverImage(
     ? `A book cover illustration inspired by this scene: ${coverPage.imageDescription}. Reimagine it as entirely new, original artwork for "${bookTitle}", a ${subject} coursebook.`
     : `A warm, professional, modern coursebook cover illustration for "${bookTitle}", a ${subject} coursebook.`;
 
-  const { image } = await generateImage({
-    model: BOOK_PIPELINE_IMAGE_MODEL,
-    prompt: `${scenePrompt} Style: welcoming, modern educational textbook cover art, no text or letters in the image.`,
-    aspectRatio: "16:9",
-  });
-
-  const blob = await put(`generated/${runId}/cover.png`, Buffer.from(image.uint8Array), {
-    access: "public",
-    contentType: image.mediaType,
-    addRandomSuffix: false,
-  });
-
-  return blob.url;
+  return generateReviewedImage(
+    runId,
+    null,
+    null,
+    `Front cover of "${bookTitle}", a ${subject} coursebook.`,
+    `${scenePrompt} Style: welcoming, modern educational textbook cover art, no text or letters in the image.`,
+    `generated/${runId}/cover.png`,
+  );
 }
 
-function buildContentsUnits(outline: BookOutline): CourseUnitSummary[] {
+export function buildContentsUnits(outline: BookOutline): CourseUnitSummary[] {
   return outline.units.map((u) => ({
     number: u.number,
     title: u.title,
@@ -680,7 +969,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     const pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
 
     await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) çıkarılıyor");
-    const outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap);
+    const outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap, ctx.run.targetLanguage);
 
     await setRunStatus(runId, "analyzing", "Nice-to-have listesine göre iyileştirme planı hazırlanıyor");
     const improvementPlan: ImprovementPlan = await analyzeImprovements(
@@ -700,7 +989,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     }
     const effectiveUnitLimit = approval.unitLimit !== undefined ? approval.unitLimit : ctx.run.unitLimit;
 
-    const styleBible = await buildStyleBible(runId, outline);
+    const styleBible = await buildStyleBible(runId, outline, ctx.styleProfile?.promptGuidance);
     const variantCount = Math.max(1, Math.min(4, ctx.run.variantCount || 1));
 
     const unitsToGenerate = effectiveUnitLimit ? outline.units.slice(0, effectiveUnitLimit) : outline.units;
@@ -738,9 +1027,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           styleBible,
           feedback,
           variantHint,
+          textModel: ctx.textModel,
         };
 
         const mirrored = await generateMirroredSide(runId, genContext);
+        await checkOriginality(runId, outlineUnit.number, mirrored.pages, unitSourcePages);
         const complementary = await generateComplementarySide(runId, {
           ...genContext,
           complementaryType,
@@ -821,7 +1112,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         const chosen = variants[selection.selectedIndex] ?? variants[0];
         generated = chosen.unit;
 
-        await clearPendingVariants(runId);
+        await archiveVariants(runId, n, variants, selection.selectedIndex);
       }
 
       await setRunStatus(runId, "generating_images", `Ünite ${n}/${totalUnits}: görseller üretiliyor`);
@@ -830,6 +1121,9 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
 
       units.push(generated);
     }
+
+    await setRunStatus(runId, "reviewing_coherence", "Kitap geneli tutarlılık kontrol ediliyor");
+    await reviewBookCoherence(runId, outline, units);
 
     await setRunStatus(runId, "assembling", "Kitaplar oluşturuluyor");
     const contentsUnits = buildContentsUnits(outline);

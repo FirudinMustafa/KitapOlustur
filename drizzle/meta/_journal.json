@@ -50,6 +50,62 @@
       "when": 1785671446838,
       "tag": "0006_colossal_slyde",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789808615548,
+      "tag": "0007_wealthy_human_torch",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789809104319,
+      "tag": "0008_striped_valkyrie",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789809312289,
+      "tag": "0009_tranquil_sharon_carter",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789810903614,
+      "tag": "0010_unknown_sprite",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789811412893,
+      "tag": "0011_stiff_black_bird",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789812198801,
+      "tag": "0012_fair_stingray",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789812596858,
+      "tag": "0013_shiny_black_panther",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789812929356,
+      "tag": "0014_orange_micromax",
+      "breakpoints": true
     }
   ]
 }

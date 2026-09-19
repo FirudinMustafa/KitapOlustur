@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { start } from "workflow/api";
 import { desc, eq } from "drizzle-orm";
 
@@ -9,7 +10,13 @@ import { bookPipelineWorkflow } from "@workflows/book-pipeline";
 const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
 
 export async function GET() {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });
+  }
+
   const rows = await db.query.projects.findMany({
+    where: eq(projects.ownerId, userId),
     orderBy: [desc(projects.createdAt)],
   });
 
@@ -27,6 +34,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });
+  }
+
   const body = await request.json().catch(() => null);
 
   if (!body || typeof body !== "object") {
@@ -42,6 +54,9 @@ export async function POST(request: Request) {
     requestedBookTypes: requestedBookTypesRaw,
     variantCount: variantCountRaw,
     unitLimit: unitLimitRaw,
+    styleProfileId: styleProfileIdRaw,
+    qualityMode: qualityModeRaw,
+    targetLanguage: targetLanguageRaw,
     blobUrl,
     filename,
   } = body;
@@ -79,9 +94,18 @@ export async function POST(request: Request) {
     variantCount = variantCountRaw;
   }
 
+  const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
+  const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";
+  const targetLanguage =
+    typeof targetLanguageRaw === "string" && targetLanguageRaw.trim() ? targetLanguageRaw.trim() : null;
+
   const [project] = await db
     .insert(projects)
-    .values({ name: name.trim(), level: typeof level === "string" && level.trim() ? level.trim() : null })
+    .values({
+      name: name.trim(),
+      level: typeof level === "string" && level.trim() ? level.trim() : null,
+      ownerId: userId,
+    })
     .returning();
 
   await db.insert(sourceUploads).values({
@@ -97,6 +121,9 @@ export async function POST(request: Request) {
       projectId: project.id,
       status: "pending",
       selectedNiceToHaveIds: niceToHaveIds,
+      styleProfileId,
+      qualityMode,
+      targetLanguage,
       customNotes: typeof customNotes === "string" && customNotes.trim() ? customNotes.trim() : null,
       unitLimit,
       requestedBookTypes,

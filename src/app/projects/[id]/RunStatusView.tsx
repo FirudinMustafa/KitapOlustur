@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { STATUS_LABELS, BOOK_TYPE_LABELS } from "@/lib/run-status";
+import { STATUS_LABELS, BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
 
 type ListeningAudioEntry = { blockRef: string; script: string; audioUrl?: string };
 export type GeneratedUnitContent = { unitNumber: number; listeningAudio?: ListeningAudioEntry[] };
@@ -41,6 +41,8 @@ type Run = {
   modelVersion?: string | null;
   tokenUsage?: Record<string, number> | null;
   pendingVariants?: PendingVariants;
+  coverImageUrl?: string | null;
+  pageImageUrls?: Record<number, string> | null;
 };
 
 type OutlineUnit = { number: number; title: string; level: string };
@@ -58,15 +60,66 @@ export type OutlineDocument = {
 };
 type Outline = OutlineDocument | null;
 
+type CoherenceIssue = { unitNumber: number; category: string; description: string; severity: "low" | "medium" | "high" };
+type CoherenceReview = {
+  passed: boolean;
+  difficultyProgressionScore: number;
+  vocabularyRepetitionScore: number;
+  grammarSequencingScore: number;
+  thematicConsistencyScore: number;
+  issues: CoherenceIssue[];
+};
+
+type FeedbackEntry = { id: string; rating: number | null; comment: string | null };
+
 type ProjectData = {
   project: { id: string; name: string; level: string | null };
   upload: { filename: string; bookType: string } | null;
   run: Run | null;
   outline: Outline;
   books: GeneratedBook[];
+  flaggedImageCount?: number;
+  flaggedOriginalityCount?: number;
+  coherenceReview?: CoherenceReview | null;
+  feedback?: FeedbackEntry[];
 };
 
 const TERMINAL_STATUSES = new Set(["done", "failed"]);
+
+const STEP_LABELS: Record<string, string> = {
+  pageMap: "Sayfa haritalama",
+  outline: "Dizelge çıkarma",
+  improvementPlan: "İyileştirme planı",
+  styleBible: "Stil rehberi",
+  unitGeneration: "Ünite üretimi",
+  review: "İnceleme (yapı + dil)",
+  imageReview: "Görsel QA (Faz D)",
+  bookCoherence: "Kitap tutarlılık incelemesi (Faz E)",
+};
+
+// Per-1M-token pricing (verified live via the claude-api skill, not recalled
+// from training data - see ROADMAP.md Faz G5/H6). tokenUsage only stores
+// input+output combined per step (see recordUsage in
+// workflows/book-pipeline.tsx), so an exact dollar figure isn't derivable
+// from it - showing the range bounded by "all input" and "all output"
+// instead of a single falsely-precise number. Imagen/TTS spend isn't
+// token-based and isn't priced here - only generated counts are shown for
+// those.
+//
+// Faz H6: a run's modelVersion now reflects whichever text model actually
+// wrote its bulk unit content (Sonnet 5 for "final", Haiku 4.5 for "draft"),
+// so pricing is picked per-run instead of a single hardcoded rate. This is
+// still an approximation even so: review/QA steps (reviewUnit,
+// reviewLanguageAccuracy, reviewImage, reviewBookCoherence) and one-time
+// extraction/scaffolding steps (pageMap, outline, improvementPlan,
+// styleBible) always bill at Sonnet 5 rates regardless of quality mode (see
+// src/lib/ai/model.ts), so a "draft" run's true cost sits somewhere between
+// the two models' rates, not purely at the cheaper one.
+const MODEL_PRICING_PER_MILLION: Record<string, { input: number; output: number }> = {
+  "anthropic/claude-sonnet-5": { input: 2, output: 10 },
+  "anthropic/claude-haiku-4-5": { input: 1, output: 5 },
+};
+const DEFAULT_PRICING = MODEL_PRICING_PER_MILLION["anthropic/claude-sonnet-5"];
 
 export function RunStatusView({ projectId, initial }: { projectId: string; initial: ProjectData }) {
   const [data, setData] = useState(initial);
@@ -78,6 +131,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const [assembleTypes, setAssembleTypes] = useState<Set<string>>(new Set());
   const [assembling, setAssembling] = useState(false);
   const [selectingVariant, setSelectingVariant] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState<string>("");
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
   useEffect(() => {
     if (!data.run || TERMINAL_STATUSES.has(data.run.status)) return;
@@ -93,7 +149,27 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
     return () => clearInterval(interval);
   }, [projectId, data.run]);
 
-  const { project, upload, run, outline, books } = data;
+  const {
+    project,
+    upload,
+    run,
+    outline,
+    books,
+    flaggedImageCount,
+    flaggedOriginalityCount,
+    coherenceReview,
+    feedback,
+  } = data;
+
+  const tokenBreakdown = Object.entries(run?.tokenUsage ?? {})
+    .filter(([key]) => key !== "total")
+    .sort((a, b) => b[1] - a[1]);
+  const totalTokens = run?.tokenUsage?.total ?? 0;
+  const pricing = (run?.modelVersion && MODEL_PRICING_PER_MILLION[run.modelVersion]) || DEFAULT_PRICING;
+  const estimatedCostMin = (totalTokens / 1_000_000) * pricing.input;
+  const estimatedCostMax = (totalTokens / 1_000_000) * pricing.output;
+  const imageCount = (run?.coverImageUrl ? 1 : 0) + Object.keys(run?.pageImageUrls ?? {}).length;
+  const audioCount = books.reduce((sum, b) => sum + audioTracksFor(b).length, 0);
   const outlineData = outline?.outline?.outline;
   const improvementPlan = outline?.outline?.improvementPlan;
   const unitCount = outlineData?.units?.length;
@@ -174,6 +250,27 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
     }
   }
 
+  async function handleSubmitFeedback() {
+    setSubmittingFeedback(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rating: feedbackRating ? Number(feedbackRating) : null,
+          comment: feedbackComment,
+        }),
+      });
+      if (res.ok) {
+        setFeedbackRating("");
+        setFeedbackComment("");
+        await refresh();
+      }
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-12">
       <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{project.name}</h1>
@@ -212,12 +309,113 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             {run.modelVersion ? ` · ${run.modelVersion}` : ""}
           </p>
         )}
+        {!!flaggedImageCount && (
+          <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+            {flaggedImageCount} görsel otomatik kalite kontrolünden geçemedi — manuel incelemesi önerilir.
+          </p>
+        )}
+        {!!flaggedOriginalityCount && (
+          <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+            {flaggedOriginalityCount} sayfada kaynak kitapla yüksek metin benzerliği tespit edildi — bu bir hukuki
+            değerlendirme değildir, manuel incelemesi önerilir.
+          </p>
+        )}
       </div>
+
+      {coherenceReview && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Kitap Tutarlılık Raporu</h2>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                coherenceReview.passed
+                  ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                  : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+              }`}
+            >
+              {coherenceReview.passed ? "Sorun bulunamadı" : `${coherenceReview.issues.length} not (bilgilendirici)`}
+            </span>
+          </div>
+          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-400 sm:grid-cols-4">
+            <div>
+              <dt>Zorluk ilerlemesi</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{coherenceReview.difficultyProgressionScore}/100</dd>
+            </div>
+            <div>
+              <dt>Kelime tekrarı</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{coherenceReview.vocabularyRepetitionScore}/100</dd>
+            </div>
+            <div>
+              <dt>Gramer sıralaması</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{coherenceReview.grammarSequencingScore}/100</dd>
+            </div>
+            <div>
+              <dt>Tematik tutarlılık</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{coherenceReview.thematicConsistencyScore}/100</dd>
+            </div>
+          </dl>
+          {coherenceReview.issues.length > 0 && (
+            <ul className="mt-3 flex flex-col gap-1 border-t border-zinc-100 pt-3 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+              {coherenceReview.issues.map((issue, i) => (
+                <li key={i}>
+                  <span
+                    className={`mr-1.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                      issue.severity === "high"
+                        ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                        : issue.severity === "medium"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                          : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                    }`}
+                  >
+                    Ünite {issue.unitNumber} · {issue.category}
+                  </span>
+                  {issue.description}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {!!totalTokens && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Maliyet ve Kullanım</h2>
+          <ul className="mt-3 flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+            {tokenBreakdown.map(([key, tokens]) => (
+              <li key={key} className="flex items-center justify-between">
+                <span>{STEP_LABELS[key] ?? key}</span>
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">{tokens.toLocaleString("tr-TR")}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 border-t border-zinc-100 pt-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            Yaklaşık metin ({run?.modelVersion ?? "Sonnet 5"}) maliyeti: ~${estimatedCostMin.toFixed(3)}–$
+            {estimatedCostMax.toFixed(3)}
+            <span className="block text-[10px] text-zinc-400">
+              (girdi/çıktı token&apos;ları ayrı tutulmadığı için kesin değer değil, olası aralık; taslak modda
+              inceleme/dizelge adımları yine de Sonnet 5 üzerinden faturalanır)
+            </span>
+          </p>
+          {(imageCount > 0 || audioCount > 0) && (
+            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+              {imageCount > 0 && `${imageCount} görsel üretildi (Imagen)`}
+              {imageCount > 0 && audioCount > 0 && " · "}
+              {audioCount > 0 && `${audioCount} ses klibi üretildi (TTS)`}
+              <span className="block text-[10px] text-zinc-400">
+                bu ikisinin maliyeti token bazlı değil, buraya dahil edilmedi
+              </span>
+            </p>
+          )}
+        </div>
+      )}
 
       {run?.status === "awaiting_outline_approval" && outlineData && (
         <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
           <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
             Üretime başlamadan önce dizelgeyi onayla
+            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+              ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
+            </span>
           </h2>
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
             {outlineData.bookTitle} · {outlineData.subject}
@@ -271,6 +469,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
           <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
             Ünite {run.pendingVariants.unitNumber} için bir varyant seç
+            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+              ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
+            </span>
           </h2>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {run.pendingVariants.variants.map((v) => {
@@ -348,6 +549,53 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           >
             {assembling ? "Başlatılıyor…" : "Seçilenleri derle"}
           </button>
+        </div>
+      )}
+
+      {run?.status === "done" && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Öğretmen geri bildirimi</h2>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            Bu geri bildirim şu an sadece kaydediliyor; gelecekte üretim kalitesini iyileştirmek için kullanılacak.
+          </p>
+          <div className="mt-3 flex flex-col gap-2">
+            <select
+              value={feedbackRating}
+              onChange={(e) => setFeedbackRating(e.target.value)}
+              className="h-9 w-40 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value="">Puan (opsiyonel)</option>
+              <option value="1">1 - Çok zayıf</option>
+              <option value="2">2 - Zayıf</option>
+              <option value="3">3 - Orta</option>
+              <option value="4">4 - İyi</option>
+              <option value="5">5 - Mükemmel</option>
+            </select>
+            <textarea
+              value={feedbackComment}
+              onChange={(e) => setFeedbackComment(e.target.value)}
+              rows={3}
+              placeholder="Sınıfta nasıl gitti, neyi değiştirmek isterdin?"
+              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <button
+              onClick={handleSubmitFeedback}
+              disabled={submittingFeedback || (!feedbackRating && !feedbackComment.trim())}
+              className="h-9 w-fit rounded-full bg-zinc-950 px-4 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+            >
+              {submittingFeedback ? "Gönderiliyor…" : "Gönder"}
+            </button>
+          </div>
+          {!!feedback?.length && (
+            <ul className="mt-4 flex flex-col gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              {feedback.map((f) => (
+                <li key={f.id} className="text-xs text-zinc-600 dark:text-zinc-400">
+                  {f.rating != null && <span className="font-medium text-zinc-900 dark:text-zinc-100">{f.rating}/5 · </span>}
+                  {f.comment}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

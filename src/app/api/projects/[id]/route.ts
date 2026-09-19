@@ -2,10 +2,24 @@ import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { projects, generationRuns, extractedOutlines, generatedBooks, sourceUploads } from "@/db/schema";
+import {
+  projects,
+  generationRuns,
+  extractedOutlines,
+  generatedBooks,
+  sourceUploads,
+  imageReviews,
+  bookCoherenceReviews,
+  originalityChecks,
+  teacherFeedback,
+} from "@/db/schema";
+import { requireProjectOwner } from "@/lib/auth";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
+
+  const ownerCheck = await requireProjectOwner(id);
+  if (ownerCheck instanceof NextResponse) return ownerCheck;
 
   const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!project) {
@@ -30,5 +44,54 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     ? await db.query.generatedBooks.findMany({ where: eq(generatedBooks.runId, run.id) })
     : [];
 
-  return NextResponse.json({ project, upload, run, outline, books });
+  // Faz D: surface how many illustrations still failed QA after their final
+  // retry attempt, so the project page can flag them for manual review
+  // without needing to render every generated image inline.
+  let flaggedImageCount = 0;
+  if (run) {
+    const reviews = await db.query.imageReviews.findMany({ where: eq(imageReviews.runId, run.id) });
+    const latestByKey = new Map<string, (typeof reviews)[number]>();
+    for (const r of reviews) {
+      const key = `${r.unitNumber ?? "cover"}:${r.pageNumber ?? "cover"}`;
+      const existing = latestByKey.get(key);
+      if (!existing || r.attempt > existing.attempt) latestByKey.set(key, r);
+    }
+    flaggedImageCount = [...latestByKey.values()].filter((r) => !r.passed).length;
+  }
+
+  const coherenceReview = run
+    ? await db.query.bookCoherenceReviews.findFirst({
+        where: eq(bookCoherenceReviews.runId, run.id),
+        orderBy: (t, { desc }) => [desc(t.createdAt)],
+      })
+    : null;
+
+  // Faz F1: count of flagged (unit, page) pairs. Logged across every
+  // generated variant (not just the one eventually selected), so this can
+  // over-count relative to the final assembled book - acceptable for a
+  // soft, informational signal. See ROADMAP.md Faz F.
+  const flaggedOriginalityCount = run
+    ? (await db.query.originalityChecks.findMany({ where: eq(originalityChecks.runId, run.id) })).filter(
+        (r) => r.flagged,
+      ).length
+    : 0;
+
+  const feedback = run
+    ? await db.query.teacherFeedback.findMany({
+        where: eq(teacherFeedback.runId, run.id),
+        orderBy: (t, { desc }) => [desc(t.createdAt)],
+      })
+    : [];
+
+  return NextResponse.json({
+    project,
+    upload,
+    run,
+    outline,
+    books,
+    flaggedImageCount,
+    coherenceReview,
+    flaggedOriginalityCount,
+    feedback,
+  });
 }

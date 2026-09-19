@@ -1,8 +1,19 @@
 import { notFound } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { projects, sourceUploads, generationRuns, extractedOutlines, generatedBooks } from "@/db/schema";
+import {
+  projects,
+  sourceUploads,
+  generationRuns,
+  extractedOutlines,
+  generatedBooks,
+  imageReviews,
+  bookCoherenceReviews,
+  originalityChecks,
+  teacherFeedback,
+} from "@/db/schema";
 import { RunStatusView, type OutlineDocument, type GeneratedUnitContent, type PendingVariants } from "./RunStatusView";
 
 export const dynamic = "force-dynamic";
@@ -10,8 +21,12 @@ export const dynamic = "force-dynamic";
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
+  // Faz G3: 404 (not a 403) for "exists but isn't yours" - same reasoning as
+  // requireProjectOwner in src/lib/auth.ts, kept in sync manually since this
+  // is a server component rather than an API route.
+  const { userId } = await auth();
   const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
-  if (!project) notFound();
+  if (!project || !userId || project.ownerId !== userId) notFound();
 
   const upload = await db.query.sourceUploads.findFirst({
     where: eq(sourceUploads.projectId, id),
@@ -31,6 +46,40 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     ? await db.query.generatedBooks.findMany({ where: eq(generatedBooks.runId, run.id) })
     : [];
 
+  // Faz D: same "latest attempt per image, count still-failing" logic as the
+  // /api/projects/[id] route, kept in sync manually (see ROADMAP.md Faz D).
+  let flaggedImageCount = 0;
+  if (run) {
+    const reviews = await db.query.imageReviews.findMany({ where: eq(imageReviews.runId, run.id) });
+    const latestByKey = new Map<string, (typeof reviews)[number]>();
+    for (const r of reviews) {
+      const key = `${r.unitNumber ?? "cover"}:${r.pageNumber ?? "cover"}`;
+      const existing = latestByKey.get(key);
+      if (!existing || r.attempt > existing.attempt) latestByKey.set(key, r);
+    }
+    flaggedImageCount = [...latestByKey.values()].filter((r) => !r.passed).length;
+  }
+
+  const coherenceReview = run
+    ? await db.query.bookCoherenceReviews.findFirst({
+        where: eq(bookCoherenceReviews.runId, run.id),
+        orderBy: (t, { desc }) => [desc(t.createdAt)],
+      })
+    : null;
+
+  const flaggedOriginalityCount = run
+    ? (await db.query.originalityChecks.findMany({ where: eq(originalityChecks.runId, run.id) })).filter(
+        (r) => r.flagged,
+      ).length
+    : 0;
+
+  const feedback = run
+    ? await db.query.teacherFeedback.findMany({
+        where: eq(teacherFeedback.runId, run.id),
+        orderBy: (t, { desc }) => [desc(t.createdAt)],
+      })
+    : [];
+
   return (
     <RunStatusView
       projectId={project.id}
@@ -47,9 +96,24 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               modelVersion: run.modelVersion,
               tokenUsage: run.tokenUsage,
               pendingVariants: run.pendingVariants as PendingVariants,
+              coverImageUrl: run.coverImageUrl,
+              pageImageUrls: run.pageImageUrls,
             }
           : null,
         outline: outline ? { outline: outline.outline as OutlineDocument["outline"] } : null,
+        flaggedImageCount,
+        flaggedOriginalityCount,
+        feedback: feedback.map((f) => ({ id: f.id, rating: f.rating, comment: f.comment })),
+        coherenceReview: coherenceReview
+          ? {
+              passed: coherenceReview.passed,
+              difficultyProgressionScore: coherenceReview.difficultyProgressionScore,
+              vocabularyRepetitionScore: coherenceReview.vocabularyRepetitionScore,
+              grammarSequencingScore: coherenceReview.grammarSequencingScore,
+              thematicConsistencyScore: coherenceReview.thematicConsistencyScore,
+              issues: coherenceReview.issues,
+            }
+          : null,
         books: books.map((b) => ({
           id: b.id,
           bookType: b.bookType,

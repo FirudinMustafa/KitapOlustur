@@ -28,6 +28,12 @@ export const sourcePageSchema = z.object({
     .nullable()
     .describe("Which unit this page belongs to, or null if it isn't part of a unit (cover, contents, back cover, ...)"),
   summary: z.string().describe("What is on this page: text content, layout, purpose"),
+  sourceText: z
+    .string()
+    .optional()
+    .describe(
+      "The page's substantive running text (headings, body copy, exercise prompts, dialogue) transcribed as closely as practical - not a paraphrase. Used later to check the generated book isn't reusing the source's actual wording. Omit for pages with no real body text (e.g. a mostly-blank divider).",
+    ),
   hasImage: z.boolean(),
   imageDescription: z
     .string()
@@ -188,3 +194,40 @@ export const unitReviewSchema = z.object({
   issues: z.array(z.string()),
 });
 export type UnitReview = z.infer<typeof unitReviewSchema>;
+
+// ---- Image QA (Faz D) ----
+// Checks a generated illustration against the prompt that produced it and the
+// page it will appear on, so bad or mismatched art can be retried or flagged
+// for manual review instead of silently shipping in the assembled book.
+export const imageReviewSchema = z.object({
+  passed: z.boolean(),
+  issues: z.array(z.string()),
+  suggestedPromptFix: z
+    .string()
+    .optional()
+    .describe("If passed=false, a revised image prompt that addresses the issues, for a retry attempt"),
+});
+export type ImageReview = z.infer<typeof imageReviewSchema>;
+
+// ---- Book-wide coherence review (Faz E) ----
+// Runs once, after every unit has been generated, to catch cross-unit
+// pedagogical problems that a per-unit reviewUnit call structurally cannot
+// see: difficulty progression, vocabulary repetition/spacing, grammar
+// sequencing, and thematic consistency across the whole book.
+export const coherenceIssueSchema = z.object({
+  unitNumber: z.number(),
+  category: z.enum(["difficulty", "vocabulary", "grammar", "theme"]),
+  description: z.string(),
+  severity: z.enum(["low", "medium", "high"]),
+});
+export type CoherenceIssue = z.infer<typeof coherenceIssueSchema>;
+
+export const bookCoherenceReviewSchema = z.object({
+  passed: z.boolean(),
+  difficultyProgressionScore: z.number().min(0).max(100),
+  vocabularyRepetitionScore: z.number().min(0).max(100),
+  grammarSequencingScore: z.number().min(0).max(100),
+  thematicConsistencyScore: z.number().min(0).max(100),
+  issues: z.array(coherenceIssueSchema),
+});
+export type BookCoherenceReview = z.infer<typeof bookCoherenceReviewSchema>;

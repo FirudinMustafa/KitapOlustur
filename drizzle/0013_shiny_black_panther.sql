@@ -1,0 +1,1 @@
+ALTER TABLE "generation_runs" ADD COLUMN "target_language" text;

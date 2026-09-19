@@ -5,9 +5,13 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { sourceUploads, generationRuns } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
+import { requireProjectOwner } from "@/lib/auth";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
+
+  const ownerCheck = await requireProjectOwner(projectId);
+  if (ownerCheck instanceof NextResponse) return ownerCheck;
 
   const upload = await db.query.sourceUploads.findFirst({
     where: eq(sourceUploads.projectId, projectId),
@@ -39,6 +43,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         projectId,
         status: "pending",
         selectedNiceToHaveIds: previousRun.selectedNiceToHaveIds,
+        styleProfileId: previousRun.styleProfileId,
+        qualityMode: previousRun.qualityMode,
+        targetLanguage: previousRun.targetLanguage,
         customNotes: previousRun.customNotes,
         unitLimit: previousRun.unitLimit,
         requestedBookTypes: bookTypes,
@@ -65,6 +72,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       projectId,
       status: "pending",
       selectedNiceToHaveIds: previousRun?.selectedNiceToHaveIds ?? [],
+      styleProfileId: previousRun?.styleProfileId ?? null,
+      qualityMode: previousRun?.qualityMode ?? "final",
+      targetLanguage: previousRun?.targetLanguage ?? null,
       customNotes: previousRun?.customNotes ?? null,
       unitLimit,
       requestedBookTypes: previousRun?.requestedBookTypes ?? ["student_book", "workbook"],

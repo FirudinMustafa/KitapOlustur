@@ -1,14 +1,26 @@
 import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { projects, generationRuns } from "@/db/schema";
-import { STATUS_LABELS } from "@/lib/run-status";
+import { STATUS_LABELS, AWAITING_STATUSES, formatElapsedTurkish } from "@/lib/run-status";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
-  const allProjects = await db.query.projects.findMany({ orderBy: [desc(projects.createdAt)] });
+  // Faz G3: middleware already requires sign-in for this route, so userId is
+  // always set here - the redirect() path only guards against calling this
+  // page directly in a context middleware didn't run (defense in depth).
+  const { userId } = await auth();
+  if (!userId) {
+    return null;
+  }
+
+  const allProjects = await db.query.projects.findMany({
+    where: eq(projects.ownerId, userId),
+    orderBy: [desc(projects.createdAt)],
+  });
 
   const withRuns = await Promise.all(
     allProjects.map(async (project) => {
@@ -50,17 +62,26 @@ export default async function ProjectsPage() {
                   {new Date(project.createdAt).toLocaleString("tr-TR")}
                 </p>
               </div>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  latestRun?.status === "done"
-                    ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                    : latestRun?.status === "failed"
-                      ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-                      : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                }`}
-              >
-                {latestRun ? STATUS_LABELS[latestRun.status] ?? latestRun.status : "—"}
-              </span>
+              <div className="flex flex-col items-end gap-1">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${
+                    latestRun?.status === "done"
+                      ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                      : latestRun?.status === "failed"
+                        ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                        : latestRun && AWAITING_STATUSES.has(latestRun.status)
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                          : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                  }`}
+                >
+                  {latestRun ? STATUS_LABELS[latestRun.status] ?? latestRun.status : "—"}
+                </span>
+                {latestRun && AWAITING_STATUSES.has(latestRun.status) && (
+                  <span className="text-[10px] text-amber-700 dark:text-amber-400">
+                    {formatElapsedTurkish(new Date(latestRun.updatedAt))} bekliyor
+                  </span>
+                )}
+              </div>
             </Link>
           </li>
         ))}

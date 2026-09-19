@@ -41,8 +41,10 @@ yarn-error.log*
 next-env.d.ts
 /.swc
 
-.vercel
-.env*
-
 # sample/reference source PDFs (copyrighted material, not needed at runtime)
 *.pdf
+
+# local agent/tooling artifacts (per-machine, not project source)
+/.agents
+/.claude
+skills-lock.json

@@ -1,3 +1,36 @@
+// Faz H5: named style presets for buildStyleBible (workflows/book-pipeline.tsx).
+// promptGuidance is appended verbatim into that step's prompt - keep it as
+// direct, actionable instruction to a series editor, not marketing copy.
+export const STYLE_PROFILE_DEFAULTS = [
+  {
+    key: "neutral",
+    name: "Nötr / genel",
+    description: "Belirli bir yayınevi stilini taklit etmeyen, dengeli ve genel bir ders kitabı üslubu.",
+    promptGuidance:
+      "Use a balanced, general coursebook style: clear explanations, a mix of dialogue and exposition, moderate use of recurring characters. Do not lean toward any specific publisher's house style.",
+    sortOrder: 1,
+    isDefault: true,
+  },
+  {
+    key: "cambridge_style",
+    name: "Cambridge-tarzı",
+    description: "Görev-bazlı (task-based), minimal metin, işlevsel diyaloglara odaklı, sık pratik döngüleri.",
+    promptGuidance:
+      "Adopt a Cambridge-style approach: task-based learning with minimal explanatory text, short functional dialogues built around real communicative goals, frequent short practice cycles (present -> practice -> produce) rather than long expository passages. Keep recurring characters purely functional (a consistent cast used to model tasks), not a narrative focus in themselves.",
+    sortOrder: 2,
+    isDefault: false,
+  },
+  {
+    key: "oxford_style",
+    name: "Oxford-tarzı",
+    description: "Bağlam-zengin, hikaye-tabanlı; ünitelerde tekrar eden karakterler ve süregelen bir anlatı çizgisi.",
+    promptGuidance:
+      "Adopt an Oxford-style approach: context-rich, narrative-driven content with a recurring cast of characters and a light ongoing storyline that continues across units, richer scene-setting before exercises, and vocabulary introduced through story context rather than isolated lists where possible.",
+    sortOrder: 3,
+    isDefault: false,
+  },
+];
+
 export const NICE_TO_HAVE_DEFAULTS = [
   {
     key: "cefr_alignment",

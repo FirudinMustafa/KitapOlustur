@@ -4,9 +4,13 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
+import { requireProjectOwner } from "@/lib/auth";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
+
+  const ownerCheck = await requireProjectOwner(projectId);
+  if (ownerCheck instanceof NextResponse) return ownerCheck;
 
   const run = await db.query.generationRuns.findFirst({
     where: eq(generationRuns.projectId, projectId),

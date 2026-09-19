@@ -12,6 +12,14 @@ type NiceToHaveItem = {
   isDefaultSelected: boolean;
 };
 
+type StyleProfile = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  isDefault: boolean;
+};
+
 const OUTPUT_BOOK_TYPES: { value: string; label: string }[] = [
   { value: "student_book", label: "Student Book" },
   { value: "workbook", label: "Workbook" },
@@ -24,11 +32,15 @@ export default function NewProjectPage() {
 
   const [items, setItems] = useState<NiceToHaveItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [styleProfiles, setStyleProfiles] = useState<StyleProfile[]>([]);
+  const [styleProfileId, setStyleProfileId] = useState<string>("");
   const [name, setName] = useState("");
   const [level, setLevel] = useState("");
   const [bookType, setBookType] = useState<"student_book" | "workbook">("student_book");
   const [outputTypes, setOutputTypes] = useState<Set<string>>(new Set(["student_book", "workbook"]));
   const [variantCount, setVariantCount] = useState("1");
+  const [qualityMode, setQualityMode] = useState<"draft" | "final">("final");
+  const [targetLanguage, setTargetLanguage] = useState("");
   const [customNotes, setCustomNotes] = useState("");
   const [unitLimit, setUnitLimit] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -43,6 +55,14 @@ export default function NewProjectPage() {
         setSelected(new Set(data.items.filter((i) => i.isDefaultSelected).map((i) => i.id)));
       })
       .catch(() => setError("Nice-to-have listesi yüklenemedi."));
+
+    fetch("/api/style-profiles")
+      .then((res) => res.json())
+      .then((data: { items: StyleProfile[] }) => {
+        setStyleProfiles(data.items);
+        setStyleProfileId(data.items.find((p) => p.isDefault)?.id ?? data.items[0]?.id ?? "");
+      })
+      .catch(() => setError("Stil profili listesi yüklenemedi."));
   }, []);
 
   function toggleItem(id: string) {
@@ -97,6 +117,9 @@ export default function NewProjectPage() {
           bookType,
           customNotes,
           niceToHaveIds: Array.from(selected),
+          styleProfileId: styleProfileId || null,
+          qualityMode,
+          targetLanguage: targetLanguage.trim() || null,
           requestedBookTypes: Array.from(outputTypes),
           variantCount: Number(variantCount) || 1,
           unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
@@ -159,6 +182,20 @@ export default function NewProjectPage() {
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Hedef dil (opsiyonel)</label>
+          <input
+            value={targetLanguage}
+            onChange={(e) => setTargetLanguage(e.target.value)}
+            placeholder="Boş bırakılırsa kaynak kitabın dili kullanılır. Örn. Almanca, German, de"
+            className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <span className="text-xs text-zinc-500">
+            Belirtilirse kitap, kaynak PDF farklı bir dilde olsa bile bu dilde üretilir (çeviri değil, o dilde
+            yeniden yazım).
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Kaynak PDF</label>
           <input
             type="file"
@@ -181,6 +218,28 @@ export default function NewProjectPage() {
                   onChange={() => toggleOutputType(type.value)}
                 />
                 {type.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Stil profili</legend>
+          <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            {styleProfiles.length === 0 && <p className="text-sm text-zinc-500">Yükleniyor…</p>}
+            {styleProfiles.map((profile) => (
+              <label key={profile.id} className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="styleProfile"
+                  checked={styleProfileId === profile.id}
+                  onChange={() => setStyleProfileId(profile.id)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-zinc-900 dark:text-zinc-100">{profile.name}</span>
+                  <span className="block text-xs text-zinc-500 dark:text-zinc-400">{profile.description}</span>
+                </span>
               </label>
             ))}
           </div>
@@ -223,6 +282,43 @@ export default function NewProjectPage() {
             className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
         </div>
+
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Üretim kalitesi</legend>
+          <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="qualityMode"
+                checked={qualityMode === "final"}
+                onChange={() => setQualityMode("final")}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">Final (Sonnet 5)</span>
+                <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                  Tam kalite, basılabilir sonuç için. Varsayılan.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="qualityMode"
+                checked={qualityMode === "draft"}
+                onChange={() => setQualityMode("draft")}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">Taslak (Haiku 4.5, daha ucuz)</span>
+                <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                  Ünite içeriği daha ucuz bir modelle yazılır — yapıyı hızlıca önizlemek için. Kalite/dil
+                  incelemesi (review) her zaman tam kalite modeliyle yapılır.
+                </span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
