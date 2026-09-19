@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { projects } from "@/db/schema";
+import { projects, storyProjects } from "@/db/schema";
 
 // Faz G3: every project-scoped API route calls this before reading or
 // mutating anything. Returns the signed-in user's id on success, or a
@@ -22,6 +22,23 @@ export async function requireProjectOwner(projectId: string): Promise<string | N
   const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
   if (!project || project.ownerId !== userId) {
     return NextResponse.json({ error: "Proje bulunamadı" }, { status: 404 });
+  }
+
+  return userId;
+}
+
+// Hikaye Stüdyosu equivalent of requireProjectOwner, for the separate
+// storyProjects table - see that function's doc comment for the 404-not-403
+// rationale, which applies identically here.
+export async function requireStoryProjectOwner(storyProjectId: string): Promise<string | NextResponse> {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });
+  }
+
+  const storyProject = await db.query.storyProjects.findFirst({ where: eq(storyProjects.id, storyProjectId) });
+  if (!storyProject || storyProject.ownerId !== userId) {
+    return NextResponse.json({ error: "Hikaye bulunamadı" }, { status: 404 });
   }
 
   return userId;

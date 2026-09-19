@@ -252,3 +252,51 @@ export const generatedBooks = pgTable("generated_books", {
   pdfBlobUrl: text("pdf_blob_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Hikaye Stüdyosu: free-form, chat-driven content studio - deliberately
+// separate from projects/generationRuns (the fixed-stage, PDF-rewrite
+// pipeline above). A story project has no source PDF and no fixed
+// stage sequence; it's a conversation the user can direct however they
+// like (write a story, ask for an image, ask for narration, in any
+// order, or just one of those in isolation). See ROADMAP.md "Hikaye
+// Stüdyosu".
+export const storyMessageRoleEnum = pgEnum("story_message_role", ["user", "assistant"]);
+export const storyArtifactTypeEnum = pgEnum("story_artifact_type", ["image", "audio", "video"]);
+export const storyArtifactStatusEnum = pgEnum("story_artifact_status", ["done", "failed"]);
+
+export const storyProjects = pgTable("story_projects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id"),
+  title: text("title").notNull(),
+  qualityMode: qualityModeEnum("quality_mode").notNull().default("final"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const storyMessages = pgTable("story_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storyProjectId: uuid("story_project_id")
+    .notNull()
+    .references(() => storyProjects.id, { onDelete: "cascade" }),
+  role: storyMessageRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const storyArtifacts = pgTable("story_artifacts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storyProjectId: uuid("story_project_id")
+    .notNull()
+    .references(() => storyProjects.id, { onDelete: "cascade" }),
+  messageId: uuid("message_id").references(() => storyMessages.id, { onDelete: "set null" }),
+  // "video" is a reserved, never-populated value until Higgsfield is
+  // provisioned (see ROADMAP.md "FAZ Panel/Çizelge" Faz 2) - kept in the
+  // enum now so no migration is needed when that lands.
+  type: storyArtifactTypeEnum("type").notNull(),
+  url: text("url"),
+  prompt: text("prompt").notNull(),
+  model: text("model").notNull(),
+  status: storyArtifactStatusEnum("status").notNull(),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

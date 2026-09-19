@@ -14,6 +14,7 @@
 | G5 — Maliyet/kullanım dashboard'u | ✅ Tamamlandı (2026-09-19) | Aşağıda "G5 — Tamamlanma Notu" |
 | G6 — Gözlemlenebilirlik | 🟡 Kısmen tamamlandı — daraltılmış kapsam (2026-09-19) | Aşağıda "G6 — Tamamlanma Notu" |
 | Faz H — Genişleme fikirleri | 🟡 H1 + H4 + H5 + H6 tamamlandı (2026-09-19), H2/H3 başlanmadı | Aşağıda "H1"/"H4"/"H5"/"H6 — Tamamlanma Notu" |
+| Hikaye Stüdyosu — serbest, chat-tabanlı içerik paneli | 🟡 Kod tamamlandı, canlı test bir hesap kısıtlamasıyla bloke (2026-09-19) | Aşağıda "Hikaye Stüdyosu — Tamamlanma Notu" |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -536,3 +537,21 @@ Bu doküman yazıldıktan sonra yeniden okunup şu eksiklikler tespit edilip yuk
 - **Bağımlılık grafiği** ilk taslakta yalnızca düz liste olarak vardı, okunabilirlik için ASCII diyagrama çevrildi.
 
 Eksik kalan ve kasıtlı olarak dışarıda bırakılan konular (kapsam dışı, ayrı bir tartışma gerektirir): fiyatlandırma/iş modeli, spesifik LMS/SCORM format detayları, spesifik auth sağlayıcısı seçimi (Clerk/Auth0/vb.), içerik moderasyonu için üçüncü parti bir servis kullanılıp kullanılmayacağı.
+
+---
+
+## Hikaye Stüdyosu — Serbest, Chat-Tabanlı İçerik Üretim Paneli (2026-09-19)
+
+Mevcut PDF-tabanlı kitap üretim sihirbazından tamamen ayrı, yeni bir özellik: ChatGPT benzeri bir panelde kullanıcı serbestçe hikaye/metin yazdırır, sohbetten görsel ve sesli anlatım isteyebilir (tek başına da, hikayeyle birlikte de) — birden fazla hikaye projesi tutan bir kütüphane ile. Detaylı brainstorming ve mimari kararlar `C:\Users\DELL\.claude\plans\wobbly-questing-nest.md` dosyasında.
+
+### Tamamlanma Notu (2026-09-19)
+
+- **Şema:** `storyProjects`/`storyMessages`/`storyArtifacts` (3 yeni tablo, `src/db/schema.ts`) — mevcut "bir üst + FK'li çocuk tablolar" deseniyle, ama `generationRuns`'ın sabit aşama enum'undan tamamen bağımsız. `storyArtifacts.type` şimdiden `video`'yu enum'da barındırıyor (Higgsfield geldiğinde migration gerekmesin diye) ama hiç doldurulmuyor. Migration `drizzle/0015_tranquil_puma.sql` — kullanıcı onayıyla uygulandı.
+- **Backend:** `src/lib/ai/studio-generation.ts` (yeni) — `generateStoryImage`/`generateStoryAudio`, `workflows/book-pipeline.tsx`'teki Blob `put()` deseniyle ama QA retry döngüsü olmadan (kullanıcı-yönlendirmeli serbest içerik, ders kitabı gibi sabit kalite garantisi gerekmiyor). `src/app/api/studio/projects/**` altında 3 route: liste/oluştur, proje+geçmiş detay, ve asıl sohbet turu (`messages/route.ts`) — bu sonuncusu `generateText` + AI SDK v6'nın native `tool()` mekanizmasıyla modelin kendi kararıyla `generateImage`/`generateAudio` araçlarını çağırmasını sağlıyor (`stopWhen: stepCountIs(5)` ile tool-call sonrası modelin son bir metin cevabı üretmesine izin veriliyor). UI'daki "Bunun görselini/sesini üret" butonları aynı route'a bir `action` alanıyla gelip tool-calling'i atlayıp doğrudan `studio-generation.ts` fonksiyonlarını çağırıyor — iki yol da aynı koda çıkıyor, mantık tekrarlanmıyor. Vercel Workflow (`"use workflow"/"use step"`) kullanılmadı — bir sohbet turu tek kısa istek, normal Fluid Compute route handler'a yetiyor.
+- **Frontend:** `/studio` (kütüphane listesi, `src/app/projects/page.tsx` ile aynı desen) + `/studio/[id]` (sohbet + galeri çalışma alanı: mesaj balonları, hızlı tür/yaş/ton/dil kontrolleri, hem inline hem yan panelde artifact galerisi). `src/app/layout.tsx` header'ına "Hikaye Stüdyosu" nav linki eklendi.
+- **Bilinçli olarak MVP dışı bırakıldı:** Video üretimi (Higgsfield hesabı/API key'i hâlâ yok — bkz. "FAZ Panel/Çizelge" Faz 2 notu). Gerçek token-by-token chat streaming — `@ai-sdk/react`'in (useChat hook'u) **yayınlanmış her sürümünün** (4.0.0'dan 4.0.110'a) `ai@^7.x` gerektirdiği npm üzerinden doğrulandı; kurulu `ai@6.0.230` ile uyumsuz, ElevenLabs'i bloke eden aynı v6→v7 sınırı. Kullanıcı zaten gerçek streaming'i öncelik olarak belirtmedi, bu yüzden MVP'de her sohbet turu tek istek/cevap (mevcut kod tabanındaki her AI çağrısı zaten böyle).
+- **Doğrulama:** `tsc`/`eslint`/`vitest` (44 test)/`next build` temiz. Migration uygulandı.
+- **Canlı test (Chrome, yerel dev server) — gerçek bir hesap kısıtlamasıyla karşılaşıldı:** `/studio` → "Yeni Hikaye" → sohbet kutusuna kısa bir hikaye isteği yazıldı → **Vercel AI Gateway 403 döndürdü: "Free tier users do not have access to this model"**. Bağımsız bir script ile hem `anthropic/claude-sonnet-5` hem `anthropic/claude-haiku-4-5` doğrudan test edildi, ikisi de aynı hatayı verdi — yani bu Hikaye Stüdyosu'na özgü bir kod hatası değil, **hesabın Vercel AI Gateway erişiminin şu an "free tier" kısıtlamasına takıldığını gösteren bir bulgu**. Aynı `BOOK_PIPELINE_MODEL` sabiti mevcut PDF pipeline'ında da kullanıldığı için, bu kısıtlama muhtemelen o pipeline'ı da etkiliyor olabilir (doğrudan test edilmedi). Bu arada `messages/route.ts`'teki hata yönetimi de düzeltildi: `generateText` hatası öncesinde yakalanmadığı için Next.js'in genel HTML hata sayfası dönüyordu ve frontend bunu ayrıştıramayınca kullanıcıya yanıltıcı bir "ağ hatası" gösteriyordu — artık `try/catch` ile temiz bir JSON hata mesajı dönüyor. **Gerçek düzeltme (Vercel hesabına AI Gateway ödemeli erişim/kredi eklenmesi) kullanıcı aksiyonu gerektiriyor**, kapsam dışı bırakıldı.
+- Test sırasında oluşan geçici "Yeni Hikaye" projesi ve mesajları temizlendi (DB'de kalıcı test verisi bırakılmadı).
+
+**Yapılmadı / bilinçli olarak ertelendi:** Video (Higgsfield), gerçek token-streaming chat (her ikisi de yukarıda gerekçelendirildi). Sohbet içi kalite modu değiştirme (şu an sadece proje oluşturulurken sabitleniyor, `qualityMode` proje bazlı).

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider, Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -32,13 +33,25 @@ export default function RootLayout({
       >
         <body className="min-h-full flex flex-col">
           <TooltipProvider>
-            <header className="flex items-center justify-end gap-3 border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
-              <Show when="signed-out">
-                <SignInButton mode="modal" />
-              </Show>
+            <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
               <Show when="signed-in">
-                <UserButton />
+                <nav className="flex items-center gap-4 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                  <Link href="/projects" className="hover:text-zinc-950 dark:hover:text-zinc-50">
+                    Kitap Projeleri
+                  </Link>
+                  <Link href="/studio" className="hover:text-zinc-950 dark:hover:text-zinc-50">
+                    Hikaye Stüdyosu
+                  </Link>
+                </nav>
               </Show>
+              <div className="flex items-center gap-3">
+                <Show when="signed-out">
+                  <SignInButton mode="modal" />
+                </Show>
+                <Show when="signed-in">
+                  <UserButton />
+                </Show>
+              </div>
             </header>
             {children}
           </TooltipProvider>
