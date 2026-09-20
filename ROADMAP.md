@@ -22,6 +22,7 @@
 | İçerik moderasyonu (üretilen metin için güvenlik kontrolü) | ✅ Tamamlandı (2026-09-20) | Aşağıda "İçerik Moderasyonu — Tamamlanma Notu" |
 | Müfredat/seviye hizalaması (kullanıcının belirttiği seviye vs. kaynak materyalin gerçek seviyesi) | ✅ Tamamlandı (2026-09-20) | Aşağıda "Müfredat Hizalaması — Tamamlanma Notu" |
 | Versiyon/diff (editöryel geri bildirim öncesi/sonrası karşılaştırma) | ✅ Tamamlandı, canlı doğrulandı (2026-09-20) | Aşağıda "Versiyonlama/Diff — Tamamlanma Notu" |
+| Bütçe kontrolü — ön maliyet tahmini | 🟡 Sadece ön tahmin (2026-09-20) | Aşağıda "Bütçe Kontrolü — Tamamlanma Notu"; otomatik durdurma bilinçli olarak yapılmadı |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -828,3 +829,14 @@ Genel değerlendirmenin "bir kitabın v1 ile v2'si karşılaştırılamıyor, 'A
 - **UI, gerçek run state enjekte edilerek Chrome'da canlı doğrulandı**: 2 ünite enjekte edildi, sadece Ünite 1'e bir `previousVersions` girişi verildi — Ünite 1'de link göründü, Ünite 2'de görünmedi (doğru davranış), linke tıklanınca eski/yeni içerik doğru şekilde kırmızı/yeşil kartlarda render edildi, konsol hatasız.
 
 **Yapılmadı / bilinçli olarak kapsam dışı:** Tam bir sürüm geçmişi (v1, v2, v3... hepsini saklayıp gezinme) yok - sadece bir önceki tur saklanıyor, round ilerledikçe daha eski sürümler kaybolur (ama `unitFeedback` tablosu her turun yorumunu kalıcı olarak tutuyor, sadece içeriğin kendisini değil). Kelime/karakter seviyesinde gerçek bir diff-highlighting yok, sadece yan yana önce/sonra. Bu versiyon takibi sadece içerik-onay döngüsüne özel - final derlenmiş kitapların (PDF/EPUB/DOCX) kendi aralarında v1/v2 karşılaştırması hâlâ yok (örn. "assemble-only" ile yeniden derlenen bir kitabın öncekiyle farkını gösteren bir özellik yok).
+
+## Bütçe Kontrolü — Tamamlanma Notu (2026-09-20, sadece ön tahmin)
+
+Genel değerlendirmenin "bütçe kontrolü sadece geriye dönük... run başlamadan önce maliyet tahmini VEYA bir bütçe aşılınca otomatik durdurma yok" maddesine karşı. Bu ikisinden **sadece birincisi** (ön tahmin) bu turda yapıldı — bilinçli bir kapsam kararı, aşağıda gerekçesiyle.
+
+- `RunStatusView.tsx`: dizelge-onay ekranına, hiçbir backend değişikliği gerektirmeyen saf bir client-side hesaplama eklendi — `ESTIMATED_TOKENS_PER_UNIT` (30.000, bu pipeline'da bir ünitenin tipik büyüklüğüne göre kabaca tahmin edilmiş sabit bir değer, gerçek geçmiş verilerden ölçülmedi) × ünite sayısı × zaten var olan `MODEL_PRICING_PER_MILLION`/`pricing` (mevcut post-hoc maliyet gösteriminde kullanılanla birebir aynı) = tahmini aralık. `run.modelVersion` zaten `fetchRunContext` içinde draft/final moduna göre doğru modele ayarlanmış oluyor (dizelge onayından önce), o yüzden tahmin doğru fiyatlandırmayı otomatik kullanıyor.
+- UI kopyası dürüst: "kaba bir tahmin... görsel/ses dahil değil" notu, mevcut post-hoc maliyet gösteriminin "kesin değer değil, olası aralık" diliyle tutarlı.
+- Doğrulama: `tsc`/`eslint`/`vitest` (71 test)/`next build` temiz. Migration yok, yeni bir backend step yok (workflow step sayısı 35'te sabit) — tamamen mevcut, zaten client'a gönderilen veriden hesaplanıyor.
+- **UI, gerçek run state enjekte edilerek Chrome'da canlı doğrulandı**: 2 üniteli bir dizelge ile "$0.12–$0.60" aralığı doğru render edildi, konsol hatasız.
+
+**Bilinçli olarak yapılmayan (otomatik durdurma):** Bir bütçe aşılınca üretimi otomatik durdurmak, `recordUsage`'ın (workflows/book-pipeline.tsx) şu anki tasarımını değiştirmeyi gerektirirdi — şu an sadece toplam token sayısını (`input+output` birleşik, model bazında ayrılmamış) biriktiriyor, gerçek zamanlı $ maliyeti hesaplamıyor. Bunun üstüne, üretim döngüsü ortasında (bir ünite yarı üretilmişken) bütçe kontrolü eklemek, bu oturumda insan-onaylı üretim hattı için özenle tasarlanmış "temiz durma noktaları" (içerik onayı, görsel inceleme, nihai onay - hepsi bir ünitenin/aşamanın TAMAMLANDIĞI noktalarda duruyor) felsefesiyle çelişen, yarım kalmış bir ünite durumu yaratma riski taşırdı. Bu, orantılı bir "şimdi yap" işi değil, ayrı ve dikkatli tasarlanması gereken bir faz - roadmap'in kendi "gate yoğunluğu riske göre olmalı" ilkesiyle aynı gerekçeyle ertelendi.

@@ -178,6 +178,14 @@ const MODEL_PRICING_PER_MILLION: Record<string, { input: number; output: number 
 };
 const DEFAULT_PRICING = MODEL_PRICING_PER_MILLION["anthropic/claude-sonnet-5"];
 
+// Faz "Bütçe kontrolü - ön tahmin" (2026-09-20, ROADMAP.md): a rough,
+// honestly-labeled estimate for the outline-approval screen, computed from
+// typical observed unit sizes in this pipeline (mirrored + complementary +
+// optional teacher/test sides + 4 review calls per unit) - not measured
+// live per-run, so it's presented as a wide range, same spirit as the
+// existing post-hoc cost estimate's "yaklaşık, kesin değer değil" framing.
+const ESTIMATED_TOKENS_PER_UNIT = 30_000;
+
 export function RunStatusView({ projectId, initial }: { projectId: string; initial: ProjectData }) {
   const [data, setData] = useState(initial);
   const [showMarkdown, setShowMarkdown] = useState<Record<string, boolean>>({});
@@ -238,6 +246,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const outlineData = outline?.outline?.outline;
   const improvementPlan = outline?.outline?.improvementPlan;
   const unitCount = outlineData?.units?.length;
+  const estimatedPreRunCostMin = unitCount ? ((unitCount * ESTIMATED_TOKENS_PER_UNIT) / 1_000_000) * pricing.input : 0;
+  const estimatedPreRunCostMax = unitCount ? ((unitCount * ESTIMATED_TOKENS_PER_UNIT) / 1_000_000) * pricing.output : 0;
   const pendingContentApproval = run?.pendingContentApproval?.units;
   const previousUnitVersions = run?.pendingContentApproval?.previousVersions;
   const pendingImageReview = run?.pendingImageReview;
@@ -568,6 +578,16 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
             {outlineData.bookTitle} · {outlineData.subject}
           </p>
+          {!!unitCount && (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              Tahmini metin üretim maliyeti ({unitCount} ünite): ~${estimatedPreRunCostMin.toFixed(2)}–$
+              {estimatedPreRunCostMax.toFixed(2)}
+              <span className="block text-[10px] text-amber-600 dark:text-amber-500">
+                kaba bir tahmin - gerçek maliyet üretim bitince &quot;Maliyet ve Kullanım&quot; bölümünde görünür; görsel/ses
+                dahil değil
+              </span>
+            </p>
+          )}
           {outlineData.declaredLevelAlignment && !outlineData.declaredLevelAlignment.matches && (
             <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
               <p className="font-semibold">Seviye uyuşmazlığı: proje oluştururken belirttiğin seviye ile kaynak materyalin gerçek seviyesi eşleşmiyor olabilir.</p>
