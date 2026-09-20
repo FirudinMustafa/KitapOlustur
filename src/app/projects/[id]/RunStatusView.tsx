@@ -1004,6 +1004,15 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                   >
                     LMS paketi indir
                   </a>
+                  <a
+                    href={`/api/projects/${projectId}/export/docx?bookType=${book.bookType}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Word/Google Docs'ta düzenlenebilir .docx"
+                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    DOCX indir
+                  </a>
                   {book.markdown && (
                     <button
                       onClick={() =>
