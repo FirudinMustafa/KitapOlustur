@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
 import type { UnitProgress } from "@/lib/unit-progress";
@@ -707,6 +708,12 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                   {BOOK_TYPE_LABELS[book.bookType] ?? book.bookType}
                 </span>
                 <div className="flex gap-2">
+                  <Link
+                    href={`/projects/${projectId}/read/${book.bookType}`}
+                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    Etkileşimli oku
+                  </Link>
                   {book.pdfBlobUrl && (
                     <a
                       href={book.pdfBlobUrl}

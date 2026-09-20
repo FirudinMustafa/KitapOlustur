@@ -642,3 +642,17 @@ Genel değerlendirmede en yüksek değerli boşluk olarak işaretlenen "tek çı
 - Doğrulama: `tsc`/`eslint`/`vitest` (48 test, 44→48)/`next build` temiz. Workflow step sayısı değişmedi (27) — EPUB üretimi yeni bir step değil, mevcut `assembleAndSaveBooks` step'inin içinde.
 
 **Yapılmadı/bilinçli olarak ertelendi:** EPUB'un gerçek bir e-okuyucuda (Apple Books, Kindle vb.) canlı açılıp doğrulanması yapılmadı — sadece yapısal (zip içeriği, XML) doğrulama var. DOCX export ayrı, yapılmadı. EPUB/UA (tam erişilebilirlik sertifikasyonu) seviyesinde bir doğrulama (ör. `epubcheck` aracı) çalıştırılmadı.
+
+### H2 Faz 1 — Statik İnteraktif Web Görüntüleyici (2026-09-20)
+
+Kullanıcı üç büyük işten (H2, H3, çoklu-kullanıcı) H2 ile başlamayı seçti. ROADMAP'in kendi önceden yazılmış H2 planındaki Faz 1'i (en düşük risk, migration gerektirmeyen kısım) birebir uygulandı.
+
+- Yeni route: `src/app/projects/[id]/read/[bookType]/page.tsx` (server component, `requireProjectOwner` ile aynı 404-not-403 deseni) + `BookReader.tsx` (client component). `generatedBooks.content`'i (zaten DB'de duran `GeneratedUnit[]` — PDF/EPUB'un render ettiği aynı veri) okuyup yeni bir AI çağrısı veya pipeline değişikliği olmadan React ile render ediyor. `BookDocument.tsx`/`BookEpub.ts` ile aynı `pagesForVariant`/`showAnswerKey` mantığı üçüncü kez tekrarlandı (aynı desen, farklı render hedefi).
+- Etkileşimlilik: cevap anahtarı gerçek bir React state toggle'ı ("Cevap anahtarını göster/gizle") — PDF'teki statik gösterim veya EPUB'daki `<details>`'in aksine gerçekten tıklanabilir. Ünite navigasyonu sol panelde, dinleme sesi gömülü `<audio>` ile.
+- `RunStatusView.tsx`'e "Etkileşimli oku" linki, "PDF indir"/"EPUB indir" butonlarının yanına eklendi.
+- **Canlı testte gerçek bir bug bulundu ve düzeltildi:** İlk implementasyon, bir run'ın generatedBooks satırları arasından **sadece en son oluşturulanı** seçiyordu (`bookType` filtresi olmadan) — birden fazla kitap tipi olan bir run'da yanlış kitap gösterilebiliyordu (örn. "student_book" istenince "workbook" gösteriliyordu). Sorgu `and(eq(runId), eq(bookType))` ile düzeltildi.
+- **Canlı testte ikinci bir gerçek bug bulundu ve düzeltildi:** Gerçek, eski (2026-07-17 tarihli) bir test verisiyle denendiğinde sayfa çöktü — o kayıt `studentBookPages`/`workbookPages` alanlarını hiç içermiyordu (mevcut şemadan önceki bir pipeline sürümünden kalma). `generatedBooks.content` tipsiz bir jsonb kolonu olduğu için TypeScript bunu "güvenli" sanıyor ama çalışma zamanında garanti yok — `pagesForVariant`'a her dalda `?? []` savunması eklendi.
+- Test verisi: sahipsiz "Sample Coursebook Test 2" projesi geçici olarak kullanıcının hesabına atanıp gerçekçi bir içerikle (kullanıcı onayıyla) canlı test edildi — bloklar, glossary, ünite navigasyonu, dinleme bölümü doğru render edildi, konsol hatasız. Test sonrası hem orijinal `content` hem `owner_id` (NULL) eski haline geri yüklendi — kalıcı test verisi bırakılmadı.
+- Doğrulama: `tsc`/`eslint`/`vitest` (48 test)/`next build` temiz. Migration yok (roadmap'in Faz 1 vaadi doğrulandı: gerçekten şema değişikliği gerekmedi).
+
+**Yapılmadı / bilinçli olarak ertelendi:** H2 Faz 2 (sesli okuma ile senkron kelime vurgulama — forced-alignment gerektiriyor, ayrı bir iş) ve Faz 3 (gerçek etkileşimli aktivite tipleri — boşluk doldurma/eşleştirme, şema kırılımı içeriyor, mevcut tüm ünitelerin yeniden üretilmesini gerektirir) roadmap'in kendi notunda da "ayrı, dikkatli ele alınmalı" diye işaretlenmişti — bu turda yapılmadı.
