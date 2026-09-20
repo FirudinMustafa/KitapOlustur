@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { storyProjects, storyMessages, storyArtifacts } from "@/db/schema";
 
 type StoryProject = typeof storyProjects.$inferSelect;
@@ -29,6 +29,7 @@ export function StudioWorkspace({
   const [language, setLanguage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [videoProvider, setVideoProvider] = useState<"veo" | "higgsfield">("veo");
 
   function buildMessageText(raw: string) {
     const tags = [
@@ -40,7 +41,32 @@ export function StudioWorkspace({
     return tags.length ? `[${tags.join(", ")}] ${raw}` : raw;
   }
 
-  async function sendMessage(action?: "image" | "audio") {
+  // Video generation is async (Higgsfield submit -> poll) - any "pending"
+  // video artifact needs its status checked periodically until it reaches a
+  // terminal state. See src/app/api/studio/projects/[id]/artifacts/[artifactId]/route.ts.
+  useEffect(() => {
+    const pendingIds = artifacts.filter((a) => a.type === "video" && a.status === "pending").map((a) => a.id);
+    if (!pendingIds.length) return;
+
+    const interval = setInterval(async () => {
+      for (const artifactId of pendingIds) {
+        try {
+          const res = await fetch(`/api/studio/projects/${storyProject.id}/artifacts/${artifactId}`);
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (data.artifact && data.artifact.status !== "pending") {
+            setArtifacts((prev) => prev.map((a) => (a.id === artifactId ? data.artifact : a)));
+          }
+        } catch {
+          // transient poll failure - next tick retries, no need to surface an error
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [artifacts, storyProject.id]);
+
+  async function sendMessage(action?: "image" | "audio" | "video") {
     const raw = input.trim();
     if (!raw && !action) return;
     setSending(true);
@@ -60,7 +86,11 @@ export function StudioWorkspace({
     try {
       const res = await fetch(`/api/studio/projects/${storyProject.id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ message: optimisticText, action }),
+        body: JSON.stringify({
+          message: optimisticText,
+          action,
+          videoProvider: action === "video" ? videoProvider : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -156,11 +186,15 @@ export function StudioWorkspace({
                   <div key={a.id} className="mt-2">
                     {a.status === "failed" ? (
                       <p className="text-xs text-red-500">Üretim başarısız: {a.errorMessage}</p>
+                    ) : a.status === "pending" ? (
+                      <p className="text-xs text-zinc-500">Video üretiliyor…</p>
                     ) : a.type === "image" ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={a.url ?? ""} alt={a.prompt} className="max-w-full rounded-md" />
                     ) : a.type === "audio" ? (
                       <audio controls src={a.url ?? ""} className="w-full" />
+                    ) : a.type === "video" ? (
+                      <video controls src={a.url ?? ""} className="max-w-full rounded-md" />
                     ) : null}
                   </div>
                 ))}
@@ -200,6 +234,23 @@ export function StudioWorkspace({
             >
               Bunun sesini üret
             </button>
+            <button
+              onClick={() => sendMessage("video")}
+              disabled={sending}
+              title="Önce bir görsel üretilmiş olmalı"
+              className="flex h-9 items-center justify-center rounded-full border border-zinc-300 px-4 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              Bunun videosunu üret
+            </button>
+            <select
+              value={videoProvider}
+              onChange={(e) => setVideoProvider(e.target.value as "veo" | "higgsfield")}
+              title="Video sağlayıcısı"
+              className="rounded-full border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value="veo">Veo</option>
+              <option value="higgsfield">Higgsfield</option>
+            </select>
           </div>
         </div>
       </div>
@@ -212,11 +263,15 @@ export function StudioWorkspace({
             <div key={a.id} className="rounded-lg border border-zinc-200 p-2 dark:border-zinc-800">
               {a.status === "failed" ? (
                 <p className="text-xs text-red-500">Başarısız: {a.errorMessage}</p>
+              ) : a.status === "pending" ? (
+                <p className="text-xs text-zinc-500">Video üretiliyor…</p>
               ) : a.type === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={a.url ?? ""} alt={a.prompt} className="w-full rounded-md" />
               ) : a.type === "audio" ? (
                 <audio controls src={a.url ?? ""} className="w-full" />
+              ) : a.type === "video" ? (
+                <video controls src={a.url ?? ""} className="w-full rounded-md" />
               ) : null}
               <p className="mt-1 truncate text-xs text-zinc-500" title={a.prompt}>
                 {a.prompt}

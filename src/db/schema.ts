@@ -262,7 +262,11 @@ export const generatedBooks = pgTable("generated_books", {
 // Stüdyosu".
 export const storyMessageRoleEnum = pgEnum("story_message_role", ["user", "assistant"]);
 export const storyArtifactTypeEnum = pgEnum("story_artifact_type", ["image", "audio", "video"]);
-export const storyArtifactStatusEnum = pgEnum("story_artifact_status", ["done", "failed"]);
+// "pending" is only ever used by video artifacts - Higgsfield's API is
+// async (submit -> poll a request_id), unlike the image/audio providers
+// which return the finished asset inline within one request. See
+// src/lib/ai/higgsfield.ts and ROADMAP.md "Hikaye Stüdyosu" video notu.
+export const storyArtifactStatusEnum = pgEnum("story_artifact_status", ["pending", "done", "failed"]);
 
 export const storyProjects = pgTable("story_projects", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -289,14 +293,19 @@ export const storyArtifacts = pgTable("story_artifacts", {
     .notNull()
     .references(() => storyProjects.id, { onDelete: "cascade" }),
   messageId: uuid("message_id").references(() => storyMessages.id, { onDelete: "set null" }),
-  // "video" is a reserved, never-populated value until Higgsfield is
-  // provisioned (see ROADMAP.md "FAZ Panel/Çizelge" Faz 2) - kept in the
-  // enum now so no migration is needed when that lands.
+  // Video generation is fully wired (Higgsfield image-to-video, see
+  // src/lib/ai/higgsfield.ts) but stays inert - every call short-circuits
+  // to a "failed" result with an explanatory message - until HF_API_KEY_ID/
+  // HF_API_KEY_SECRET are set. See ROADMAP.md "Hikaye Stüdyosu".
   type: storyArtifactTypeEnum("type").notNull(),
   url: text("url"),
   prompt: text("prompt").notNull(),
   model: text("model").notNull(),
   status: storyArtifactStatusEnum("status").notNull(),
   errorMessage: text("error_message"),
+  // Higgsfield's request_id, set only while a video artifact is "pending" -
+  // used to poll GET /requests/{id}/status until it reaches a terminal
+  // state. Null for image/audio artifacts (those resolve synchronously).
+  providerRequestId: text("provider_request_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

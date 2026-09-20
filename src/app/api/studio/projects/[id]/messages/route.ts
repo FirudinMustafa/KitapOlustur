@@ -1,22 +1,28 @@
 import { NextResponse } from "next/server";
 import { generateText, tool, stepCountIs, type ModelMessage } from "ai";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
 import { storyProjects, storyMessages, storyArtifacts } from "@/db/schema";
 import { requireStoryProjectOwner } from "@/lib/auth";
 import { resolveTextModel } from "@/lib/ai/model";
-import { generateStoryImage, generateStoryAudio, type StudioGenerationResult } from "@/lib/ai/studio-generation";
+import {
+  generateStoryImage,
+  generateStoryAudio,
+  generateStoryVideo,
+  type StudioGenerationResult,
+  type VideoProvider,
+} from "@/lib/ai/studio-generation";
 
 const STUDIO_SYSTEM_PROMPT = `Sen yaratıcı bir hikaye/içerik yazım asistanısın. Kullanıcıyla sohbet ederek hikayeler, kısa metinler veya serbest içerikler yazıyorsun; ihtiyaç oldukça bunları geliştiriyor, düzenliyorsun.
 
-Elinde iki araç var: generateImage (bir sahnenin/betimlemenin görselini üretir) ve generateAudio (bir metnin sesli anlatımını üretir). Kullanıcı açıkça bir görsel veya ses istediğinde, ya da isteği bunu doğal olarak ima ettiğinde bu araçları kullan - hikaye yazmadan da tek başına sadece bir görsel ya da sadece bir ses istenebilir, bu tamamen normal. Bir aracı kullandıktan sonra kullanıcıya kısaca ne ürettiğini anlat.`;
+Elinde üç araç var: generateImage (bir sahnenin/betimlemenin görselini üretir), generateAudio (bir metnin sesli anlatımını üretir) ve generateVideo (en son üretilen görseli kısa bir videoya dönüştürür - önce bir görsel üretilmiş olmalı, iki sağlayıcıdan biri seçilebilir: "veo" varsayılan, kullanıcı özellikle "higgsfield" isterse o kullanılır). Kullanıcı açıkça bunlardan birini istediğinde, ya da isteği bunu doğal olarak ima ettiğinde ilgili aracı kullan - hikaye yazmadan da tek başına sadece bir görsel/ses/video istenebilir, bu tamamen normal. Video sağlayıcılarından biri hesap kısıtlaması/API key eksikliği yüzünden aktif olmayabilir - aracı çağır, sonucu kullanıcıya olduğu gibi ilet. Bir aracı kullandıktan sonra kullanıcıya kısaca ne ürettiğini anlat.`;
 
 type CreatedArtifact = {
   id: string;
-  type: "image" | "audio";
-  status: "done" | "failed";
+  type: "image" | "audio" | "video";
+  status: "pending" | "done" | "failed";
   url: string | null;
   errorMessage: string | null;
 };
@@ -27,17 +33,23 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const ownerCheck = await requireStoryProjectOwner(id);
   if (ownerCheck instanceof NextResponse) return ownerCheck;
 
-  const storyProject = await db.query.storyProjects.findFirst({ where: eq(storyProjects.id, id) });
-  if (!storyProject) {
+  const storyProjectRow = await db.query.storyProjects.findFirst({ where: eq(storyProjects.id, id) });
+  if (!storyProjectRow) {
     return NextResponse.json({ error: "Hikaye bulunamadı" }, { status: 404 });
   }
+  // Narrowed alias: TS control-flow narrowing on `storyProjectRow` doesn't
+  // carry into the nested closures below (persistVideo etc.), since they
+  // could in principle be invoked later - a fresh `const` sidesteps that.
+  const storyProject = storyProjectRow;
 
   const body = await request.json().catch(() => null);
   const userText = body && typeof body.message === "string" ? body.message.trim() : "";
   // Direct UI-button shortcut: bypasses the model's own tool-calling decision
   // and calls the same underlying generation functions directly - see
   // ROADMAP.md "Hikaye Stüdyosu" for why both paths share studio-generation.ts.
-  const directAction = body?.action === "image" || body?.action === "audio" ? body.action : null;
+  const directAction: "image" | "audio" | "video" | null =
+    body?.action === "image" || body?.action === "audio" || body?.action === "video" ? body.action : null;
+  const directVideoProvider: VideoProvider = body?.videoProvider === "higgsfield" ? "higgsfield" : "veo";
 
   if (!userText && !directAction) {
     return NextResponse.json({ error: "Mesaj boş olamaz" }, { status: 400 });
@@ -79,20 +91,91 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return artifact;
   }
 
+  async function persistVideo(prompt: string, provider: VideoProvider): Promise<CreatedArtifact> {
+    // Filtered in JS, not the query, to avoid importing `and` for this
+    // one-off check - this table is small per story project.
+    const artifacts = await db.query.storyArtifacts.findMany({
+      where: eq(storyArtifacts.storyProjectId, id),
+      orderBy: [desc(storyArtifacts.createdAt)],
+    });
+    const sourceImage = artifacts.find((a) => a.type === "image" && a.status === "done");
+
+    if (!sourceImage?.url) {
+      const [row] = await db
+        .insert(storyArtifacts)
+        .values({
+          storyProjectId: id,
+          messageId: userMessage.id,
+          type: "video",
+          prompt,
+          model: provider,
+          status: "failed",
+          errorMessage: "Video üretmek için önce bir görsel üretilmiş olmalı.",
+        })
+        .returning();
+      const artifact: CreatedArtifact = {
+        id: row.id,
+        type: "video",
+        status: "failed",
+        url: null,
+        errorMessage: row.errorMessage,
+      };
+      createdArtifacts.push(artifact);
+      return artifact;
+    }
+
+    const result = await generateStoryVideo(
+      provider,
+      id,
+      sourceImage.url,
+      prompt || sourceImage.prompt,
+      storyProject.qualityMode,
+    );
+    const [row] = await db
+      .insert(storyArtifacts)
+      .values({
+        storyProjectId: id,
+        messageId: userMessage.id,
+        type: "video",
+        prompt: prompt || sourceImage.prompt,
+        model: result.model,
+        status: result.status,
+        url: result.status === "done" ? result.url : null,
+        providerRequestId: result.status === "pending" ? result.providerRequestId : null,
+        errorMessage: result.status === "failed" ? result.errorMessage : null,
+      })
+      .returning();
+    const artifact: CreatedArtifact = {
+      id: row.id,
+      type: "video",
+      status: result.status,
+      url: row.url,
+      errorMessage: row.errorMessage,
+    };
+    createdArtifacts.push(artifact);
+    return artifact;
+  }
+
   if (directAction) {
     const prompt = userText || "Sohbetteki en son hikaye/metin içeriği";
-    const result =
-      directAction === "image"
-        ? await generateStoryImage(id, prompt, storyProject.qualityMode)
-        : await generateStoryAudio(id, prompt, storyProject.qualityMode);
-    const artifact = await persistArtifact(directAction, prompt, result);
+    const artifact =
+      directAction === "video"
+        ? await persistVideo(userText, directVideoProvider)
+        : await persistArtifact(
+            directAction,
+            prompt,
+            directAction === "image"
+              ? await generateStoryImage(id, prompt, storyProject.qualityMode)
+              : await generateStoryAudio(id, prompt, storyProject.qualityMode),
+          );
 
+    const actionLabel = { image: "görsel", audio: "sesli anlatım", video: "video" }[directAction];
     const assistantText =
       artifact.status === "done"
-        ? directAction === "image"
-          ? "İstediğin görseli oluşturdum."
-          : "İstediğin sesli anlatımı oluşturdum."
-        : `Üzgünüm, ${directAction === "image" ? "görsel" : "ses"} üretimi başarısız oldu: ${artifact.errorMessage}`;
+        ? `İstediğin ${actionLabel} oluşturdum.`
+        : artifact.status === "pending"
+          ? "Video üretimi başladı, hazır olunca burada görünecek."
+          : `Üzgünüm, ${actionLabel} üretimi başarısız oldu: ${artifact.errorMessage}`;
 
     const [assistantMessage] = await db
       .insert(storyMessages)
@@ -142,6 +225,24 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             return artifact.status === "done"
               ? { status: "done", audioUrl: artifact.url }
               : { status: "failed", error: artifact.errorMessage };
+          },
+        }),
+        generateVideo: tool({
+          description: "En son üretilen görseli kısa bir videoya dönüştürür. Önce bir görsel üretilmiş olmalı.",
+          inputSchema: z.object({
+            motionPrompt: z.string().describe("Videoda görselin nasıl hareket etmesi/canlanması gerektiğinin betimlemesi"),
+            provider: z
+              .enum(["veo", "higgsfield"])
+              .default("veo")
+              .describe("Video sağlayıcısı - kullanıcı özellikle belirtmediyse 'veo' kullan"),
+          }),
+          execute: async ({ motionPrompt, provider }) => {
+            const artifact = await persistVideo(motionPrompt, provider);
+            return artifact.status === "done"
+              ? { status: "done", videoUrl: artifact.url }
+              : artifact.status === "pending"
+                ? { status: "pending", note: "Video üretimi başladı, hazır olunca kullanıcıya gösterilecek." }
+                : { status: "failed", error: artifact.errorMessage };
           },
         }),
       },

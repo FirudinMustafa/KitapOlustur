@@ -21,17 +21,21 @@ export function resolveTextModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? BOOK_PIPELINE_MODEL_DRAFT : BOOK_PIPELINE_MODEL;
 }
 
-// Faz H6 extension (2026-09-19): the same draft/final quality tiering now
-// also picks the image model, not just text. "final" (the default) uses
-// Nano Banana Pro (Gemini 3 Pro Image) - Google's current top-tier image
-// model, available directly through the existing Vercel AI Gateway wiring
-// (no new provider/account needed, just a different gateway model string;
-// verified live against Vercel's own AI Gateway model pages, not recalled
-// from training data - see ROADMAP.md). "draft" keeps the model this
-// pipeline already used for every run before this tiering existed
-// (Imagen 4), so draft-mode cost/behavior is unchanged.
-export const BOOK_PIPELINE_IMAGE_MODEL_FINAL = "google/gemini-3-pro-image";
-export const BOOK_PIPELINE_IMAGE_MODEL_DRAFT = "google/imagen-4.0-generate-001";
+// Faz H6 extension (2026-09-19), CORRECTED same day: the original pick here
+// (`google/gemini-3-pro-image` for final, `google/imagen-4.0-generate-001`
+// for draft) was wrong - verified live against the Vercel AI Gateway's own
+// `gateway.getAvailableModels()` catalog, neither string is usable with
+// `generateImage()`: the Gemini ones are catalogued as `language` models
+// (Nano Banana is a chat model that emits image parts, not a dedicated
+// image-generation model - it needs a different integration path, not
+// attempted here), and the Imagen slug isn't in the catalog at all. Both
+// failed with real errors from a live call, not a guess. Replaced with
+// models the same catalog actually lists under `modelType: "image"`:
+// OpenAI's GPT Image 2 (current top-tier per Artificial Analysis Arena,
+// confirmed available - see ROADMAP.md "Hikaye Stüdyosu") for final, and
+// the smaller/cheaper GPT Image 1 Mini for draft.
+export const BOOK_PIPELINE_IMAGE_MODEL_FINAL = "openai/gpt-image-2";
+export const BOOK_PIPELINE_IMAGE_MODEL_DRAFT = "openai/gpt-image-1-mini";
 
 export function resolveImageModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? BOOK_PIPELINE_IMAGE_MODEL_DRAFT : BOOK_PIPELINE_IMAGE_MODEL_FINAL;
@@ -56,4 +60,16 @@ export function resolveImageModel(qualityMode: "draft" | "final"): string {
 export function resolveSpeechModel(qualityMode: "draft" | "final"): string {
   void qualityMode; // no tiering yet - see comment above
   return BOOK_PIPELINE_SPEECH_MODEL;
+}
+
+// Hikaye Stüdyosu video: Google Veo, confirmed available directly through
+// the same Vercel AI Gateway this app already uses (modelType "video" in
+// gateway.getAvailableModels()) - no separate account/API key needed,
+// unlike Higgsfield (src/lib/ai/higgsfield.ts). "final" uses full Veo 3.1;
+// "draft" uses the "fast" variant (cheaper/quicker, lower fidelity).
+export const VEO_VIDEO_MODEL_FINAL = "google/veo-3.1-generate-001";
+export const VEO_VIDEO_MODEL_DRAFT = "google/veo-3.1-fast-generate-001";
+
+export function resolveVeoModel(qualityMode: "draft" | "final"): string {
+  return qualityMode === "draft" ? VEO_VIDEO_MODEL_DRAFT : VEO_VIDEO_MODEL_FINAL;
 }
