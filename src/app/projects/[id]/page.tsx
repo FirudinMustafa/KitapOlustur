@@ -20,7 +20,7 @@ import {
   type OutlineDocument,
   type GeneratedUnitContent,
   type PendingVariants,
-  type PendingContentUnit,
+  type PendingContentApproval,
   type PendingImageReview,
 } from "./RunStatusView";
 import { computeUnitProgress } from "@/lib/unit-progress";
@@ -121,7 +121,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               modelVersion: run.modelVersion,
               tokenUsage: run.tokenUsage,
               pendingVariants: run.pendingVariants as PendingVariants,
-              pendingContentApproval: run.pendingContentApproval as PendingContentUnit[] | null,
+              pendingContentApproval: run.pendingContentApproval as PendingContentApproval,
               pendingImageReview: run.pendingImageReview as PendingImageReview[] | null,
               coverImageUrl: run.coverImageUrl,
               pageImageUrls: run.pageImageUrls,

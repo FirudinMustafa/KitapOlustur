@@ -48,6 +48,11 @@ export type PendingContentUnit = {
   workbookPages: PendingVariantPage[];
 };
 
+// Faz "Granüler editöryel feedback": each approval round is numbered so its
+// resume token (content-approval:${runId}:${round}) stays unique across
+// however many regenerate-and-reapprove cycles a run goes through.
+export type PendingContentApproval = { round: number; units: PendingContentUnit[] } | null;
+
 export type PendingImageReview = { unitNumber: number; pageNumber: number; imageUrl: string; issues: string[] };
 
 type Run = {
@@ -59,7 +64,7 @@ type Run = {
   modelVersion?: string | null;
   tokenUsage?: Record<string, number> | null;
   pendingVariants?: PendingVariants;
-  pendingContentApproval?: PendingContentUnit[] | null;
+  pendingContentApproval?: PendingContentApproval;
   pendingImageReview?: PendingImageReview[] | null;
   coverImageUrl?: string | null;
   pageImageUrls?: Record<number, string> | null;
@@ -173,6 +178,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const [feedbackComment, setFeedbackComment] = useState("");
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [approvingContent, setApprovingContent] = useState(false);
+  const [unitChangeComments, setUnitChangeComments] = useState<Record<number, string>>({});
   const [imageDecisions, setImageDecisions] = useState<Record<string, "accept" | "regenerate">>({});
   const [submittingImageReview, setSubmittingImageReview] = useState(false);
   const [approvingFinal, setApprovingFinal] = useState(false);
@@ -217,7 +223,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const outlineData = outline?.outline?.outline;
   const improvementPlan = outline?.outline?.improvementPlan;
   const unitCount = outlineData?.units?.length;
-  const pendingContentApproval = run?.pendingContentApproval;
+  const pendingContentApproval = run?.pendingContentApproval?.units;
   const pendingImageReview = run?.pendingImageReview;
 
   async function refresh() {
@@ -258,12 +264,18 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   async function handleContentApproval(approved: boolean) {
     setApprovingContent(true);
     try {
+      const changes = Object.entries(unitChangeComments)
+        .filter(([, comment]) => comment.trim())
+        .map(([unitNumber, comment]) => ({ unitNumber: Number(unitNumber), comment: comment.trim() }));
       const res = await fetch(`/api/projects/${projectId}/approve-content`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approved }),
+        body: JSON.stringify({ approved, changes }),
       });
-      if (res.ok) await refresh();
+      if (res.ok) {
+        setUnitChangeComments({});
+        await refresh();
+      }
     } finally {
       setApprovingContent(false);
     }
@@ -677,7 +689,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           </h2>
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
             Gerçek yayıncılıktaki &quot;copyedit bitmeden tasarım başlamaz&quot; kuralıyla aynı mantık - metin burada
-            onaylanmadan hiçbir görsel üretilmiyor.
+            onaylanmadan hiçbir görsel üretilmiyor. Bir üniteye özel değişiklik istersen aşağıya not düş - o ünite
+            geri bildiriminle yeniden üretilip tekrar onayına sunulur, diğerleri olduğu gibi onaylanmış sayılır.
           </p>
           <div className="mt-3 flex flex-col gap-3">
             {pendingContentApproval.map((unit) => {
@@ -699,6 +712,15 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       <p className="mt-0.5 line-clamp-3">{firstBlock.body}</p>
                     </div>
                   )}
+                  <textarea
+                    value={unitChangeComments[unit.unitNumber] ?? ""}
+                    onChange={(e) =>
+                      setUnitChangeComments((prev) => ({ ...prev, [unit.unitNumber]: e.target.value }))
+                    }
+                    rows={2}
+                    placeholder="Bu üniteye değişiklik iste (opsiyonel)"
+                    className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-950"
+                  />
                 </div>
               );
             })}
@@ -709,14 +731,18 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               disabled={approvingContent}
               className="h-9 rounded-full bg-amber-600 px-4 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
             >
-              {approvingContent ? "Gönderiliyor…" : "Onayla, görsellere geç"}
+              {approvingContent
+                ? "Gönderiliyor…"
+                : Object.values(unitChangeComments).some((c) => c.trim())
+                  ? "Değişiklik isteklerini gönder"
+                  : "Onayla, görsellere geç"}
             </button>
             <button
               onClick={() => handleContentApproval(false)}
               disabled={approvingContent}
               className="h-9 rounded-full border border-zinc-300 px-4 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
             >
-              Reddet
+              Tümünü reddet (üretimi iptal et)
             </button>
           </div>
         </div>

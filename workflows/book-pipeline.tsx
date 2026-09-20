@@ -26,6 +26,7 @@ import {
   styleProfiles,
   variantHistory,
   generatedBooks,
+  unitFeedback,
   type RunStatus,
 } from "@/db/schema";
 import { ngramJaccardSimilarity } from "@/lib/originality";
@@ -1033,9 +1034,24 @@ async function getFlaggedImages(
     }));
 }
 
-async function saveContentForApproval(runId: string, units: GeneratedUnit[]) {
+async function saveContentForApproval(runId: string, round: number, units: GeneratedUnit[]) {
   "use step";
-  await db.update(generationRuns).set({ pendingContentApproval: units }).where(eq(generationRuns.id, runId));
+  await db
+    .update(generationRuns)
+    .set({ pendingContentApproval: { round, units } })
+    .where(eq(generationRuns.id, runId));
+}
+
+// Faz "Granüler editöryel feedback": persists the human's per-unit change
+// requests as a permanent audit trail (unitFeedback) - separate from the
+// transient pendingContentApproval scratch column, which the next
+// saveContentForApproval call will overwrite.
+async function saveUnitFeedback(runId: string, round: number, changes: { unitNumber: number; comment: string }[]) {
+  "use step";
+  if (!changes.length) return;
+  await db
+    .insert(unitFeedback)
+    .values(changes.map((c) => ({ runId, unitNumber: c.unitNumber, round, comment: c.comment })));
 }
 
 async function saveImagesForReview(
@@ -1287,6 +1303,12 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     const totalUnits = unitsToGenerate.length;
     const units: GeneratedUnit[] = [];
     const pageImages: Record<number, string> = {};
+    // Faz "Granüler editöryel feedback": each unit's buildUnit closure is
+    // kept around (keyed by unit number) so a human's per-unit change
+    // request at the content-approval gate below can regenerate just that
+    // one unit with the human's comment as feedback, without re-running the
+    // whole per-unit loop or the other units.
+    const unitBuilders = new Map<number, (feedback?: string[]) => Promise<GeneratedUnit>>();
 
     await setRunStatus(runId, "generating_images", "Kapak görseli üretiliyor");
     const coverPage = pageMap.pages.find((p) => p.pageType === "cover");
@@ -1362,6 +1384,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         };
       }
 
+      unitBuilders.set(n, buildUnit);
+
       let generated: GeneratedUnit;
 
       if (variantCount === 1) {
@@ -1427,14 +1451,45 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     // every unit's text at once (a "staged release" the human approves as a
     // unit), not one pause per unit - gate density should track genuine
     // risk/judgment, not fire on every item.
-    await saveContentForApproval(runId, units);
-    await setRunStatus(runId, "awaiting_content_approval", "İçerik onayı bekleniyor (görsel üretimi başlamadan önce)");
-    const contentApprovalHook = createHook<{ approved: boolean }>({
-      token: `content-approval:${runId}`,
-    });
-    const contentApproval = await contentApprovalHook;
-    if (!contentApproval.approved) {
-      throw new FatalError("Kullanıcı içeriği onaylamadı, üretim iptal edildi.");
+    // Faz "Granüler editöryel feedback" (ROADMAP.md): the gate above is no
+    // longer a single all-or-nothing approve/reject - a human can instead
+    // approve most units and request changes on specific ones, with a
+    // comment. Regenerated units are shown for approval again (a new round)
+    // until nothing more is flagged, then the run proceeds to images - the
+    // same "human editor requests a revision, writer resubmits" loop real
+    // publishing uses, without re-running the whole per-unit pipeline.
+    let contentApprovalRound = 0;
+    for (;;) {
+      await saveContentForApproval(runId, contentApprovalRound, units);
+      await setRunStatus(
+        runId,
+        "awaiting_content_approval",
+        "İçerik onayı bekleniyor (görsel üretimi başlamadan önce)",
+      );
+      const contentApprovalHook = createHook<{
+        approved: boolean;
+        changes: { unitNumber: number; comment: string }[];
+      }>({ token: `content-approval:${runId}:${contentApprovalRound}` });
+      const contentApproval = await contentApprovalHook;
+      if (!contentApproval.approved) {
+        throw new FatalError("Kullanıcı içeriği onaylamadı, üretim iptal edildi.");
+      }
+      if (!contentApproval.changes.length) break;
+
+      await saveUnitFeedback(runId, contentApprovalRound, contentApproval.changes);
+      for (const change of contentApproval.changes) {
+        const builder = unitBuilders.get(change.unitNumber);
+        if (!builder) continue;
+        await setRunStatus(
+          runId,
+          "generating",
+          `Ünite ${change.unitNumber}: editöryel geri bildirimle yeniden üretiliyor`,
+        );
+        const regenerated = await builder([change.comment]);
+        const idx = units.findIndex((u) => u.unitNumber === change.unitNumber);
+        if (idx !== -1) units[idx] = regenerated;
+      }
+      contentApprovalRound++;
     }
 
     await setRunStatus(runId, "generating_images", "Ünite görselleri üretiliyor");

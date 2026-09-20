@@ -253,6 +253,23 @@ export const variantHistory = pgTable("variant_history", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Faz "Granüler editöryel feedback" (2026-09-20, ROADMAP.md): audit trail of
+// human-authored, per-unit change requests made during the content-approval
+// gate (workflows/book-pipeline.tsx). Separate from teacherFeedback below (a
+// single, coarse, run-level rating/comment left after the fact) - this
+// captures the actual back-and-forth ("regenerate unit 3, the dialogue felt
+// unnatural") that drives a real regeneration, one round at a time.
+export const unitFeedback = pgTable("unit_feedback", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id")
+    .notNull()
+    .references(() => generationRuns.id, { onDelete: "cascade" }),
+  unitNumber: integer("unit_number").notNull(),
+  round: integer("round").notNull(),
+  comment: text("comment").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Faz H4: lightweight feedback capture on a finished book - the foundation
 // for a future loop that feeds real classroom outcomes back into
 // buildStyleBible/prompts. Only captured for now; not yet consumed anywhere.
