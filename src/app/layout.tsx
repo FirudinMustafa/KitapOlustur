@@ -42,6 +42,9 @@ export default function RootLayout({
                   <Link href="/studio" className="hover:text-zinc-950 dark:hover:text-zinc-50">
                     Hikaye Stüdyosu
                   </Link>
+                  <Link href="/search" className="hover:text-zinc-950 dark:hover:text-zinc-50">
+                    Ara
+                  </Link>
                 </nav>
               </Show>
               <div className="flex items-center gap-3">

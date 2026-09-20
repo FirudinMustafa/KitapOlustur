@@ -23,6 +23,7 @@
 | Müfredat/seviye hizalaması (kullanıcının belirttiği seviye vs. kaynak materyalin gerçek seviyesi) | ✅ Tamamlandı (2026-09-20) | Aşağıda "Müfredat Hizalaması — Tamamlanma Notu" |
 | Versiyon/diff (editöryel geri bildirim öncesi/sonrası karşılaştırma) | ✅ Tamamlandı, canlı doğrulandı (2026-09-20) | Aşağıda "Versiyonlama/Diff — Tamamlanma Notu" |
 | Bütçe kontrolü — ön maliyet tahmini | 🟡 Sadece ön tahmin (2026-09-20) | Aşağıda "Bütçe Kontrolü — Tamamlanma Notu"; otomatik durdurma bilinçli olarak yapılmadı |
+| Arama/kütüphane indeksleme | ✅ Tamamlandı, canlı doğrulandı (2026-09-20) | Aşağıda "Arama — Tamamlanma Notu" |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -840,3 +841,19 @@ Genel değerlendirmenin "bütçe kontrolü sadece geriye dönük... run başlama
 - **UI, gerçek run state enjekte edilerek Chrome'da canlı doğrulandı**: 2 üniteli bir dizelge ile "$0.12–$0.60" aralığı doğru render edildi, konsol hatasız.
 
 **Bilinçli olarak yapılmayan (otomatik durdurma):** Bir bütçe aşılınca üretimi otomatik durdurmak, `recordUsage`'ın (workflows/book-pipeline.tsx) şu anki tasarımını değiştirmeyi gerektirirdi — şu an sadece toplam token sayısını (`input+output` birleşik, model bazında ayrılmamış) biriktiriyor, gerçek zamanlı $ maliyeti hesaplamıyor. Bunun üstüne, üretim döngüsü ortasında (bir ünite yarı üretilmişken) bütçe kontrolü eklemek, bu oturumda insan-onaylı üretim hattı için özenle tasarlanmış "temiz durma noktaları" (içerik onayı, görsel inceleme, nihai onay - hepsi bir ünitenin/aşamanın TAMAMLANDIĞI noktalarda duruyor) felsefesiyle çelişen, yarım kalmış bir ünite durumu yaratma riski taşırdı. Bu, orantılı bir "şimdi yap" işi değil, ayrı ve dikkatli tasarlanması gereken bir faz - roadmap'in kendi "gate yoğunluğu riske göre olmalı" ilkesiyle aynı gerekçeyle ertelendi.
+
+## Arama — Tamamlanma Notu (2026-09-20)
+
+Genel değerlendirmenin "birden fazla kitap biriktikçe içerik arama (örn. 'hangi kitapta past perfect konusu var') mümkün değil" maddesine karşı.
+
+**Tasarım kararı:** Gerçek bir full-text search altyapısı (Postgres `tsvector`/GIN index) kurmak yerine, kullanıcının kendi `generatedBooks` içeriği üzerinde düz bellek-içi (in-memory) alt-dize araması yapıldı. Gerekçe: bu tek-kullanıcılı, kişisel bir araç — bir arama motoru ölçeğinde veri hacmi yok, GIN index gibi bir altyapı burada aşırı mühendislik olurdu.
+
+- `src/lib/search.ts` (yeni): `findMatches` — saf, DB'siz bir eşleştirme fonksiyonu (ünite başlığı, blok başlığı/gövdesi, sözlük terimi/tanımı; case-insensitive alt-dize araması), her eşleşme için ~120 karakterlik bir snippet üretiyor.
+- `src/app/api/search/route.ts` (yeni, GET `?q=`): `auth()` ile giriş kontrolü, kullanıcının SADECE kendi projelerini (`projects.ownerId = userId`) kapsıyor, tüm ilgili `generatedBooks` satırlarını çekip `findMatches`'i her biri için çağırıyor, en fazla 100 sonuç döndürüyor.
+- `src/app/search/page.tsx` (yeni) + `layout.tsx`'e "Ara" nav linki eklendi — arama kutusu + sonuç listesi (proje adı, kitap tipi, ünite, eşleşen alan rozeti, snippet), her sonuç ilgili projeye linkli.
+- **Canlı testte gerçek bir bug bulundu ve düzeltildi:** İlk implementasyon, DB'deki eski (2026-07-17 tarihli, H2 Faz 1'de daha önce de sorun çıkarmış olan) bir `generatedBooks` satırıyla test edildiğinde 500 hatası verdi — `unit.studentBookPages is not iterable`, çünkü o eski satır güncel şemadan önceki bir pipeline sürümünden kalma ve bu alanları hiç içermiyor. `pagesForVariant`'a daha önce eklenen aynı `?? []` savunması (H2 Faz 1 notuna bakınız) burada da `studentBookPages`/`workbookPages`/`unit.title`/`block.heading`/`block.body`/`entry.term`/`entry.definition` için tekrarlandı.
+- Test: `src/lib/search.test.ts` (yeni, 6 test) — başlık/blok/sözlük eşleşmeleri, eşleşme olmayan sorgu, eksik-alanlı eski içerikte çökmediğinin doğrulanması (canlı testte bulunan bug'ın regresyon testi).
+- Doğrulama: `tsc`/`eslint`/`vitest` (77 test, 71→77 — 6 yeni)/`next build` temiz. Migration yok (yeni tablo/kolon değil, mevcut veri üzerinde okuma). Yeni route'lar (`/api/search`, `/search`) middleware'in mevcut "signed-in zorunlu" kuralına otomatik dahil, ekstra bir auth değişikliği gerekmedi.
+- **UI, gerçek proje verisiyle Chrome'da canlı doğrulandı**: sahipsiz "Sample Coursebook Test 2" projesi geçici olarak kullanıcının hesabına atanıp "routine" araması yapıldı — hem Workbook hem Student Book'taki "Daily Routines" ünitesi doğru şekilde bulundu ve listelendi, konsol hatasız (bug düzeltmesinden sonra). Test sonrası `owner_id` `NULL`'a geri yüklendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Gerçek full-text search (stemming, alakalılık sıralaması, typo toleransı) yok — sadece tam alt-dize eşleşmesi. Sözcük ortası eşleşmeler de dahil (ör. "rout" araması "routine"i bulur) - bu bir hata değil, basit alt-dize aramasının doğal bir sonucu. Hikaye Stüdyosu içeriği (`storyProjects`/`storyArtifacts`) arama kapsamına dahil edilmedi - bu ayrı, chat-tabanlı bir içerik modeli, dahil etmek ayrı bir tasarım kararı gerektirirdi.
