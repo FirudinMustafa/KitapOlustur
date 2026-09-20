@@ -360,7 +360,7 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
         `The uploaded source book was the "${input.sourceBookType}". Here is the page-by-page blueprint of THIS unit's pages from that source:\n${JSON.stringify(input.unitSourcePages)}`,
         `Produce "pages" with exactly one generated page per source page listed above, in the same order, using the same sourcePageNumber and the same pageType. Write entirely new, original content for each page, inspired by (never copied from) its summary and topic.`,
         "For any page that should carry a photo or illustration (mirroring one that had an image in the source, or wherever it naturally helps), set imagePrompt to a vivid description of a NEW, original image reimagining that scene - never a copy of the source image.",
-        "If content includes a dialogue, story, or a listening/read-aloud passage, also add a matching entry to listeningAudio with the exact text to be read aloud.",
+        "If content includes a dialogue, story, or a listening/read-aloud passage, also add a matching entry to listeningAudio with the exact text to be read aloud. If it's a dialogue between two or more named speakers, also fill dialogueLines with each turn broken out by speaker, in order - this lets each character be voiced distinctly instead of one narrator reading every line. Leave dialogueLines empty for a single-narrator passage.",
         "Provide a unit-level glossary of key terms with definitions and examples.",
       ]
         .filter(Boolean)
@@ -519,10 +519,53 @@ async function generateTestBookletSide(runId: string, input: UnitGenerationConte
   return object;
 }
 
-// Synthesizes speech for each listening/read-aloud script attached to a unit
-// and uploads the audio, filling in audioUrl on each entry. Best-effort: a
-// failed synthesis just leaves that entry without audio rather than failing
-// the whole unit.
+// Steps in this workflow are retried automatically by the platform on any
+// thrown error that isn't a FatalError (see FatalError's own doc comment in
+// @workflow/errors: "an error that cannot be retried"). This loop is a
+// deliberate exception to that default: losing narration for one line
+// shouldn't fail the whole unit's assembly, so a persistently-broken script
+// degrades to no-audio instead of the platform retrying the whole step
+// indefinitely. But a merely transient failure (a momentary 5xx) deserves a
+// couple of quick attempts before giving up - see ROADMAP.md Faz G4.
+const MAX_AUDIO_ATTEMPTS = 3;
+
+async function synthesizeSpeechWithRetry(
+  model: string,
+  text: string,
+  voice: string | undefined,
+): Promise<Buffer | undefined> {
+  for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
+    try {
+      const { audio } = await generateSpeech({ model, text, voice, outputFormat: "mp3" });
+      return Buffer.from(audio.uint8Array);
+    } catch {
+      if (attempt < MAX_AUDIO_ATTEMPTS) await new Promise((r) => setTimeout(r, 500 * attempt));
+    }
+  }
+  return undefined;
+}
+
+// OpenAI's standard TTS voice set (the only provider resolveSpeechModel
+// currently returns - see its own doc comment on why ElevenLabs isn't wired
+// in yet). Assigned to dialogue speakers round-robin, in first-appearance
+// order, so the same character keeps the same voice across their lines
+// within a unit.
+const DIALOGUE_VOICE_POOL = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
+
+// Synthesizes speech for each listening/read-aloud script attached to a
+// unit and uploads the audio, filling in audioUrl on each entry.
+// Best-effort throughout: any synthesis failure just leaves that entry
+// without audio rather than failing the whole unit.
+//
+// A dialogue entry (2+ distinct dialogueLines speakers) is synthesized one
+// TTS call per line, each with a different voice, then the resulting MP3
+// buffers are concatenated into a single file - MP3 is a self-contained,
+// frame-based bitstream (unlike WAV/MP4, which need a container-level
+// index), so naive concatenation of same-format clips plays back correctly
+// in a standard <audio> element without needing an audio-muxing library.
+// A monologue entry (or a dialogue where any line's synthesis fails, so a
+// half-finished/garbled audio never ships) falls back to the original
+// single-voice, whole-script synthesis.
 async function generateListeningAudio(
   runId: string,
   unitNumber: number,
@@ -535,38 +578,37 @@ async function generateListeningAudio(
 
   const speechModel = resolveSpeechModel(qualityMode);
 
-  // Steps in this workflow are retried automatically by the platform on any
-  // thrown error that isn't a FatalError (see FatalError's own doc comment
-  // in @workflow/errors: "an error that cannot be retried"). This loop is a
-  // deliberate exception to that default: losing narration for one line
-  // shouldn't fail the whole unit's assembly, so a persistently-broken
-  // script degrades to no-audio instead of the platform retrying the whole
-  // step indefinitely. But a merely transient failure (a momentary 5xx)
-  // deserves a couple of quick attempts before giving up - see ROADMAP.md
-  // Faz G4.
-  const MAX_AUDIO_ATTEMPTS = 3;
-
   const withAudio = [];
   for (const [i, entry] of listeningAudio.entries()) {
-    let audioUrl: string | undefined;
+    let audioBuffer: Buffer | undefined;
 
-    for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
-      try {
-        const { audio } = await generateSpeech({
-          model: speechModel,
-          text: entry.script,
-          outputFormat: "mp3",
-        });
-        const blob = await put(
-          `generated/${runId}/unit-${unitNumber}-audio-${i}.mp3`,
-          Buffer.from(audio.uint8Array),
-          { access: "public", contentType: audio.mediaType, addRandomSuffix: false },
-        );
-        audioUrl = blob.url;
-        break;
-      } catch {
-        if (attempt < MAX_AUDIO_ATTEMPTS) await new Promise((r) => setTimeout(r, 500 * attempt));
+    const speakers = [...new Set((entry.dialogueLines ?? []).map((l) => l.speaker))];
+    if (speakers.length >= 2) {
+      const voiceBySpeaker = new Map(speakers.map((s, idx) => [s, DIALOGUE_VOICE_POOL[idx % DIALOGUE_VOICE_POOL.length]]));
+      const lineBuffers: Buffer[] = [];
+      for (const dialogueLine of entry.dialogueLines!) {
+        const buf = await synthesizeSpeechWithRetry(speechModel, dialogueLine.line, voiceBySpeaker.get(dialogueLine.speaker));
+        if (!buf) break;
+        lineBuffers.push(buf);
       }
+      if (lineBuffers.length === entry.dialogueLines!.length) {
+        audioBuffer = Buffer.concat(lineBuffers);
+      }
+      // else: a line failed - fall through to the whole-script single-voice attempt below
+    }
+
+    if (!audioBuffer) {
+      audioBuffer = await synthesizeSpeechWithRetry(speechModel, entry.script, undefined);
+    }
+
+    let audioUrl: string | undefined;
+    if (audioBuffer) {
+      const blob = await put(`generated/${runId}/unit-${unitNumber}-audio-${i}.mp3`, audioBuffer, {
+        access: "public",
+        contentType: "audio/mpeg",
+        addRandomSuffix: false,
+      });
+      audioUrl = blob.url;
     }
 
     withAudio.push(audioUrl ? { ...entry, audioUrl } : entry);

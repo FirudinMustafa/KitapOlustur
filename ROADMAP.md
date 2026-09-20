@@ -605,3 +605,14 @@ Kullanıcının "orkestranın neresine geldik" değerlendirmesinde önerilen "he
 - Eslint'in `jsx-a11y/alt-text` uyarısı (react-pdf'in `Image`'ını HTML `<img>` sanıyor, false-positive) her iki görsel için de açıklayıcı bir yorumla `eslint-disable-next-line` edildi.
 - Gerçek erişilebilirlik (ekran-okuyucu uyumlu format) için hâlâ EPUB/HTML export gerekiyor — bu düzeltme sadece PDF içinde okunabilir bir açıklama ekliyor, tam bir çözüm değil.
 - Doğrulama: `tsc`/`eslint` (BookDocument.tsx'teki 2 uyarı da temizlendi)/`vitest` (44 test)/`next build` temiz.
+
+### Çok-sesli diyalog desteği (2026-09-20)
+
+Genel değerlendirmede işaretlenen "dinleme parçaları tek sesli" eksikliğine karşı: `generateListeningAudio` artık diyalogları birden fazla sesle sentezleyebiliyor.
+
+- `src/lib/ai/schemas.ts`: `listeningAudioSchema`'ya opsiyonel `dialogueLines` (`{speaker, line}[]`) eklendi. Yazar prompt'u (`workflows/book-pipeline.tsx`, mirrored side) artık iki+ konuşmacılı bir diyalog tespit ederse bunu doldurmasını istiyor; tek anlatıcılı pasajlarda boş kalıyor (eski davranış aynen korunuyor).
+- `workflows/book-pipeline.tsx` → `generateListeningAudio`: 2+ farklı konuşmacı varsa, her konuşmacıya OpenAI'nin 6 standart TTS sesinden (`alloy`/`echo`/`fable`/`onyx`/`nova`/`shimmer` — **canlı test edildi, hepsi çalışıyor**, tahmin edilmedi) sabit bir ses atanıyor (ilk-görünme sırasına göre round-robin), her satır ayrı ayrı sentezleniyor, sonra MP3 buffer'ları art arda eklenerek (concat) tek dosya oluşturuluyor. Herhangi bir satırın sentezi başarısız olursa (retry'lardan sonra bile), yarım/bozuk bir diyalog dosyası göndermek yerine **tamamen eski tek-sesli tüm-script sentezine geri dönülüyor**.
+- **Dürüstlük notu:** MP3 concat yöntemi (ffmpeg gibi bir audio-muxing kütüphanesi olmadan) standart bir teknik ve bu ortamda ffprobe/ffmpeg olmadığı için nihai oynatmayı doğrulayamadım — MP3'ün frame-tabanlı, container-index gerektirmeyen yapısı sayesinde tarayıcıların `<audio>` elemanında genelde sorunsuz çalışması beklenir, ama bu "genelde çalışır" bir varsayım, %100 doğrulanmış değil.
+- Doğrulama: `tsc`/`eslint`/`vitest` (44 test)/`next build` temiz. Migration gerekmedi (yeni jsonb alanı `generatedBooks.content` içinde saklanıyor, ayrı kolon değil).
+
+**Yapılmadı:** Sesin gerçekten diyalog mu monolog mu olduğunu QA aşamasında doğrulayan bir kontrol yok (yazar modelinin doğru doldurduğuna güveniliyor). ElevenLabs gibi daha zengin/karakter-spesifik seslere geçiş hâlâ `ai` v6→v7 sınırında bloke (H6 notuna bakınız).

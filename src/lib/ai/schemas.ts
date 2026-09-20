@@ -122,9 +122,22 @@ export const glossaryEntrySchema = z.object({
 });
 export type GlossaryEntry = z.infer<typeof glossaryEntrySchema>;
 
+export const dialogueLineSchema = z.object({
+  speaker: z.string().describe("The character/speaker's name, exactly as it appears in the script"),
+  line: z.string(),
+});
+export type DialogueLine = z.infer<typeof dialogueLineSchema>;
+
 export const listeningAudioSchema = z.object({
   blockRef: z.string().describe("Heading of the content block this audio script belongs to"),
   script: z.string(),
+  // If this passage is a dialogue between two or more named speakers, the
+  // same content broken into per-speaker turns, in order - lets each
+  // speaker be synthesized with a distinct TTS voice instead of one
+  // narrator reading everyone's lines. Absent/empty for a single-narrator
+  // passage (monologue, story narration) - `script` alone is used then,
+  // exactly as before this field existed.
+  dialogueLines: z.array(dialogueLineSchema).optional(),
   audioUrl: z
     .string()
     .optional()
