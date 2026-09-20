@@ -73,3 +73,42 @@ export const VEO_VIDEO_MODEL_DRAFT = "google/veo-3.1-fast-generate-001";
 export function resolveVeoModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? VEO_VIDEO_MODEL_DRAFT : VEO_VIDEO_MODEL_FINAL;
 }
+
+// Faz "Gelişmiş Görsel Üretim Paneli" (2026-09-21, ROADMAP.md): user-selectable
+// image models for Hikaye Stüdyosu's advanced generation panel - separate
+// from the book pipeline's fixed, quality-mode-driven resolveImageModel
+// above (that pipeline stays untouched). "GPT Image 2" (the name the user
+// originally asked for) is superseded by GPT Image 2.5 as of September
+// 2026 (verified live against Vercel's own model pages, not assumed) - two
+// variants, both callable via the same generateImage() path as the older
+// GPT Image models (no new integration risk):
+//   - Flare: faster, standard quality.
+//   - Sunburst: slower, more detailed/precise editing.
+// Nano Banana Pro/2 (google/gemini-3-pro-image, gemini-3.1-flash-image-preview)
+// are deliberately NOT included here yet - per Vercel's own docs, those are
+// chat-style models used via generateText()+result.files, not
+// generateImage(), and whether ai@6.0.230 (pinned in package.json) supports
+// that return shape is unverified - the exact same kind of v6/v7 boundary
+// that blocked ElevenLabs (see resolveSpeechModel's comment above). The
+// Gateway account is still billing-blocked, so this can't be verified with
+// a real call yet - add them here the same way once it can be.
+export const STUDIO_IMAGE_MODELS = [
+  { id: "openai/gpt-image-2.5-flare", label: "GPT Image 2.5 Flare", description: "Hızlı, standart kalite" },
+  { id: "openai/gpt-image-2.5-sunburst", label: "GPT Image 2.5 Sunburst", description: "Daha yavaş, daha detaylı/hassas düzenleme" },
+] as const;
+
+export type StudioImageModelId = (typeof STUDIO_IMAGE_MODELS)[number]["id"];
+
+// Faz "Gelişmiş Görsel Üretim Paneli": the "Çözünürlük" selector merges what
+// the user originally asked for as two separate controls ("oran" and
+// "çözünürlük") into one - generateImage()'s `size` param already encodes
+// both width/height (and therefore aspect ratio), and GPT Image only
+// supports a handful of fixed sizes, so two independent selectors could
+// produce invalid combinations. Three official GPT Image sizes.
+export const STUDIO_IMAGE_SIZES = [
+  { id: "1024x1024", label: "Kare (1024×1024)" },
+  { id: "1024x1536", label: "Dikey (1024×1536)" },
+  { id: "1536x1024", label: "Yatay (1536×1024)" },
+] as const;
+
+export type StudioImageSizeId = (typeof STUDIO_IMAGE_SIZES)[number]["id"];

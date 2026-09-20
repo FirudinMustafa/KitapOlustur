@@ -378,3 +378,20 @@ export const storyArtifacts = pgTable("story_artifacts", {
   costUsd: real("cost_usd"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Faz "Gelişmiş Görsel Üretim Paneli" (2026-09-21, ROADMAP.md): a personal,
+// cross-project library of reference images the user can tag and re-use
+// across any story (a recurring character/style reference shouldn't be
+// re-uploaded per story) - owned by the user directly, not scoped to a
+// single storyProjectId, the same reasoning as styleProfiles being global
+// rather than per-project.
+export const savedReferenceImages = pgTable("saved_reference_images", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerId: text("owner_id").notNull(),
+  url: text("url").notNull(),
+  // Free-text tags, not a separate tags table - this is a personal handful
+  // of labels for @-mention lookup (StudioWorkspace.tsx), not a general
+  // taxonomy that needs its own relational modeling.
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

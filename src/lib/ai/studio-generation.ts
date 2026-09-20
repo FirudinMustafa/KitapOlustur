@@ -1,7 +1,7 @@
 import { generateImage, experimental_generateSpeech as generateSpeech } from "ai";
 import { put } from "@vercel/blob";
-import { resolveImageModel, resolveSpeechModel, resolveVeoModel } from "@/lib/ai/model";
-import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
+import { resolveImageModel, resolveSpeechModel, resolveVeoModel, type StudioImageSizeId } from "@/lib/ai/model";
+import { estimateImageCostUsd, estimateSpeechCostUsd, estimateStudioImageCostUsd } from "@/lib/ai/pricing";
 import { submitImageToVideo } from "@/lib/ai/higgsfield";
 import { generateVeoVideoFromImage } from "@/lib/ai/veo";
 
@@ -44,6 +44,53 @@ export async function generateStoryImage(
       addRandomSuffix: false,
     });
     return { status: "done", url: blob.url, model, costUsd: estimateImageCostUsd(model) };
+  } catch (err) {
+    return { status: "failed", model, errorMessage: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// Faz "Gelişmiş Görsel Üretim Paneli" (2026-09-21, ROADMAP.md): a separate
+// function rather than extending generateStoryImage above - that one stays
+// exactly as-is for the existing simple chat/quick-button flow (fixed
+// model/size/single-image, driven by qualityMode). This one backs the new
+// advanced panel: the user picks the model/size/count explicitly, and can
+// attach up to 4 saved reference images (OpenAI's GPT Image family's
+// documented reference-image limit) via providerOptions.openai -
+// input_references, verified via web research 2026-09-21, not guessed.
+export type AdvancedStudioImageResult =
+  | { status: "done"; urls: string[]; model: string; costUsd: number | null }
+  | { status: "failed"; model: string; errorMessage: string };
+
+export async function generateAdvancedStoryImage(
+  storyProjectId: string,
+  prompt: string,
+  model: string,
+  size: StudioImageSizeId,
+  count: number,
+  referenceImageUrls?: string[],
+): Promise<AdvancedStudioImageResult> {
+  try {
+    const { images } = await generateImage({
+      model,
+      prompt,
+      size,
+      n: count,
+      ...(referenceImageUrls?.length
+        ? { providerOptions: { openai: { input_references: referenceImageUrls.slice(0, 4) } } }
+        : {}),
+    });
+    const urls = await Promise.all(
+      images.map(async (image, i) => {
+        const buffer = Buffer.from(image.base64, "base64");
+        const blob = await put(`studio/${storyProjectId}/image-${Date.now()}-${i}.png`, buffer, {
+          access: "public",
+          contentType: image.mediaType ?? "image/png",
+          addRandomSuffix: false,
+        });
+        return blob.url;
+      }),
+    );
+    return { status: "done", urls, model, costUsd: estimateStudioImageCostUsd(size, urls.length) };
   } catch (err) {
     return { status: "failed", model, errorMessage: err instanceof Error ? err.message : String(err) };
   }

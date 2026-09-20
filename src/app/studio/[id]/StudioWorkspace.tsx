@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { storyProjects, storyMessages, storyArtifacts } from "@/db/schema";
+import { AdvancedImagePanel } from "./AdvancedImagePanel";
 
 type StoryProject = typeof storyProjects.$inferSelect;
 type StoryMessage = typeof storyMessages.$inferSelect;
@@ -30,6 +31,12 @@ export function StudioWorkspace({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoProvider, setVideoProvider] = useState<"veo" | "higgsfield">("veo");
+
+  // Faz "Gelişmiş Görsel Üretim Paneli": computed from the already-loaded
+  // `artifacts` state rather than a separate server-side sum - every
+  // artifact for this project (including ones the advanced panel creates,
+  // appended via onArtifactsCreated below) is already in this array.
+  const totalCostUsd = artifacts.reduce((sum, a) => sum + (a.costUsd ?? 0), 0);
 
   function buildMessageText(raw: string) {
     const tags = [
@@ -117,9 +124,19 @@ export function StudioWorkspace({
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">{storyProject.title}</h1>
-          <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-            {storyProject.qualityMode === "draft" ? "Taslak" : "Final"}
-          </span>
+          <div className="flex items-center gap-2">
+            {totalCostUsd > 0 && (
+              <span
+                className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                title="Bu projede şu ana kadar üretilen tüm görsel/ses/video'ların toplam maliyeti"
+              >
+                Toplam maliyet: ${totalCostUsd.toFixed(3)}
+              </span>
+            )}
+            <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              {storyProject.qualityMode === "draft" ? "Taslak" : "Final"}
+            </span>
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -253,6 +270,11 @@ export function StudioWorkspace({
             </select>
           </div>
         </div>
+
+        <AdvancedImagePanel
+          storyProjectId={storyProject.id}
+          onArtifactsCreated={(newArtifacts) => setArtifacts((prev) => [...prev, ...newArtifacts])}
+        />
       </div>
 
       <div className="w-full shrink-0 lg:w-72">

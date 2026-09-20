@@ -40,3 +40,25 @@ export function estimateSpeechCostUsd(model: string, characterCount: number): nu
   if (ratePerMillion == null || !characterCount) return null;
   return (characterCount / 1_000_000) * ratePerMillion;
 }
+
+// Faz "Gelişmiş Görsel Üretim Paneli" (2026-09-21, ROADMAP.md): GPT Image 2.5
+// Flare and Sunburst publish identical token rates ($5/1M text input, $8/1M
+// image input, $30/1M output - vercel.com/ai-gateway/models/gpt-image-2.5-flare
+// and .../gpt-image-2.5-sunburst, checked 2026-09-21) - the two variants
+// differ in speed/detail, not price, so one shared per-size estimate table
+// covers both. Base 1024x1024 figure is the same published high-quality
+// estimate used for the older GPT Image 2 above (~$0.053); the two
+// non-square sizes have ~1.5x the pixel count, scaled proportionally - a
+// labeled ESTIMATE like the flat rates above, not an exact number (OpenAI
+// hasn't published exact output-token counts per size/quality).
+export const STUDIO_IMAGE_PRICE_USD_ESTIMATE_BY_SIZE: Record<string, number> = {
+  "1024x1024": 0.053,
+  "1024x1536": 0.08,
+  "1536x1024": 0.08,
+};
+
+export function estimateStudioImageCostUsd(size: string, count: number): number | null {
+  const perImage = STUDIO_IMAGE_PRICE_USD_ESTIMATE_BY_SIZE[size];
+  if (perImage == null || !count) return null;
+  return perImage * count;
+}

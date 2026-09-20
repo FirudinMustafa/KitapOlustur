@@ -169,6 +169,13 @@
       "when": 1789940211193,
       "tag": "0023_powerful_lily_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789942264485,
+      "tag": "0024_fat_shen",
+      "breakpoints": true
     }
   ]
 }
