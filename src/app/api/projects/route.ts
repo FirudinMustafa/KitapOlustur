@@ -6,6 +6,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
+import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
 
 const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
 
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
     targetLanguage: targetLanguageRaw,
     blobUrl,
     filename,
+    isbn: isbnRaw,
   } = body;
 
   if (typeof name !== "string" || !name.trim()) {
@@ -69,6 +71,13 @@ export async function POST(request: Request) {
   }
   if (bookType !== "student_book" && bookType !== "workbook") {
     return NextResponse.json({ error: "Geçersiz kitap tipi" }, { status: 400 });
+  }
+  let isbn: string | null = null;
+  if (typeof isbnRaw === "string" && isbnRaw.trim()) {
+    if (!isValidIsbn13(isbnRaw)) {
+      return NextResponse.json({ error: "Geçersiz ISBN-13 (sağlama toplamı tutmuyor)" }, { status: 400 });
+    }
+    isbn = normalizeIsbn(isbnRaw);
   }
 
   let niceToHaveIds: string[] = [];
@@ -104,6 +113,7 @@ export async function POST(request: Request) {
     .values({
       name: name.trim(),
       level: typeof level === "string" && level.trim() ? level.trim() : null,
+      isbn,
       ownerId: userId,
     })
     .returning();

@@ -11,6 +11,7 @@ import {
   fetchAsset,
   extensionForMediaType,
 } from "@/lib/content-html";
+import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
 
 // EPUB export - the digital/accessible sibling to BookDocument.tsx's PDF.
 // Deliberately hand-rolled with jszip rather than an epub-generation
@@ -40,8 +41,9 @@ export async function buildEpub(input: {
   coverImageSrc?: string;
   pageImages?: Record<number, string>;
   generatedAt?: string;
+  isbn?: string | null;
 }): Promise<Buffer> {
-  const { bookTitle, variant, units, level, contentsUnits, coverImageSrc, pageImages, generatedAt } = input;
+  const { bookTitle, variant, units, level, contentsUnits, coverImageSrc, pageImages, generatedAt, isbn } = input;
   const variantLabel = VARIANT_LABELS[variant];
   const showAnswerKey = variant === "workbook" || variant === "teacher_book";
 
@@ -235,7 +237,10 @@ th, td { border: 1px solid #d1d5db; padding: 0.4em; text-align: left; font-size:
 </html>`,
   );
 
-  const identifier = `urn:uuid:${crypto.randomUUID()}`;
+  // ISBN/baskıya hazırlık (2026-09-20, ROADMAP.md): a book's real ISBN is
+  // its canonical EPUB identifier when it has one - only falls back to a
+  // random UUID when no (valid) ISBN was given, same as before this existed.
+  const identifier = isValidIsbn13(isbn ?? "") ? `urn:isbn:${normalizeIsbn(isbn!)}` : `urn:uuid:${crypto.randomUUID()}`;
   const modified = new Date().toISOString().replace(/\.\d+Z$/, "Z");
   zip.file(
     "OEBPS/content.opf",

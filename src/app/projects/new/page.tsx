@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
+import { isValidIsbn13 } from "@/lib/isbn";
 
 type NiceToHaveItem = {
   id: string;
@@ -36,6 +37,7 @@ export default function NewProjectPage() {
   const [styleProfileId, setStyleProfileId] = useState<string>("");
   const [name, setName] = useState("");
   const [level, setLevel] = useState("");
+  const [isbn, setIsbn] = useState("");
   const [bookType, setBookType] = useState<"student_book" | "workbook">("student_book");
   const [outputTypes, setOutputTypes] = useState<Set<string>>(new Set(["student_book", "workbook"]));
   const [variantCount, setVariantCount] = useState("1");
@@ -169,6 +171,10 @@ export default function NewProjectPage() {
       setError("Lütfen bir proje adı girin.");
       return;
     }
+    if (isbn.trim() && !isValidIsbn13(isbn)) {
+      setError("Girilen ISBN geçerli bir ISBN-13 değil (sağlama toplamı tutmuyor).");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -186,6 +192,7 @@ export default function NewProjectPage() {
           level,
           bookType,
           customNotes,
+          isbn: isbn.trim() || null,
           niceToHaveIds: Array.from(selected),
           styleProfileId: styleProfileId || null,
           qualityMode,
@@ -252,6 +259,27 @@ export default function NewProjectPage() {
             </select>
           </div>
         </div>
+
+        {!isBatch && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">ISBN (opsiyonel)</label>
+            <input
+              value={isbn}
+              onChange={(e) => setIsbn(e.target.value)}
+              placeholder="Örn. 978-0-306-40615-7 - basılı/yayınlanacak bir kitap için gerçek ISBN'in"
+              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            {isbn.trim() && !isValidIsbn13(isbn) && (
+              <span className="text-xs text-red-600 dark:text-red-400">
+                Geçerli bir ISBN-13 değil (sağlama toplamı tutmuyor).
+              </span>
+            )}
+            <span className="text-xs text-zinc-500">
+              Girilirse PDF&apos;in künye sayfasına gerçek, taranabilir bir EAN-13 barkod olarak basılır. Sahte/rastgele
+              bir ISBN üretilmez - kendi satın aldığın gerçek ISBN&apos;i olmalı.
+            </span>
+          </div>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Hedef dil (opsiyonel)</label>

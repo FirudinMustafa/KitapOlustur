@@ -69,6 +69,11 @@ export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   level: text("level"),
+  // Faz "ISBN/baskıya hazırlık" (2026-09-20, ROADMAP.md): optional, only
+  // meaningful for a project the user actually intends to print/publish.
+  // Validated (ISBN-13 checksum, see src/lib/isbn.ts) before being saved -
+  // never auto-generated, this has to be a real ISBN the user owns/bought.
+  isbn: text("isbn"),
   // Faz G3: Clerk user id of the project's owner. Nullable so existing rows
   // created before auth was added don't break the migration - a null owner
   // is treated as inaccessible (owned by no one), not as public, by every

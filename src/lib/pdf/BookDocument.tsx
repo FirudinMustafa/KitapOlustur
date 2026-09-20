@@ -2,6 +2,35 @@ import { Document, Page, Text, View, StyleSheet, Svg, Path, Rect, Circle, Line, 
 import type { GeneratedUnit, GeneratedPage, ContentBlock, ContentBlockKind } from "@/lib/ai/schemas";
 import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument";
 import { seededShuffle } from "@/lib/content-html";
+import { encodeEan13 } from "@/lib/barcode/ean13";
+import { formatIsbn13 } from "@/lib/isbn";
+
+// ISBN/baskıya hazırlık (2026-09-20, ROADMAP.md): renders a real, scannable
+// EAN-13 barcode on the imprint page when the project has a validated ISBN
+// - an ISBN-13 IS an EAN-13 barcode, so encodeEan13 doubles as the ISBN
+// barcode encoder. Returns null (renders nothing) for a missing/invalid
+// ISBN rather than a placeholder - never fabricates a fake barcode.
+function Barcode({ isbn }: { isbn: string }) {
+  const bits = encodeEan13(isbn);
+  if (!bits) return null;
+
+  const moduleWidth = 1.1;
+  const barHeight = 40;
+
+  return (
+    <View style={{ alignItems: "flex-start" }}>
+      <Svg width={bits.length * moduleWidth} height={barHeight}>
+        {bits.map(
+          (isBar, i) =>
+            isBar && (
+              <Rect key={i} x={i * moduleWidth} y={0} width={moduleWidth} height={barHeight} fill="#000000" />
+            ),
+        )}
+      </Svg>
+      <Text style={styles.barcodeText}>ISBN {formatIsbn13(isbn)}</Text>
+    </View>
+  );
+}
 
 export type Variant = "student_book" | "workbook" | "teacher_book" | "test_booklet";
 
@@ -191,6 +220,8 @@ const styles = StyleSheet.create({
   imprintTitle: { fontFamily: "Helvetica-Bold", fontSize: 16, marginBottom: 6 },
   imprintLine: { fontSize: 9.5, color: "#4b5563", marginBottom: 4 },
   imprintDisclosure: { fontSize: 9, color: "#6b7280", lineHeight: 1.5, marginTop: 16, maxWidth: 340 },
+  barcodeBlock: { marginTop: 24 },
+  barcodeText: { fontSize: 9, fontFamily: "Helvetica", letterSpacing: 1, marginTop: 4 },
   answerKeyTitleBand: { paddingVertical: 20, marginBottom: 18, borderRadius: 8, alignItems: "center" },
   answerKeyTitle: { fontFamily: "Helvetica-Bold", fontSize: 18, color: "#ffffff" },
   answerKeyUnitHeading: { fontFamily: "Helvetica-Bold", fontSize: 11.5, marginTop: 14, marginBottom: 6 },
@@ -345,12 +376,14 @@ function ImprintPage({
   level,
   generatedAt,
   palette,
+  isbn,
 }: {
   bookTitle: string;
   variantLabel: string;
   level: string;
   generatedAt: string;
   palette: Palette;
+  isbn?: string;
 }) {
   return (
     <Page size="A4" style={styles.page}>
@@ -363,6 +396,11 @@ function ImprintPage({
           yapay zeka (Kitap Orkestrası) ile üretilmiştir. Metin ve görseller orijinaldir; kaynak eserin
           birebir kopyası değildir.
         </Text>
+        {isbn && (
+          <View style={styles.barcodeBlock}>
+            <Barcode isbn={isbn} />
+          </View>
+        )}
       </View>
       <Footer bookTitle={bookTitle} variantLabel={variantLabel} />
     </Page>
@@ -391,6 +429,7 @@ export function BookDocument({
   coverImageSrc,
   pageImages,
   generatedAt,
+  isbn,
 }: {
   bookTitle: string;
   variant: Variant;
@@ -400,6 +439,7 @@ export function BookDocument({
   coverImageSrc?: string;
   pageImages?: Record<number, string>;
   generatedAt?: string;
+  isbn?: string;
 }) {
   const variantLabel = VARIANT_LABELS[variant];
   const palette = PALETTE[variant];
@@ -444,6 +484,7 @@ export function BookDocument({
         level={level}
         generatedAt={generatedAt ?? ""}
         palette={palette}
+        isbn={isbn}
       />
 
       <ContentsPageContent bookTitle={bookTitle} level={level} variant={variant} units={contentsUnits} />

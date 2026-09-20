@@ -1180,6 +1180,7 @@ async function assembleAndSaveBooks(
   requestedVariants: Variant[],
   coverImageSrc: string,
   pageImages: Record<number, string>,
+  isbn?: string | null,
 ) {
   "use step";
 
@@ -1204,6 +1205,7 @@ async function assembleAndSaveBooks(
         coverImageSrc={coverImageSrc}
         pageImages={pageImages}
         generatedAt={generatedAt}
+        isbn={isbn ?? undefined}
       />,
     );
     const blob = await put(`generated/${runId}/${variant}.pdf`, pdfBuffer, {
@@ -1227,6 +1229,7 @@ async function assembleAndSaveBooks(
         coverImageSrc,
         pageImages,
         generatedAt,
+        isbn,
       });
       const epubBlob = await put(`generated/${runId}/${variant}.epub`, epubBuffer, {
         access: "public",
@@ -1307,6 +1310,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         requestedVariants,
         assets.coverImageSrc,
         assets.pageImages,
+        ctx.project.isbn,
       );
       await setRunStatus(runId, "done", "Tamamlandı");
       return { runId, status: "done" as const };
@@ -1620,6 +1624,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       requestedVariants,
       coverImageSrc,
       pageImages,
+      ctx.project.isbn,
     );
 
     await setRunStatus(runId, "done", "Tamamlandı");

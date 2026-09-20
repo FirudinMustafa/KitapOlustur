@@ -6,6 +6,7 @@ import { BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
 import type { UnitProgress } from "@/lib/unit-progress";
 import { PipelineStageTracker } from "./PipelineStageTracker";
 import { Badge } from "@/components/ui/badge";
+import { checkPrintReadiness } from "@/lib/print-readiness";
 
 type ListeningAudioEntry = { blockRef: string; script: string; audioUrl?: string };
 export type GeneratedUnitContent = { unitNumber: number; listeningAudio?: ListeningAudioEntry[] };
@@ -128,7 +129,7 @@ type FlaggedOriginalityCheck = {
 };
 
 type ProjectData = {
-  project: { id: string; name: string; level: string | null };
+  project: { id: string; name: string; level: string | null; isbn: string | null };
   upload: { filename: string; bookType: string } | null;
   run: Run | null;
   outline: Outline;
@@ -139,6 +140,9 @@ type ProjectData = {
   coherenceReview?: CoherenceReview | null;
   feedback?: FeedbackEntry[];
   unitProgress?: UnitProgress[];
+  // Faz "ISBN/baskıya hazırlık": server-fetched (see page.tsx) so there's no
+  // client-side cross-origin fetch to the Blob host.
+  coverDimensions?: { width: number; height: number } | null;
 };
 
 const TERMINAL_STATUSES = new Set(["done", "failed", "changes_requested"]);
@@ -232,7 +236,14 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
     coherenceReview,
     feedback,
     unitProgress,
+    coverDimensions,
   } = data;
+
+  const printReadiness = checkPrintReadiness({
+    isbn: project.isbn,
+    coverWidthPx: coverDimensions?.width,
+    coverHeightPx: coverDimensions?.height,
+  });
 
   const tokenBreakdown = Object.entries(run?.tokenUsage ?? {})
     .filter(([key]) => key !== "total")
@@ -1038,6 +1049,52 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           >
             {rerunning ? "Başlatılıyor…" : "Yeniden çalıştır"}
           </button>
+        </div>
+      )}
+
+      {books.length > 0 && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Baskıya Hazırlık</h2>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                printReadiness.issues.length === 0
+                  ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                  : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+              }`}
+            >
+              {printReadiness.issues.length === 0 ? "Hazır" : `${printReadiness.issues.length} sorun`}
+            </span>
+          </div>
+          <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-400 sm:grid-cols-2">
+            <div>
+              <dt>ISBN</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+                {printReadiness.isbn.provided
+                  ? printReadiness.isbn.valid
+                    ? project.isbn
+                    : `${project.isbn} (geçersiz)`
+                  : "Girilmemiş"}
+              </dd>
+            </div>
+            <div>
+              <dt>Kapak çözünürlüğü/oranı</dt>
+              <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+                {printReadiness.cover
+                  ? `${printReadiness.cover.widthPx}×${printReadiness.cover.heightPx}px (${
+                      printReadiness.cover.isPortrait ? "dikey" : "yatay"
+                    })`
+                  : "Kapak henüz yok"}
+              </dd>
+            </div>
+          </dl>
+          {printReadiness.issues.length > 0 && (
+            <ul className="mt-3 flex flex-col gap-1 border-t border-zinc-100 pt-3 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+              {printReadiness.issues.map((issue, i) => (
+                <li key={i}>{issue}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
