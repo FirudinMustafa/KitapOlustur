@@ -1,0 +1,1 @@
+ALTER TABLE "generated_books" ADD COLUMN "epub_blob_url" text;

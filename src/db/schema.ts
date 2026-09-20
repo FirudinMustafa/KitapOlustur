@@ -257,6 +257,9 @@ export const generatedBooks = pgTable("generated_books", {
   content: jsonb("content"),
   markdown: text("markdown"),
   pdfBlobUrl: text("pdf_blob_url"),
+  // Digital/accessible sibling export - see src/lib/epub/BookEpub.ts. Null
+  // for books assembled before EPUB export existed (no backfill).
+  epubBlobUrl: text("epub_blob_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

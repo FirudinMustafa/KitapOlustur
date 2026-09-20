@@ -144,6 +144,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           bookType: b.bookType,
           markdown: b.markdown,
           pdfBlobUrl: b.pdfBlobUrl,
+          epubBlobUrl: b.epubBlobUrl,
           content: b.content as GeneratedUnitContent[] | null,
         })),
       }}

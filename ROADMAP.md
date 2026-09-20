@@ -626,3 +626,19 @@ Genel değerlendirmede işaretlenen "üretilen metnin gerçekten hedeflenen sevi
 - Doğrulama: `tsc`/`eslint`/`vitest` (44 test)/`next build` temiz (workflow step sayısı 26 → 27, `reviewReadingLevel` onaylandı). Migration üretildi, henüz uygulanmadı.
 
 **Yapılmadı:** Ayrı bir UI göstergesi eklenmedi — mevcut "review" maliyet kalemine ve geri bildirim/retry akışına sessizce katıldı, `reviewLanguageAccuracy` eklendiğinde de bespoke bir UI gerekmemişti, aynı gerekçe geçerli.
+
+### EPUB export (2026-09-20)
+
+Genel değerlendirmede en yüksek değerli boşluk olarak işaretlenen "tek çıktı formatı PDF" sınırlamasına karşı ilk adım: her kitap tipi artık PDF'in yanında bir EPUB3 dosyası da üretiyor.
+
+- `src/lib/epub/BookEpub.ts` (yeni): `jszip` ile elle inşa edilmiş, gerçek bir EPUB üretim kütüphanesi kullanılmadı — EPUB3'ün kendisi zaten iyi tanımlı, sınırlı bir zip yapısı (mimetype + META-INF/container.xml + OEBPS paket dokümanı + nav.xhtml + XHTML içerik), bu yüzden bilinmeyen kalitede/bakım durumunda üçüncü parti bir kütüphane yerine tam kontrol tercih edildi. `BookDocument.tsx`'in `pagesForVariant`/`showAnswerKey` mantığını birebir kopyalıyor — iki format da aynı içeriği gösteriyor, sadece farklı render ediliyor.
+- Görsel ve ses dosyaları **EPUB paketinin içine gömülüyor** (build sırasında Blob URL'lerinden fetch edilip zip'e ekleniyor) — harici referans değil, e-okuyucu uyumluluğu ve kaynak blob silinirse kırılmama için.
+- **Bonus:** çok-sesli diyalog desteğiyle (bugün eklendi) üretilen ses klipleri EPUB'a gömülü `<audio controls>` etiketleriyle çalınabilir halde geliyor — PDF'te bu mümkün değildi (statik format).
+- **Gerçek erişilebilirlik kazanımı:** `BookDocument.tsx`'in aksine (react-pdf'in `Image`'ı hiç `alt` desteklemiyor, bugün ayrı not edildi), EPUB'daki metin gerçek, taranabilir/okunabilir HTML — ekran okuyucular bunu düzgün okuyabilir. Görsellere yine `alt=""` (dekoratif, boş) verildi ama görsel altındaki `<figcaption>` açıklaması (aynı `imagePrompt`'tan) gerçek, erişilebilir bir alternatif metin sağlıyor.
+- `src/db/schema.ts`: `generatedBooks.epubBlobUrl` (nullable text). Migration `drizzle/0018_sturdy_wiccan.sql` — additive, henüz uygulanmadı.
+- `workflows/book-pipeline.tsx` → `assembleAndSaveBooks`: PDF'ten hemen sonra, best-effort (try/catch) EPUB üretimi — bir görsel/ses fetch'i geçici olarak başarısız olursa PDF'in kendisi yine de kaybolmasın diye.
+- UI: `RunStatusView.tsx`'e "EPUB indir" butonu, mevcut "PDF indir" butonunun yanına eklendi.
+- **Test:** `src/lib/epub/BookEpub.test.ts` (yeni, 4 test) — zip yapısının doğruluğu, XML escaping, varyant-bazlı answer-key/sayfa filtreleme. Ağ çağrısı gerektiren görsel/ses gömme yolu test edilmedi (mock'lanmadı) — sadece metin/yapı testleri.
+- Doğrulama: `tsc`/`eslint`/`vitest` (48 test, 44→48)/`next build` temiz. Workflow step sayısı değişmedi (27) — EPUB üretimi yeni bir step değil, mevcut `assembleAndSaveBooks` step'inin içinde.
+
+**Yapılmadı/bilinçli olarak ertelendi:** EPUB'un gerçek bir e-okuyucuda (Apple Books, Kindle vb.) canlı açılıp doğrulanması yapılmadı — sadece yapısal (zip içeriği, XML) doğrulama var. DOCX export ayrı, yapılmadı. EPUB/UA (tam erişilebilirlik sertifikasyonu) seviyesinde bir doğrulama (ör. `epubcheck` aracı) çalıştırılmadı.

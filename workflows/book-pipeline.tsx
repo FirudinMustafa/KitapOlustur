@@ -58,6 +58,7 @@ import {
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
+import { buildEpub } from "@/lib/epub/BookEpub";
 
 type UnitOutline = BookOutline["units"][number];
 
@@ -1008,12 +1009,39 @@ async function assembleAndSaveBooks(
       addRandomSuffix: false,
     });
 
+    // EPUB export: best-effort, alongside the PDF - a failure here (e.g. a
+    // transient fetch of an image/audio blob) shouldn't lose the PDF this
+    // run already produced. See ROADMAP.md's project-wide assessment
+    // (2026-09-20) and src/lib/epub/BookEpub.ts.
+    let epubBlobUrl: string | null = null;
+    try {
+      const epubBuffer = await buildEpub({
+        bookTitle,
+        variant,
+        units,
+        level,
+        contentsUnits,
+        coverImageSrc,
+        pageImages,
+        generatedAt,
+      });
+      const epubBlob = await put(`generated/${runId}/${variant}.epub`, epubBuffer, {
+        access: "public",
+        contentType: "application/epub+zip",
+        addRandomSuffix: false,
+      });
+      epubBlobUrl = epubBlob.url;
+    } catch {
+      // left null - PDF still ships, see comment above
+    }
+
     await db.insert(generatedBooks).values({
       runId,
       bookType: variant,
       content: units,
       markdown,
       pdfBlobUrl: blob.url,
+      epubBlobUrl,
     });
   }
 }

@@ -127,6 +127,13 @@
       "when": 1789895175295,
       "tag": "0017_sad_brood",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789895956176,
+      "tag": "0018_sturdy_wiccan",
+      "breakpoints": true
     }
   ]
 }

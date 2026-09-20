@@ -14,6 +14,7 @@ type GeneratedBook = {
   bookType: "student_book" | "workbook" | "teacher_book" | "test_booklet";
   markdown: string | null;
   pdfBlobUrl: string | null;
+  epubBlobUrl?: string | null;
   content?: GeneratedUnitContent[] | null;
 };
 
@@ -714,6 +715,16 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
                     >
                       PDF indir
+                    </a>
+                  )}
+                  {book.epubBlobUrl && (
+                    <a
+                      href={book.epubBlobUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                    >
+                      EPUB indir
                     </a>
                   )}
                   {book.markdown && (
