@@ -102,6 +102,45 @@ export const contentBlockKindEnum = z.enum([
 ]);
 export type ContentBlockKind = z.infer<typeof contentBlockKindEnum>;
 
+// Faz H2 Faz 3: structured, auto-checkable exercise types for the
+// interactive web reader (BookReader.tsx). Deliberately a single new
+// OPTIONAL field on contentBlockSchema, not a schema replacement - every
+// existing field (items/answerKey/etc.) is untouched, so units generated
+// before this existed still work exactly as before (PDF/EPUB/Common
+// Cartridge/web reader all already have a `?? []`/optional-safe fallback
+// path for a missing field). No regeneration of existing content is
+// needed, unlike what the original roadmap note assumed before this was
+// actually designed. Only "practice"/"assessment" kind blocks are expected
+// to use this (the writer prompt says so) - it doesn't make sense for
+// "explanation"/"narrative" blocks.
+export const multipleChoiceSchema = z.object({
+  type: z.literal("multiple_choice"),
+  question: z.string(),
+  options: z.array(z.string()).min(2),
+  correctIndex: z.number().int().min(0),
+});
+
+export const fillBlankSchema = z.object({
+  type: z.literal("fill_blank"),
+  // The sentence/text with each blank marked as "___" (three underscores),
+  // in order - e.g. "The cat ___ on the ___.". `blanks.length` must equal
+  // the number of "___" markers in `template`.
+  template: z.string(),
+  blanks: z.array(z.string()).min(1),
+});
+
+export const matchingSchema = z.object({
+  type: z.literal("matching"),
+  pairs: z.array(z.object({ left: z.string(), right: z.string() })).min(2),
+});
+
+export const interactiveExerciseSchema = z.discriminatedUnion("type", [
+  multipleChoiceSchema,
+  fillBlankSchema,
+  matchingSchema,
+]);
+export type InteractiveExercise = z.infer<typeof interactiveExerciseSchema>;
+
 export const contentBlockSchema = z.object({
   kind: contentBlockKindEnum,
   heading: z.string(),
@@ -112,6 +151,11 @@ export const contentBlockSchema = z.object({
     .string()
     .optional()
     .describe("If this block should be accompanied by an illustration/diagram, describe it here"),
+  interactive: interactiveExerciseSchema
+    .optional()
+    .describe(
+      "For a practice/assessment block, an optional structured exercise (multiple_choice, fill_blank, or matching) the interactive web reader can render as a real, auto-checkable activity instead of static text. Leave unset for blocks that don't fit one of these three shapes - items/answerKey alone are fine.",
+    ),
 });
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 

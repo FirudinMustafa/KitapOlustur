@@ -6,6 +6,8 @@ import {
   imageReviewSchema,
   bookCoherenceReviewSchema,
   coherenceIssueSchema,
+  contentBlockSchema,
+  interactiveExerciseSchema,
 } from "./schemas";
 
 // Fixture-based validation for the schemas that gate what the pipeline will
@@ -176,5 +178,76 @@ describe("bookCoherenceReviewSchema (Faz E)", () => {
       severity: "low",
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("interactiveExerciseSchema (Faz H2 Faz 3)", () => {
+  it("accepts a valid multiple_choice exercise", () => {
+    const result = interactiveExerciseSchema.safeParse({
+      type: "multiple_choice",
+      question: "What color is the sky?",
+      options: ["Blue", "Green"],
+      correctIndex: 0,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects multiple_choice with fewer than 2 options", () => {
+    const result = interactiveExerciseSchema.safeParse({
+      type: "multiple_choice",
+      question: "What color is the sky?",
+      options: ["Blue"],
+      correctIndex: 0,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a valid fill_blank exercise", () => {
+    const result = interactiveExerciseSchema.safeParse({
+      type: "fill_blank",
+      template: "The cat ___ on the mat.",
+      blanks: ["sat"],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a valid matching exercise", () => {
+    const result = interactiveExerciseSchema.safeParse({
+      type: "matching",
+      pairs: [
+        { left: "Dog", right: "Woof" },
+        { left: "Cat", right: "Meow" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an unknown exercise type", () => {
+    const result = interactiveExerciseSchema.safeParse({ type: "drag_drop", items: [] });
+    expect(result.success).toBe(false);
+  });
+
+  it("contentBlockSchema accepts a block with no interactive field (backward compatible)", () => {
+    const result = contentBlockSchema.safeParse({
+      kind: "explanation",
+      heading: "Greetings",
+      body: "Learn how to say hello.",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("contentBlockSchema accepts a block with an interactive exercise attached", () => {
+    const result = contentBlockSchema.safeParse({
+      kind: "practice",
+      heading: "Quick Check",
+      body: "Answer the question.",
+      interactive: {
+        type: "multiple_choice",
+        question: "2 + 2 = ?",
+        options: ["3", "4"],
+        correctIndex: 1,
+      },
+    });
+    expect(result.success).toBe(true);
   });
 });

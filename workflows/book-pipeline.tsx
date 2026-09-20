@@ -341,6 +341,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
     input.feedback?.length
       ? `A previous draft of this unit had these issues - fix them:\n${input.feedback.map((f) => `- ${f}`).join("\n")}`
       : "",
+    `For a "practice" or "assessment" block whose exercise naturally fits one of these three shapes, ALSO fill in that block's "interactive" field so the digital reader can render it as a real, auto-checkable activity (in addition to "items"/"answerKey", which still print in the PDF/EPUB/LMS export): multiple_choice (one question, 2+ options, correctIndex), fill_blank (a "template" string with each blank marked as exactly "___", and "blanks" holding the correct answer for each one in order), or matching (2+ left/right pairs). Only use this when the exercise genuinely is one of these three shapes - most explanation/narrative/reference blocks should leave "interactive" unset.`,
   ];
 }
 

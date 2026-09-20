@@ -1,8 +1,181 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { GeneratedUnit, GeneratedPage, ContentBlock, WordTimestamp } from "@/lib/ai/schemas";
+import type { GeneratedUnit, GeneratedPage, ContentBlock, WordTimestamp, InteractiveExercise } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
+
+// Faz H2 Faz 3: deterministic shuffle (not Math.random) so a matching
+// exercise's right column doesn't render in the same order as the correct
+// pairs (that would make it a non-exercise) - mirrors src/lib/content-html.ts's
+// seededShuffle exactly (kept as its own copy: this one runs client-side
+// per render, that one server-side at export time - not worth sharing a
+// module across the client/server boundary for eight lines).
+function seededShuffle<T>(arr: T[], seed: string): T[] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    const j = h % (i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+function MultipleChoiceExercise({ exercise }: { exercise: Extract<InteractiveExercise, { type: "multiple_choice" }> }) {
+  const [selected, setSelected] = useState<number | null>(null);
+  return (
+    <div className="mt-2">
+      <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{exercise.question}</p>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {exercise.options.map((option, i) => {
+          const isCorrect = i === exercise.correctIndex;
+          const isSelected = i === selected;
+          const showFeedback = selected !== null;
+          return (
+            <button
+              key={i}
+              onClick={() => setSelected(i)}
+              disabled={showFeedback}
+              className={`rounded-md border px-3 py-1.5 text-left text-sm ${
+                showFeedback && isCorrect
+                  ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
+                  : showFeedback && isSelected
+                    ? "border-red-500 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-200"
+                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              }`}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+      {selected !== null && (
+        <button
+          onClick={() => setSelected(null)}
+          className="mt-2 text-xs font-medium text-blue-700 underline hover:no-underline dark:text-blue-400"
+        >
+          Tekrar dene
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FillBlankExercise({ exercise }: { exercise: Extract<InteractiveExercise, { type: "fill_blank" }> }) {
+  const segments = exercise.template.split("___");
+  const [answers, setAnswers] = useState<string[]>(() => exercise.blanks.map(() => ""));
+  const [checked, setChecked] = useState(false);
+
+  function isCorrect(i: number) {
+    return answers[i]?.trim().toLowerCase() === exercise.blanks[i]?.trim().toLowerCase();
+  }
+
+  return (
+    <div className="mt-2">
+      <p className="text-sm leading-loose text-zinc-800 dark:text-zinc-200">
+        {segments.map((segment, i) => (
+          <span key={i}>
+            {segment}
+            {i < exercise.blanks.length && (
+              <input
+                value={answers[i] ?? ""}
+                onChange={(e) => setAnswers((prev) => prev.map((a, j) => (j === i ? e.target.value : a)))}
+                className={`mx-1 w-24 rounded border px-1.5 py-0.5 text-sm ${
+                  checked
+                    ? isCorrect(i)
+                      ? "border-green-500 bg-green-50 dark:bg-green-950"
+                      : "border-red-500 bg-red-50 dark:bg-red-950"
+                    : "border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900"
+                }`}
+              />
+            )}
+          </span>
+        ))}
+      </p>
+      <button
+        onClick={() => setChecked(true)}
+        className="mt-2 rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+      >
+        Kontrol et
+      </button>
+    </div>
+  );
+}
+
+function MatchingExercise({ exercise }: { exercise: Extract<InteractiveExercise, { type: "matching" }> }) {
+  const [rightOrder] = useState(() => seededShuffle(exercise.pairs.map((p) => p.right), exercise.pairs[0]?.left ?? ""));
+  const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
+  const [solved, setSolved] = useState<Set<number>>(new Set());
+  const [wrongFlash, setWrongFlash] = useState<number | null>(null);
+
+  function attemptMatch(rightIndex: number) {
+    if (selectedLeft === null) return;
+    const isCorrect = exercise.pairs[selectedLeft].right === rightOrder[rightIndex];
+    if (isCorrect) {
+      setSolved((prev) => new Set(prev).add(selectedLeft));
+      setSelectedLeft(null);
+    } else {
+      setWrongFlash(rightIndex);
+      setTimeout(() => setWrongFlash(null), 500);
+    }
+  }
+
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      <div className="flex flex-col gap-1.5">
+        {exercise.pairs.map((pair, i) => (
+          <button
+            key={i}
+            onClick={() => !solved.has(i) && setSelectedLeft(i)}
+            disabled={solved.has(i)}
+            className={`rounded-md border px-2 py-1.5 text-left text-sm ${
+              solved.has(i)
+                ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
+                : selectedLeft === i
+                  ? "border-blue-500 bg-blue-50 dark:bg-blue-950"
+                  : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            }`}
+          >
+            {pair.left}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {rightOrder.map((right, i) => {
+          const solvedHere = [...solved].some((li) => exercise.pairs[li].right === right);
+          return (
+            <button
+              key={i}
+              onClick={() => attemptMatch(i)}
+              disabled={solvedHere}
+              className={`rounded-md border px-2 py-1.5 text-left text-sm ${
+                solvedHere
+                  ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
+                  : wrongFlash === i
+                    ? "border-red-500 bg-red-50 dark:bg-red-950"
+                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              }`}
+            >
+              {right}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function InteractiveExerciseView({ exercise }: { exercise: InteractiveExercise }) {
+  switch (exercise.type) {
+    case "multiple_choice":
+      return <MultipleChoiceExercise exercise={exercise} />;
+    case "fill_blank":
+      return <FillBlankExercise exercise={exercise} />;
+    case "matching":
+      return <MatchingExercise exercise={exercise} />;
+  }
+}
 
 const VARIANT_LABELS: Record<Variant, string> = {
   student_book: "Student Book",
@@ -105,6 +278,7 @@ function BlockView({ block, showAnswerKey }: { block: ContentBlock; showAnswerKe
           ))}
         </ol>
       )}
+      {block.interactive && <InteractiveExerciseView exercise={block.interactive} />}
       {showAnswerKey && !!block.answerKey?.length && <AnswerKeyToggle answerKey={block.answerKey} />}
     </section>
   );

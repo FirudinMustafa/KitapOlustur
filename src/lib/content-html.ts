@@ -45,6 +45,64 @@ export function pagesForVariant(unit: GeneratedUnit, variant: Variant): Generate
   }
 }
 
+// Deterministic shuffle (Fisher-Yates with a simple string-seeded PRNG, not
+// Math.random) - used so a matching exercise's right-hand column doesn't
+// print in the same order as the correct answers (that would make it a
+// non-exercise), while still producing the exact same scrambled order on
+// every export of the same book instead of a different one each time.
+// Exported so BookDocument.tsx's PDF rendering can use the identical
+// algorithm rather than a second copy.
+export function seededShuffle<T>(arr: T[], seed: string): T[] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    const j = h % (i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Faz H2 Faz 3: static (non-interactive) rendering of a structured exercise
+// for PDF/EPUB/Common Cartridge - the same content, just printed instead of
+// clickable (see BookReader.tsx's real interactive components for the web
+// reader). Correct answers are only revealed when showAnswerKey is true
+// (same rule as the existing plain items/answerKey), matching or MC options
+// are otherwise scrambled/hidden so print output stays a genuine exercise.
+function renderInteractiveHtml(block: ContentBlock, showAnswerKey: boolean): string {
+  const interactive = block.interactive;
+  if (!interactive) return "";
+
+  if (interactive.type === "multiple_choice") {
+    const options = interactive.options
+      .map((o, i) => `<li>${escapeXml(o)}${showAnswerKey && i === interactive.correctIndex ? " ✓" : ""}</li>`)
+      .join("");
+    return `<div class="interactive interactive-mc"><p>${escapeXml(interactive.question)}</p><ol type="a">${options}</ol></div>`;
+  }
+
+  if (interactive.type === "fill_blank") {
+    const printed = escapeXml(interactive.template).replace(/___/g, "_____");
+    const answers = showAnswerKey
+      ? `<p class="answer-key-label">ANSWER KEY</p><ol>${interactive.blanks.map((b) => `<li>${escapeXml(b)}</li>`).join("")}</ol>`
+      : "";
+    return `<div class="interactive interactive-fill-blank"><p>${printed}</p>${answers}</div>`;
+  }
+
+  // matching
+  const leftItems = interactive.pairs.map((p) => p.left);
+  const rightItems = showAnswerKey
+    ? interactive.pairs.map((p) => p.right)
+    : seededShuffle(
+        interactive.pairs.map((p) => p.right),
+        block.heading,
+      );
+  const rows = leftItems
+    .map((left, i) => `<tr><td>${escapeXml(left)}</td><td>${escapeXml(rightItems[i])}</td></tr>`)
+    .join("");
+  return `<div class="interactive interactive-matching"><table>${rows}</table></div>`;
+}
+
 export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): string {
   const items = block.items?.length
     ? `<ol class="items">${block.items.map((item) => `<li>${escapeXml(item)}</li>`).join("")}</ol>`
@@ -59,6 +117,7 @@ export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): st
     <h3>${escapeXml(block.heading)}</h3>
     ${paragraphs(block.body)}
     ${items}
+    ${renderInteractiveHtml(block, showAnswerKey)}
     ${answerKey}
   </section>`;
 }

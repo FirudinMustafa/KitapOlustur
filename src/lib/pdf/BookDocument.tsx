@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, Svg, Path, Rect, Circle, Line, Image } from "@react-pdf/renderer";
 import type { GeneratedUnit, GeneratedPage, ContentBlock, ContentBlockKind } from "@/lib/ai/schemas";
 import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument";
+import { seededShuffle } from "@/lib/content-html";
 
 export type Variant = "student_book" | "workbook" | "teacher_book" | "test_booklet";
 
@@ -198,13 +199,74 @@ const styles = StyleSheet.create({
 
 type Palette = (typeof PALETTE)[Variant];
 
+// Faz H2 Faz 3: static print rendering of a structured exercise
+// (src/lib/ai/schemas.ts's interactiveExerciseSchema) - the real,
+// clickable version is BookReader.tsx's web-only components; this is what
+// prints in the PDF. Same visibility rule as the plain answerKey: matching
+// pairs/MC correct answers only reveal when showAnswerKey is true
+// (workbook/teacher_book), otherwise a matching exercise's right column is
+// deterministically scrambled so it stays a real exercise on paper too.
+function InteractiveExerciseView({ block, showAnswerKey }: { block: ContentBlock; showAnswerKey: boolean }) {
+  const interactive = block.interactive;
+  if (!interactive) return null;
+
+  if (interactive.type === "multiple_choice") {
+    return (
+      <View style={{ marginTop: 6 }}>
+        <Text style={styles.item}>{interactive.question}</Text>
+        {interactive.options.map((option, i) => (
+          <Text style={styles.item} key={i}>
+            {String.fromCharCode(97 + i)}) {option}
+            {showAnswerKey && i === interactive.correctIndex ? "  ✓" : ""}
+          </Text>
+        ))}
+      </View>
+    );
+  }
+
+  if (interactive.type === "fill_blank") {
+    return (
+      <View style={{ marginTop: 6 }}>
+        <Text style={styles.item}>{interactive.template.replace(/___/g, "_____")}</Text>
+        {showAnswerKey && (
+          <View style={styles.answerKeyBox}>
+            <Text style={styles.answerKeyLabel}>ANSWER KEY</Text>
+            {interactive.blanks.map((b, i) => (
+              <Text style={styles.item} key={i}>
+                {i + 1}. {b}
+              </Text>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // matching
+  const rightColumn = showAnswerKey
+    ? interactive.pairs.map((p) => p.right)
+    : seededShuffle(
+        interactive.pairs.map((p) => p.right),
+        block.heading,
+      );
+  return (
+    <View style={{ marginTop: 6 }}>
+      {interactive.pairs.map((pair, i) => (
+        <Text style={styles.item} key={i}>
+          {i + 1}. {pair.left} — {rightColumn[i]}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 function BlockCard({ block, showAnswerKey, palette }: { block: ContentBlock; showAnswerKey: boolean; palette: Palette }) {
   const colors = BLOCK_COLORS[block.kind];
   return (
     <View style={[styles.sectionCard, { borderLeftColor: palette.primary }]}>
       <Text style={styles.sectionHeading}>{block.heading}</Text>
       <Text style={styles.body}>{block.body}</Text>
-      {block.items?.length ? (
+      {block.items?.length || block.interactive ? (
         <View style={[styles.exerciseBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.exerciseBadgeRow}>
             <View style={[styles.exerciseIconChip, { backgroundColor: colors.text }]}>
@@ -212,11 +274,12 @@ function BlockCard({ block, showAnswerKey, palette }: { block: ContentBlock; sho
             </View>
             <Text style={[styles.exerciseBadgeLabel, { backgroundColor: colors.text }]}>{block.kind.toUpperCase()}</Text>
           </View>
-          {block.items.map((item, k) => (
+          {block.items?.map((item, k) => (
             <Text style={styles.item} key={k}>
               {k + 1}. {item}
             </Text>
           ))}
+          <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />
           {showAnswerKey && block.answerKey?.length ? (
             <View style={styles.answerKeyBox}>
               <Text style={styles.answerKeyLabel}>ANSWER KEY</Text>
