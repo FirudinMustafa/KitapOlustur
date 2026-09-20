@@ -141,6 +141,12 @@ export const generationRuns = pgTable("generation_runs", {
   variantCount: integer("variant_count").notNull().default(2),
   modelVersion: text("model_version"),
   tokenUsage: jsonb("token_usage").$type<Record<string, number>>(),
+  // Faz "Gerçek maliyet takibi" (2026-09-21, ROADMAP.md): image/audio
+  // generation isn't priced per-token, so it can't share tokenUsage above -
+  // this is the $-denominated counterpart, same jsonb-accumulator shape
+  // (per-category key + "total"), populated by recordCost in
+  // workflows/book-pipeline.tsx using src/lib/ai/pricing.ts's rates.
+  costUsage: jsonb("cost_usage").$type<Record<string, number>>(),
   coverImageUrl: text("cover_image_url"),
   pageImageUrls: jsonb("page_image_urls").$type<Record<number, string>>(),
   pendingVariants: jsonb("pending_variants"),
@@ -363,5 +369,12 @@ export const storyArtifacts = pgTable("story_artifacts", {
   // used to poll GET /requests/{id}/status until it reaches a terminal
   // state. Null for image/audio artifacts (those resolve synchronously).
   providerRequestId: text("provider_request_id"),
+  // Faz "Gerçek maliyet takibi": per-artifact cost in USD, computed at
+  // generation time (src/lib/ai/pricing.ts) - shown right next to the
+  // artifact in the studio gallery (StudioWorkspace.tsx), unlike the main
+  // book pipeline's aggregate run-level total (costUsage above), since here
+  // each artifact is its own standalone thing a user reacts to individually.
+  // Null for video (not priced yet - see pricing.ts) or a failed generation.
+  costUsd: real("cost_usd"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

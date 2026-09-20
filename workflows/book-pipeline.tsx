@@ -57,6 +57,7 @@ import {
   resolveImageModel,
   resolveSpeechModel,
 } from "@/lib/ai/model";
+import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
@@ -113,6 +114,30 @@ async function recordUsage(runId: string, key: string, usage: LanguageModelUsage
         ),
         ARRAY['total'],
         to_jsonb(coalesce((coalesce(${generationRuns.tokenUsage}, '{}'::jsonb)->>'total')::bigint, 0) + ${tokens}::bigint)
+      )`,
+    })
+    .where(eq(generationRuns.id, runId));
+}
+
+// Faz "Gerçek maliyet takibi" (2026-09-21, ROADMAP.md): the $-denominated
+// counterpart to recordUsage above, for image/audio generation - these
+// aren't priced per-token, so they can't share tokenUsage. Same atomic
+// jsonb_set accumulator shape (per-category key + "total"), just numeric
+// instead of bigint since costs are fractional dollars.
+async function recordCost(runId: string, key: string, amountUsd: number | null) {
+  if (!amountUsd) return;
+
+  await db
+    .update(generationRuns)
+    .set({
+      costUsage: sql`jsonb_set(
+        jsonb_set(
+          coalesce(${generationRuns.costUsage}, '{}'::jsonb),
+          ARRAY[${key}::text],
+          to_jsonb(coalesce((${generationRuns.costUsage}->>${key})::numeric, 0) + ${amountUsd}::numeric)
+        ),
+        ARRAY['total'],
+        to_jsonb(coalesce((coalesce(${generationRuns.costUsage}, '{}'::jsonb)->>'total')::numeric, 0) + ${amountUsd}::numeric)
       )`,
     })
     .where(eq(generationRuns.id, runId));
@@ -538,6 +563,7 @@ async function generateTestBookletSide(runId: string, input: UnitGenerationConte
 const MAX_AUDIO_ATTEMPTS = 3;
 
 async function synthesizeSpeechWithRetry(
+  runId: string,
   model: string,
   text: string,
   voice: string | undefined,
@@ -545,6 +571,9 @@ async function synthesizeSpeechWithRetry(
   for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
     try {
       const { audio } = await generateSpeech({ model, text, voice, outputFormat: "mp3" });
+      // Only the successful attempt is billed by character count - a failed
+      // attempt (the catch branch below) doesn't produce audio to charge for.
+      await recordCost(runId, "audio", estimateSpeechCostUsd(model, text.length));
       return Buffer.from(audio.uint8Array);
     } catch {
       if (attempt < MAX_AUDIO_ATTEMPTS) await new Promise((r) => setTimeout(r, 500 * attempt));
@@ -595,7 +624,7 @@ async function generateListeningAudio(
       const voiceBySpeaker = new Map(speakers.map((s, idx) => [s, DIALOGUE_VOICE_POOL[idx % DIALOGUE_VOICE_POOL.length]]));
       const lineBuffers: Buffer[] = [];
       for (const dialogueLine of entry.dialogueLines!) {
-        const buf = await synthesizeSpeechWithRetry(speechModel, dialogueLine.line, voiceBySpeaker.get(dialogueLine.speaker));
+        const buf = await synthesizeSpeechWithRetry(runId, speechModel, dialogueLine.line, voiceBySpeaker.get(dialogueLine.speaker));
         if (!buf) break;
         lineBuffers.push(buf);
       }
@@ -606,7 +635,7 @@ async function generateListeningAudio(
     }
 
     if (!audioBuffer) {
-      audioBuffer = await synthesizeSpeechWithRetry(speechModel, entry.script, undefined);
+      audioBuffer = await synthesizeSpeechWithRetry(runId, speechModel, entry.script, undefined);
     }
 
     let audioUrl: string | undefined;
@@ -976,11 +1005,16 @@ async function generateReviewedImage(
   let lastBlobUrl: string | null = null;
 
   for (let attempt = 1; attempt <= MAX_IMAGE_ATTEMPTS; attempt++) {
+    const imageModel = resolveImageModel(qualityMode);
     const { image } = await generateImage({
-      model: resolveImageModel(qualityMode),
+      model: imageModel,
       prompt,
       aspectRatio: "16:9",
     });
+    // Every attempt is a real, separate paid call - including retries after
+    // a failed QA check - so each one is recorded, not just the final image
+    // that ships.
+    await recordCost(runId, "image", estimateImageCostUsd(imageModel));
 
     const blob = await put(storagePath, Buffer.from(image.uint8Array), {
       access: "public",

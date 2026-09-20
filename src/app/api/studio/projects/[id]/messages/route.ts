@@ -25,6 +25,7 @@ type CreatedArtifact = {
   status: "pending" | "done" | "failed";
   url: string | null;
   errorMessage: string | null;
+  costUsd: number | null;
 };
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -78,6 +79,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         model: result.model,
         status: result.status,
         errorMessage: result.status === "failed" ? result.errorMessage : null,
+        costUsd: result.status === "done" ? result.costUsd : null,
       })
       .returning();
     const artifact: CreatedArtifact = {
@@ -86,6 +88,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       status: result.status,
       url: row.url,
       errorMessage: row.errorMessage,
+      costUsd: row.costUsd,
     };
     createdArtifacts.push(artifact);
     return artifact;
@@ -119,6 +122,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         status: "failed",
         url: null,
         errorMessage: row.errorMessage,
+        costUsd: null,
       };
       createdArtifacts.push(artifact);
       return artifact;
@@ -151,6 +155,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       status: result.status,
       url: row.url,
       errorMessage: row.errorMessage,
+      // Video isn't priced yet (see src/lib/ai/pricing.ts) - it's inert
+      // pending API keys, so there's no real cost to attach here regardless.
+      costUsd: null,
     };
     createdArtifacts.push(artifact);
     return artifact;

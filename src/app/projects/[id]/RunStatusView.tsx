@@ -73,6 +73,7 @@ type Run = {
   updatedAt: string;
   modelVersion?: string | null;
   tokenUsage?: Record<string, number> | null;
+  costUsage?: Record<string, number> | null;
   pendingVariants?: PendingVariants;
   pendingContentApproval?: PendingContentApproval;
   pendingImageReview?: PendingImageReview[] | null;
@@ -252,6 +253,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const pricing = (run?.modelVersion && MODEL_PRICING_PER_MILLION[run.modelVersion]) || DEFAULT_PRICING;
   const estimatedCostMin = (totalTokens / 1_000_000) * pricing.input;
   const estimatedCostMax = (totalTokens / 1_000_000) * pricing.output;
+  const imageCostUsd = run?.costUsage?.image ?? 0;
+  const audioCostUsd = run?.costUsage?.audio ?? 0;
+  const hasRealCost = imageCostUsd > 0 || audioCostUsd > 0;
   const imageCount = (run?.coverImageUrl ? 1 : 0) + Object.keys(run?.pageImageUrls ?? {}).length;
   const audioCount = books.reduce((sum, b) => sum + audioTracksFor(b).length, 0);
   const outlineData = outline?.outline?.outline;
@@ -566,14 +570,34 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             </span>
           </p>
           {(imageCount > 0 || audioCount > 0) && (
-            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-              {imageCount > 0 && `${imageCount} görsel üretildi (Imagen)`}
-              {imageCount > 0 && audioCount > 0 && " · "}
-              {audioCount > 0 && `${audioCount} ses klibi üretildi (TTS)`}
-              <span className="block text-[10px] text-zinc-400">
-                bu ikisinin maliyeti token bazlı değil, buraya dahil edilmedi
-              </span>
-            </p>
+            <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              {imageCount > 0 && (
+                <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                  {imageCount} görsel üretildi (GPT Image){" "}
+                  {imageCostUsd > 0 ? (
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100">~${imageCostUsd.toFixed(3)}</span>
+                  ) : (
+                    <span className="text-zinc-400">(maliyet bu run için ölçülmedi)</span>
+                  )}
+                </p>
+              )}
+              {audioCount > 0 && (
+                <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                  {audioCount} ses klibi üretildi (TTS){" "}
+                  {audioCostUsd > 0 ? (
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100">${audioCostUsd.toFixed(3)}</span>
+                  ) : (
+                    <span className="text-zinc-400">(maliyet bu run için ölçülmedi)</span>
+                  )}
+                </p>
+              )}
+              {hasRealCost && (
+                <span className="mt-1 block text-[10px] text-zinc-400">
+                  Görsel maliyeti orta-kalite, 1024×1024 için yayınlanmış bir tahmin (gerçek boyut/kaliteye göre
+                  değişebilir); ses maliyeti gerçek karakter sayısına göre kesin (tts-1-hd: $30/1M karakter).
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}

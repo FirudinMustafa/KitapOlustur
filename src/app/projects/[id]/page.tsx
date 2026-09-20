@@ -137,6 +137,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               updatedAt: run.updatedAt.toISOString(),
               modelVersion: run.modelVersion,
               tokenUsage: run.tokenUsage,
+              costUsage: run.costUsage,
               pendingVariants: run.pendingVariants as PendingVariants,
               pendingContentApproval: run.pendingContentApproval as PendingContentApproval,
               pendingImageReview: run.pendingImageReview as PendingImageReview[] | null,

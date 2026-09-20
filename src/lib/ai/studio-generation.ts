@@ -1,6 +1,7 @@
 import { generateImage, experimental_generateSpeech as generateSpeech } from "ai";
 import { put } from "@vercel/blob";
 import { resolveImageModel, resolveSpeechModel, resolveVeoModel } from "@/lib/ai/model";
+import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { submitImageToVideo } from "@/lib/ai/higgsfield";
 import { generateVeoVideoFromImage } from "@/lib/ai/veo";
 
@@ -17,7 +18,7 @@ import { generateVeoVideoFromImage } from "@/lib/ai/veo";
 // tradeoff (avoids doubling image-generation cost on every message).
 
 export type StudioGenerationResult =
-  | { status: "done"; url: string; model: string }
+  | { status: "done"; url: string; model: string; costUsd: number | null }
   | { status: "failed"; model: string; errorMessage: string };
 
 const HIGGSFIELD_VIDEO_MODEL = "higgsfield/kling-v2.5-turbo-standard";
@@ -42,7 +43,7 @@ export async function generateStoryImage(
       contentType: image.mediaType,
       addRandomSuffix: false,
     });
-    return { status: "done", url: blob.url, model };
+    return { status: "done", url: blob.url, model, costUsd: estimateImageCostUsd(model) };
   } catch (err) {
     return { status: "failed", model, errorMessage: err instanceof Error ? err.message : String(err) };
   }
@@ -112,7 +113,7 @@ export async function generateStoryAudio(
       contentType: audio.mediaType,
       addRandomSuffix: false,
     });
-    return { status: "done", url: blob.url, model };
+    return { status: "done", url: blob.url, model, costUsd: estimateSpeechCostUsd(model, text.length) };
   } catch (err) {
     return { status: "failed", model, errorMessage: err instanceof Error ? err.message : String(err) };
   }

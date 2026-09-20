@@ -276,6 +276,9 @@ export function StudioWorkspace({
               <p className="mt-1 truncate text-xs text-zinc-500" title={a.prompt}>
                 {a.prompt}
               </p>
+              {a.costUsd != null && (
+                <p className="mt-0.5 text-[10px] font-medium text-zinc-400">~${a.costUsd.toFixed(3)}</p>
+              )}
             </div>
           ))}
         </div>
