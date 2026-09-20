@@ -16,6 +16,7 @@
 | Faz H — Genişleme fikirleri | ✅ H1, H2 (Faz 1+2+3), H3, H4, H5, H6 tamamlandı (2026-09-20) | Aşağıda ilgili "Tamamlanma Notu" bölümleri |
 | Hikaye Stüdyosu — serbest, chat-tabanlı içerik paneli | 🟡 Kod tamamlandı, canlı test bir hesap kısıtlamasıyla bloke (2026-09-19) | Aşağıda "Hikaye Stüdyosu — Tamamlanma Notu" |
 | Genel değerlendirme sonrası ek işler (görsel açıklama, çok-sesli diyalog, EPUB, LMS, F2, okunabilirlik QA, H2) | ✅ Tamamlandı (2026-09-20) | Aşağıda ilgili bölümler, ROADMAP sonunda |
+| İnsan-onaylı üretim hattı (içerik onayı + görsel inceleme + nihai onay) | ✅ Kod tamamlandı, UI canlı doğrulandı (2026-09-20) | Aşağıda "İnsan-Onaylı Üretim Hattı — Tamamlanma Notu" |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -717,3 +718,37 @@ Kullanıcı H2 Faz 3 ile devam etti — roadmap'in kendisinde "en büyük ve en 
 ---
 
 **H2'nin tamamı (Faz 1 + 2 + 3) artık tamamlandı.** Kalan büyük iş yok — sadece kullanıcı-aksiyonlu iki engel bekleniyor: Vercel AI Gateway kredisi ve (istenirse) çoklu-kullanıcı/organizasyon (yukarıda "İleride yapılacak" olarak not edildi).
+
+## İnsan-Onaylı Üretim Hattı — Tamamlanma Notu (2026-09-20)
+
+Kullanıcının isteği: gerçek kitap yayıncılığındaki uzmanlaşmış rol ayrımına (içerik üretici / gramer editörü / grafik-tasarımcı, sıralı çalışırlar) bakıp pipeline'ın buna ne kadar uyduğunu kontrol etmek, ve "içerik üretilir, biz kabul edersek bir sonraki aşamaya geçilir" şeklinde bir insan-onaylı akış kurmak.
+
+**Önce araştırma (fork'lanmış subagent ile):** Gerçek yayıncılık iş akışı (araştırma → yazım → developmental edit → copyedit → tasarım/dizgi → prova okuma → SME incelemesi → nihai imza → baskı) ve AI-destekli human-in-the-loop desenleri incelendi. **Kritik bulgu:** hiçbir kaynak "her adımı onayla" gibi tekdüze bir gate yoğunluğu önermiyor — gate yoğunluğu riske/karar-gerektirme derecesine göre olmalı. Bunun yerine "staged release" (toplu onay, tek tek değil) ve "otomatik ön-inceleme kapısı" (ucuz otomatik kontrol önce filtreler, sadece işaretlenenler insana gider) desenleri öne çıktı.
+
+Kullanıcıya 3 önerilen yeni onay kapısından hangilerini istediği soruldu — **üçü de seçildi**:
+
+1. **İçerik onayı** — tüm ünitelerin metni, görsel üretimi başlamadan önce tek seferde onaylanıyor (gerçek yayıncılıktaki "copyedit bitmeden tasarım başlamaz" kuralıyla aynı mantık).
+2. **Görsel inceleme** — sadece otomatik QA'dan (retry'lardan sonra bile) geçemeyen görseller insana gidiyor, hepsi değil ("otomatik ön-inceleme kapısı" deseni).
+3. **Nihai onay** — kitaplar derlenip "tamamlandı" olarak işaretlenmeden hemen önce son bir imza (gerçek yayıncılıktaki "Nihai Onay → Baskıya" adımıyla aynı, içerik incelemesinden ayrı bir teknik/baskıya-hazırlık kapısı).
+
+### Şema (`src/db/schema.ts`, migration `drizzle/0019_abnormal_dark_phoenix.sql`, uygulandı)
+- `runStatusEnum`'a 4 yeni değer: `awaiting_content_approval`, `awaiting_image_review`, `awaiting_final_approval`, `changes_requested`.
+- `generationRuns`'a 2 yeni scratch kolonu: `pendingContentApproval`, `pendingImageReview` (jsonb, `pendingVariants` ile aynı desende — sadece run o gate'te beklerken veri tutuyor).
+- `changes_requested` bilinçli olarak `failed`/`FatalError` değil — dizelge reddinin aksine (o gerçekten hata sayılıyor), nihai onay reddi "hazır değil, hata yok" anlamına geliyor çünkü bu noktaya kadar gerçek para/hesaplama harcanmış oluyor.
+
+### Pipeline (`workflows/book-pipeline.tsx`)
+- Ünite üretim döngüsü ikiye bölündü: önce **sadece metin** üretimi (tüm üniteler), sonra içerik-onay kapısı (`createHook` + `content-approval:${runId}` token'ı, reddedilirse `FatalError`), sonra **ayrı** bir görsel üretim döngüsü.
+- Görsel üretiminden sonra `getFlaggedImages` — `imageReviews`'da her sayfa için en son `attempt`'i alıp hâlâ `passed=false` olanları grupluyor (kapak görseli hariç — sayfa/ünite bağlamı olmadığından yeniden üretilemez). Varsa görsel-inceleme kapısı; kullanıcı her görsel için "kabul et" (olduğu gibi gönder) veya "yeniden üret" seçebiliyor.
+- Son olarak nihai onay kapısı — reddedilirse `assembleAndSaveBooks` hiç çağrılmadan `changes_requested` ile dönülüyor.
+- **Kendi kendine bulunan gerçek bug:** `coverImageUrl`/`pageImageUrls` daha önce sadece `assembleAndSaveBooks` içinde kaydediliyordu. Nihai onay reddedilirse bu adım artık hiç çalışmayabileceğinden, zaten üretilip Blob'a yüklenmiş görseller hiçbir yerde referanslanmamış olacaktı. Yeni `savePageImages` step'i eklenerek görsel-inceleme aşamasından hemen sonra kaydediliyor.
+- Workflow step sayısı 28 → 33 (`getFlaggedImages`, `saveContentForApproval`, `saveImagesForReview`, `regenerateFlaggedImage`, `savePageImages`).
+
+### API + UI
+- 3 yeni route: `approve-content`, `review-images`, `approve-final` (hepsi mevcut `approve-outline`'ın `requireProjectOwner` + status-kontrolü + `resumeHook` deseninde).
+- `RunStatusView.tsx`'e 3 yeni ekran bloğu (içerik onayı — ünite/sayfa önizlemesi; görsel inceleme — işaretli görsellerin thumbnail'i + issue listesi + kabul/yeniden-üret toggle; nihai onay — özet + onayla/değişiklik-iste) + `changes_requested` için bilgilendirici blok.
+
+### Doğrulama
+- `tsc`/`eslint`/`vitest` (66 test)/`next build` temiz.
+- **UI, gerçek run state enjekte edilerek Chrome'da canlı doğrulandı** (sahipsiz "Sample Coursebook Test 2" projesi geçici olarak kullanıcının hesabına atanıp, `generation_runs` satırına sırayla her 4 durum enjekte edildi): `awaiting_content_approval` (2 ünite önizlemesi, onay/red butonları), `awaiting_image_review` (2 işaretli görsel, issue listeleri, kabul/yeniden-üret toggle'ları), `awaiting_final_approval` (özet + onayla-ve-derle/değişiklik-iste butonları), `changes_requested` (bilgilendirici mesaj). Dördünde de konsol hatasız. Test sonrası run `status='done'`, `pending*` kolonları `NULL`, proje `owner_id` `NULL` olarak eski haline getirildi.
+
+**Yapılmadı / dürüstlük notu:** Gerçek workflow hook-resume akışı (bir kullanıcının butona tıklayıp `resumeHook`'un gerçekten bekleyen bir workflow'u devam ettirmesi) **uçtan uca test edilemedi** — Vercel AI Gateway hesabı hâlâ "free tier" kısıtlamasıyla bloke (bu oturum boyunca bilinen, çözülmemiş sorun), bu yüzden gerçek bir pipeline çalıştırılamıyor. Sadece UI'ın doğru veriyi gösterdiği ve doğru API çağrılarını yapmaya hazır olduğu doğrulandı — asıl hook mekanizması (`createHook`/`resumeHook`) daha önceki `awaiting_outline_approval`/`awaiting_variant_selection` kapılarıyla aynı, zaten canlıda çalıştığı kanıtlanmış Vercel Workflow API'sini kullanıyor, ama bu iki yeni kapı için bizzat tekrar kanıtlanmadı.

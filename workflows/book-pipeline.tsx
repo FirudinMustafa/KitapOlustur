@@ -674,6 +674,19 @@ async function savePendingVariants(runId: string, pendingVariants: PendingVarian
   await db.update(generationRuns).set({ pendingVariants }).where(eq(generationRuns.id, runId));
 }
 
+// Faz "İnsan-onaylı üretim hattı": persists cover/page image URLs as soon as
+// image generation+review finishes, independent of assembleAndSaveBooks
+// (which used to be the only place these were saved). Necessary now that a
+// run can reach "awaiting_final_approval" and be rejected
+// ("changes_requested") WITHOUT ever calling assembleAndSaveBooks - without
+// this, the already-generated (and already-uploaded-to-Blob) images would
+// have no persisted URL anywhere, effectively losing them even though the
+// files themselves still exist.
+async function savePageImages(runId: string, coverImageUrl: string, pageImageUrls: Record<number, string>) {
+  "use step";
+  await db.update(generationRuns).set({ coverImageUrl, pageImageUrls }).where(eq(generationRuns.id, runId));
+}
+
 // Faz H4: archives every generated variant (see variantHistory in
 // src/db/schema.ts) before clearing the run's pendingVariants scratch
 // column, so unselected variants aren't silently discarded - replaces the
@@ -948,6 +961,12 @@ async function generateReviewedImage(
   return lastBlobUrl as string;
 }
 
+function pageImageContext(unit: GeneratedUnit, page: GeneratedPage): string {
+  return `Unit ${unit.unitNumber} ("${unit.title}"), page type: ${page.pageType}. ${
+    page.blocks[0] ? `First content block: "${page.blocks[0].heading}" - ${page.blocks[0].body.slice(0, 200)}` : ""
+  }`;
+}
+
 async function generateUnitImages(
   runId: string,
   unit: GeneratedUnit,
@@ -967,15 +986,11 @@ async function generateUnitImages(
   for (const page of allPages) {
     if (!page.imagePrompt || images[page.sourcePageNumber]) continue;
 
-    const pageContext = `Unit ${unit.unitNumber} ("${unit.title}"), page type: ${page.pageType}. ${
-      page.blocks[0] ? `First content block: "${page.blocks[0].heading}" - ${page.blocks[0].body.slice(0, 200)}` : ""
-    }`;
-
     images[page.sourcePageNumber] = await generateReviewedImage(
       runId,
       unit.unitNumber,
       page.sourcePageNumber,
-      pageContext,
+      pageImageContext(unit, page),
       `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
       `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
       qualityMode,
@@ -983,6 +998,86 @@ async function generateUnitImages(
   }
 
   return images;
+}
+
+// Faz "İnsan-onaylı üretim hattı": after all units' images have been
+// generated (each already went through generateReviewedImage's own
+// automated retry loop, see MAX_IMAGE_ATTEMPTS), find the ones still
+// flagged after every retry - these are routed to a human instead of
+// silently shipping the last failed attempt (pattern: automated pre-review
+// gate, only flagged items reach a human - see ROADMAP.md). Cover image
+// deliberately excluded - it has no (unit, page) to look up for a
+// regeneration attempt, and is a single image a human already sees
+// immediately in the run's preview regardless.
+async function getFlaggedImages(
+  runId: string,
+): Promise<{ unitNumber: number; pageNumber: number; imageUrl: string; issues: string[] }[]> {
+  "use step";
+
+  const reviews = await db.query.imageReviews.findMany({ where: eq(imageReviews.runId, runId) });
+  const latestByKey = new Map<string, (typeof reviews)[number]>();
+  for (const r of reviews) {
+    if (r.unitNumber === null || r.pageNumber === null) continue; // cover image - excluded, see above
+    const key = `${r.unitNumber}:${r.pageNumber}`;
+    const existing = latestByKey.get(key);
+    if (!existing || r.attempt > existing.attempt) latestByKey.set(key, r);
+  }
+
+  return [...latestByKey.values()]
+    .filter((r) => !r.passed)
+    .map((r) => ({
+      unitNumber: r.unitNumber as number,
+      pageNumber: r.pageNumber as number,
+      imageUrl: r.imageUrl,
+      issues: r.issues,
+    }));
+}
+
+async function saveContentForApproval(runId: string, units: GeneratedUnit[]) {
+  "use step";
+  await db.update(generationRuns).set({ pendingContentApproval: units }).where(eq(generationRuns.id, runId));
+}
+
+async function saveImagesForReview(
+  runId: string,
+  flagged: { unitNumber: number; pageNumber: number; imageUrl: string; issues: string[] }[],
+) {
+  "use step";
+  await db.update(generationRuns).set({ pendingImageReview: flagged }).where(eq(generationRuns.id, runId));
+}
+
+// Regenerates a single flagged page image on the human reviewer's request -
+// same generateReviewedImage call generateUnitImages already uses for
+// every image, just for one specific (unit, page) instead of a whole
+// unit's pages. Requires the page still be findable in `units` (it always
+// is - units is the same in-memory array built earlier this run).
+async function regenerateFlaggedImage(
+  runId: string,
+  units: GeneratedUnit[],
+  unitNumber: number,
+  pageNumber: number,
+  qualityMode: "draft" | "final",
+): Promise<string | null> {
+  "use step";
+
+  const unit = units.find((u) => u.unitNumber === unitNumber);
+  const page = [
+    ...(unit?.studentBookPages ?? []),
+    ...(unit?.workbookPages ?? []),
+    ...(unit?.teacherBookPages ?? []),
+    ...(unit?.testBookletPages ?? []),
+  ].find((p) => p.sourcePageNumber === pageNumber);
+  if (!unit || !page?.imagePrompt) return null;
+
+  return generateReviewedImage(
+    runId,
+    unitNumber,
+    pageNumber,
+    pageImageContext(unit, page),
+    `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
+    `generated/${runId}/unit-${unitNumber}-page-${pageNumber}.png`,
+    qualityMode,
+  );
 }
 
 async function generateCoverImage(
@@ -1321,15 +1416,86 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         await archiveVariants(runId, n, variants, selection.selectedIndex);
       }
 
-      await setRunStatus(runId, "generating_images", `Ünite ${n}/${totalUnits}: görseller üretiliyor`);
-      const unitImages = await generateUnitImages(runId, generated, ctx.run.qualityMode);
-      Object.assign(pageImages, unitImages);
-
       units.push(generated);
     }
 
+    // Faz "İnsan-onaylı üretim hattı" (ROADMAP.md): all units' text is now
+    // final (drafted + AI-reviewed, and variant-selected where applicable)
+    // - but no images exist yet for any of them. Mirrors the real
+    // publishing sequence researched for this feature: design/illustration
+    // work doesn't start until copyedit is signed off. One batched gate for
+    // every unit's text at once (a "staged release" the human approves as a
+    // unit), not one pause per unit - gate density should track genuine
+    // risk/judgment, not fire on every item.
+    await saveContentForApproval(runId, units);
+    await setRunStatus(runId, "awaiting_content_approval", "İçerik onayı bekleniyor (görsel üretimi başlamadan önce)");
+    const contentApprovalHook = createHook<{ approved: boolean }>({
+      token: `content-approval:${runId}`,
+    });
+    const contentApproval = await contentApprovalHook;
+    if (!contentApproval.approved) {
+      throw new FatalError("Kullanıcı içeriği onaylamadı, üretim iptal edildi.");
+    }
+
+    await setRunStatus(runId, "generating_images", "Ünite görselleri üretiliyor");
+    for (const generated of units) {
+      const unitImages = await generateUnitImages(runId, generated, ctx.run.qualityMode);
+      Object.assign(pageImages, unitImages);
+    }
+
+    // Faz "İnsan-onaylı üretim hattı": route only the images still flagged
+    // after generateReviewedImage's own automated retry loop to a human -
+    // everything that passed QA (the vast majority) flows straight through,
+    // matching the "automated pre-review gate, only flagged items reach a
+    // human" pattern rather than reviewing every image.
+    const flaggedImages = await getFlaggedImages(runId);
+    if (flaggedImages.length) {
+      await saveImagesForReview(runId, flaggedImages);
+      await setRunStatus(
+        runId,
+        "awaiting_image_review",
+        `${flaggedImages.length} görsel kalite kontrolünden geçemedi, inceleme bekleniyor`,
+      );
+      const imageReviewHook = createHook<{
+        decisions: { unitNumber: number; pageNumber: number; action: "accept" | "regenerate" }[];
+      }>({ token: `image-review:${runId}` });
+      const { decisions } = await imageReviewHook;
+
+      for (const decision of decisions) {
+        if (decision.action !== "regenerate") continue; // "accept" ships the existing (already-generated) image as-is
+        const newUrl = await regenerateFlaggedImage(
+          runId,
+          units,
+          decision.unitNumber,
+          decision.pageNumber,
+          ctx.run.qualityMode,
+        );
+        if (newUrl) pageImages[decision.pageNumber] = newUrl;
+      }
+    }
+
+    await savePageImages(runId, coverImageSrc, pageImages);
+
     await setRunStatus(runId, "reviewing_coherence", "Kitap geneli tutarlılık kontrol ediliyor");
     await reviewBookCoherence(runId, outline, units);
+
+    // Faz "İnsan-onaylı üretim hattı": the real process's "Final Sign-Off ->
+    // Files to Print" gate - a distinct, narrow checkpoint after every
+    // content/design review has already happened, right before the
+    // (irreversible-feeling) act of assembling and marking the run "done".
+    await setRunStatus(runId, "awaiting_final_approval", "Nihai onay bekleniyor (kitaplar henüz derlenmedi)");
+    const finalApprovalHook = createHook<{ approved: boolean }>({
+      token: `final-approval:${runId}`,
+    });
+    const finalApproval = await finalApprovalHook;
+    if (!finalApproval.approved) {
+      // Deliberately not FatalError/"failed" - nothing went wrong, a human
+      // just wants changes before this ships. "changes_requested" is a
+      // distinct terminal state a project owner can act on (e.g. rerun with
+      // fixes) rather than an error to debug.
+      await setRunStatus(runId, "changes_requested", "Kullanıcı değişiklik istedi, derleme yapılmadı");
+      return { runId, status: "changes_requested" as const };
+    }
 
     await setRunStatus(runId, "assembling", "Kitaplar oluşturuluyor");
     const contentsUnits = buildContentsUnits(outline);

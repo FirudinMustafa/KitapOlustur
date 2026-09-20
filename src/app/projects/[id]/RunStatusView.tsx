@@ -37,6 +37,19 @@ type PendingVariantUnit = {
 type PendingVariant = { index: number; unit: PendingVariantUnit; issues: string[]; passed: boolean };
 export type PendingVariants = { unitNumber: number; variants: PendingVariant[] } | null;
 
+// Faz "İnsan-onaylı üretim hattı": preview shape for the batched
+// content-approval gate - deliberately the same light shape as
+// PendingVariantUnit above (title + pages + block heading/body), not the
+// full GeneratedUnit - this is a read-through preview, not an edit UI.
+export type PendingContentUnit = {
+  unitNumber: number;
+  title: string;
+  studentBookPages: PendingVariantPage[];
+  workbookPages: PendingVariantPage[];
+};
+
+export type PendingImageReview = { unitNumber: number; pageNumber: number; imageUrl: string; issues: string[] };
+
 type Run = {
   id: string;
   status: string;
@@ -46,6 +59,8 @@ type Run = {
   modelVersion?: string | null;
   tokenUsage?: Record<string, number> | null;
   pendingVariants?: PendingVariants;
+  pendingContentApproval?: PendingContentUnit[] | null;
+  pendingImageReview?: PendingImageReview[] | null;
   coverImageUrl?: string | null;
   pageImageUrls?: Record<number, string> | null;
 };
@@ -107,7 +122,7 @@ type ProjectData = {
   unitProgress?: UnitProgress[];
 };
 
-const TERMINAL_STATUSES = new Set(["done", "failed"]);
+const TERMINAL_STATUSES = new Set(["done", "failed", "changes_requested"]);
 
 const STEP_LABELS: Record<string, string> = {
   pageMap: "Sayfa haritalama",
@@ -157,6 +172,10 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const [feedbackRating, setFeedbackRating] = useState<string>("");
   const [feedbackComment, setFeedbackComment] = useState("");
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [approvingContent, setApprovingContent] = useState(false);
+  const [imageDecisions, setImageDecisions] = useState<Record<string, "accept" | "regenerate">>({});
+  const [submittingImageReview, setSubmittingImageReview] = useState(false);
+  const [approvingFinal, setApprovingFinal] = useState(false);
 
   useEffect(() => {
     if (!data.run || TERMINAL_STATUSES.has(data.run.status)) return;
@@ -198,6 +217,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const outlineData = outline?.outline?.outline;
   const improvementPlan = outline?.outline?.improvementPlan;
   const unitCount = outlineData?.units?.length;
+  const pendingContentApproval = run?.pendingContentApproval;
+  const pendingImageReview = run?.pendingImageReview;
 
   async function refresh() {
     const fresh = await fetch(`/api/projects/${projectId}`);
@@ -231,6 +252,55 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       if (res.ok) await refresh();
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function handleContentApproval(approved: boolean) {
+    setApprovingContent(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/approve-content`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved }),
+      });
+      if (res.ok) await refresh();
+    } finally {
+      setApprovingContent(false);
+    }
+  }
+
+  async function handleImageReviewSubmit() {
+    setSubmittingImageReview(true);
+    try {
+      const decisions = Object.entries(imageDecisions).map(([key, action]) => {
+        const [unitNumber, pageNumber] = key.split(":").map(Number);
+        return { unitNumber, pageNumber, action };
+      });
+      const res = await fetch(`/api/projects/${projectId}/review-images`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisions }),
+      });
+      if (res.ok) {
+        setImageDecisions({});
+        await refresh();
+      }
+    } finally {
+      setSubmittingImageReview(false);
+    }
+  }
+
+  async function handleFinalApproval(approved: boolean) {
+    setApprovingFinal(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/approve-final`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved }),
+      });
+      if (res.ok) await refresh();
+    } finally {
+      setApprovingFinal(false);
     }
   }
 
@@ -594,6 +664,171 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               );
             })}
           </div>
+        </div>
+      )}
+
+      {run?.status === "awaiting_content_approval" && pendingContentApproval && (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Görsel üretimine geçmeden önce tüm ünitelerin içeriğini onayla
+            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+              ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
+            </span>
+          </h2>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            Gerçek yayıncılıktaki &quot;copyedit bitmeden tasarım başlamaz&quot; kuralıyla aynı mantık - metin burada
+            onaylanmadan hiçbir görsel üretilmiyor.
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {pendingContentApproval.map((unit) => {
+              const firstBlock = unit.studentBookPages[0]?.blocks[0];
+              return (
+                <div
+                  key={unit.unitNumber}
+                  className="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    Ünite {unit.unitNumber}: {unit.title}
+                  </p>
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    {unit.studentBookPages.length} Student Book + {unit.workbookPages.length} Workbook sayfası
+                  </p>
+                  {firstBlock && (
+                    <div className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                      <p className="font-medium">{firstBlock.heading}</p>
+                      <p className="mt-0.5 line-clamp-3">{firstBlock.body}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => handleContentApproval(true)}
+              disabled={approvingContent}
+              className="h-9 rounded-full bg-amber-600 px-4 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {approvingContent ? "Gönderiliyor…" : "Onayla, görsellere geç"}
+            </button>
+            <button
+              onClick={() => handleContentApproval(false)}
+              disabled={approvingContent}
+              className="h-9 rounded-full border border-zinc-300 px-4 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              Reddet
+            </button>
+          </div>
+        </div>
+      )}
+
+      {run?.status === "awaiting_image_review" && pendingImageReview && (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Otomatik kalite kontrolünden geçemeyen görseller
+            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+              ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
+            </span>
+          </h2>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            Bu görseller birden fazla otomatik denemeden sonra hâlâ işaretli. Her biri için kabul et ya da yeniden
+            üret seç (belirtmezsen kabul edilmiş sayılır).
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {pendingImageReview.map((img) => {
+              const key = `${img.unitNumber}:${img.pageNumber}`;
+              const decision = imageDecisions[key] ?? "accept";
+              return (
+                <div
+                  key={key}
+                  className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image */}
+                  <img src={img.imageUrl} alt="" className="max-h-40 w-full rounded-md object-cover" />
+                  <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Ünite {img.unitNumber} · Sayfa {img.pageNumber}
+                  </p>
+                  {img.issues.length > 0 && (
+                    <ul className="list-disc pl-4 text-[11px] text-amber-800 dark:text-amber-300">
+                      {img.issues.slice(0, 3).map((issue, i) => (
+                        <li key={i}>{issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setImageDecisions((prev) => ({ ...prev, [key]: "accept" }))}
+                      className={`h-8 flex-1 rounded-full px-3 text-xs font-medium ${
+                        decision === "accept"
+                          ? "bg-green-600 text-white"
+                          : "border border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+                      }`}
+                    >
+                      Kabul et
+                    </button>
+                    <button
+                      onClick={() => setImageDecisions((prev) => ({ ...prev, [key]: "regenerate" }))}
+                      className={`h-8 flex-1 rounded-full px-3 text-xs font-medium ${
+                        decision === "regenerate"
+                          ? "bg-amber-600 text-white"
+                          : "border border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+                      }`}
+                    >
+                      Yeniden üret
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={handleImageReviewSubmit}
+            disabled={submittingImageReview}
+            className="mt-4 h-9 rounded-full bg-amber-600 px-4 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+          >
+            {submittingImageReview ? "Gönderiliyor…" : "Kararları gönder"}
+          </button>
+        </div>
+      )}
+
+      {run?.status === "awaiting_final_approval" && (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Nihai onay - kitaplar henüz derlenmedi
+            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+              ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
+            </span>
+          </h2>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            Tüm içerik, görsel ve tutarlılık kontrolleri tamamlandı. Onaylarsan kitaplar (PDF/EPUB/LMS) derlenip
+            &quot;tamamlandı&quot; olarak işaretlenecek - reddedersen üretim durur, hiçbir dosya oluşmaz.
+          </p>
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => handleFinalApproval(true)}
+              disabled={approvingFinal}
+              className="h-9 rounded-full bg-amber-600 px-4 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {approvingFinal ? "Gönderiliyor…" : "Onayla ve derle"}
+            </button>
+            <button
+              onClick={() => handleFinalApproval(false)}
+              disabled={approvingFinal}
+              className="h-9 rounded-full border border-zinc-300 px-4 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              Değişiklik iste
+            </button>
+          </div>
+        </div>
+      )}
+
+      {run?.status === "changes_requested" && (
+        <div className="mt-4 rounded-lg border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Değişiklik istendi, kitaplar derlenmedi.</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Bu run&apos;ın tüm içerik/görsel verisi hâlâ duruyor - yeniden üretmek için aşağıdaki &quot;Yeniden
+            çalıştır&quot; seçeneğini kullanabilirsin.
+          </p>
         </div>
       )}
 

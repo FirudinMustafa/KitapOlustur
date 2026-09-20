@@ -7,10 +7,14 @@ export const STATUS_LABELS: Record<string, string> = {
   awaiting_variant_selection: "Varyant seçimi bekleniyor",
   generating: "Üretiliyor",
   reviewing: "İnceleniyor",
+  awaiting_content_approval: "İçerik onayı bekleniyor",
   generating_images: "Görseller üretiliyor",
+  awaiting_image_review: "Görsel incelemesi bekleniyor",
   reviewing_coherence: "Kitap geneli tutarlılık kontrol ediliyor",
+  awaiting_final_approval: "Nihai onay bekleniyor",
   assembling: "Birleştiriliyor",
   done: "Tamamlandı",
+  changes_requested: "Değişiklik istendi",
   failed: "Hata",
 };
 
@@ -19,7 +23,13 @@ export const STATUS_LABELS: Record<string, string> = {
 // useful. What's missing is app-level visibility into how long a run has
 // been sitting in a human-in-the-loop wait state, since that's what a
 // project owner actually needs to notice and act on.
-export const AWAITING_STATUSES = new Set(["awaiting_outline_approval", "awaiting_variant_selection"]);
+export const AWAITING_STATUSES = new Set([
+  "awaiting_outline_approval",
+  "awaiting_variant_selection",
+  "awaiting_content_approval",
+  "awaiting_image_review",
+  "awaiting_final_approval",
+]);
 
 export function formatElapsedTurkish(from: Date, now: Date = new Date()): string {
   const ms = Math.max(0, now.getTime() - from.getTime());
@@ -59,9 +69,12 @@ const STATUS_TO_STAGE_INDEX: Record<string, number> = {
   awaiting_outline_approval: 1,
   generating: 2,
   reviewing: 2,
+  awaiting_content_approval: 2,
   generating_images: 2,
+  awaiting_image_review: 2,
   awaiting_variant_selection: 2,
   reviewing_coherence: 3,
+  awaiting_final_approval: 3,
   assembling: 4,
   done: 5,
 };
@@ -78,7 +91,7 @@ export type PipelineNodeState = "done" | "active" | "pending";
 // to pinpoint a failed node would fabricate precision the data doesn't have.
 // The failure itself is already surfaced separately via run.errorMessage.
 export function getPipelineNodeStates(status: string): PipelineNodeState[] {
-  if (status === "failed") {
+  if (status === "failed" || status === "changes_requested") {
     return PIPELINE_STAGES.map(() => "pending" as const);
   }
   const currentIndex = getPipelineStageIndex(status);

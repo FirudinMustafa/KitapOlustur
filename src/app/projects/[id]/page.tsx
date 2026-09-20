@@ -15,7 +15,14 @@ import {
   teacherFeedback,
   unitReviews,
 } from "@/db/schema";
-import { RunStatusView, type OutlineDocument, type GeneratedUnitContent, type PendingVariants } from "./RunStatusView";
+import {
+  RunStatusView,
+  type OutlineDocument,
+  type GeneratedUnitContent,
+  type PendingVariants,
+  type PendingContentUnit,
+  type PendingImageReview,
+} from "./RunStatusView";
 import { computeUnitProgress } from "@/lib/unit-progress";
 
 export const dynamic = "force-dynamic";
@@ -114,6 +121,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               modelVersion: run.modelVersion,
               tokenUsage: run.tokenUsage,
               pendingVariants: run.pendingVariants as PendingVariants,
+              pendingContentApproval: run.pendingContentApproval as PendingContentUnit[] | null,
+              pendingImageReview: run.pendingImageReview as PendingImageReview[] | null,
               coverImageUrl: run.coverImageUrl,
               pageImageUrls: run.pageImageUrls,
             }

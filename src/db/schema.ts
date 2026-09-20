@@ -19,6 +19,15 @@ export const bookTypeEnum = pgEnum("book_type", [
   "test_booklet",
 ]);
 
+// Faz "İnsan-onaylı üretim hattı" (2026-09-20, ROADMAP.md): three new
+// checkpoints added after researching real publishing workflows -
+// content/copyedit must be human-approved before design (images) starts,
+// flagged images get routed to a human instead of silently shipping the
+// last failed attempt, and a final sign-off gate exists before assembly.
+// Deliberately NOT "approve every single unit/image" - the research found
+// no real source recommending uniform per-item gating; these three are
+// batched (all units' text at once, all flagged images at once) matching
+// the "staged release" pattern for bulk AI content review.
 export const runStatusEnum = pgEnum("run_status", [
   "pending",
   "mapping_pages",
@@ -28,10 +37,14 @@ export const runStatusEnum = pgEnum("run_status", [
   "awaiting_variant_selection",
   "generating",
   "reviewing",
+  "awaiting_content_approval",
   "generating_images",
+  "awaiting_image_review",
   "reviewing_coherence",
+  "awaiting_final_approval",
   "assembling",
   "done",
+  "changes_requested",
   "failed",
 ]);
 export type RunStatus = (typeof runStatusEnum.enumValues)[number];
@@ -120,6 +133,11 @@ export const generationRuns = pgTable("generation_runs", {
   coverImageUrl: text("cover_image_url"),
   pageImageUrls: jsonb("page_image_urls").$type<Record<number, string>>(),
   pendingVariants: jsonb("pending_variants"),
+  // Scratch columns for the two new batch approval gates - same pattern as
+  // pendingVariants above (holds data only while the run is paused waiting
+  // on the corresponding hook; not meant as permanent storage).
+  pendingContentApproval: jsonb("pending_content_approval"),
+  pendingImageReview: jsonb("pending_image_review"),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
