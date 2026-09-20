@@ -1,0 +1,134 @@
+import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { start } from "workflow/api";
+import { eq } from "drizzle-orm";
+
+import { db } from "@/db/client";
+import { projects, sourceUploads, generationRuns } from "@/db/schema";
+import { bookPipelineWorkflow } from "@workflows/book-pipeline";
+
+const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
+
+// Faz "Toplu/seri üretim" (2026-09-20, ROADMAP.md): "bu serinin 6 kitabını
+// da aynı stille üret" gap - previously each book required a full separate
+// trip through /projects/new. This creates several independent projects +
+// runs from one submission, all sharing the same settings (style profile,
+// quality mode, output types, etc.) - each one is still just a normal,
+// independent generationRuns row/workflow run under the hood; nothing about
+// the pipeline itself changes or knows about "batches". A batch is purely a
+// creation-time convenience, not a new runtime concept.
+export async function POST(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Geçersiz istek" }, { status: 400 });
+  }
+
+  const {
+    items: itemsRaw,
+    level,
+    customNotes,
+    bookType,
+    niceToHaveIds: niceToHaveIdsRaw,
+    requestedBookTypes: requestedBookTypesRaw,
+    variantCount: variantCountRaw,
+    unitLimit: unitLimitRaw,
+    styleProfileId: styleProfileIdRaw,
+    qualityMode: qualityModeRaw,
+    targetLanguage: targetLanguageRaw,
+  } = body;
+
+  if (!Array.isArray(itemsRaw) || itemsRaw.length < 2) {
+    return NextResponse.json({ error: "En az 2 dosya gerekli (tek dosya için normal yükleme akışını kullanın)" }, { status: 400 });
+  }
+  const items = itemsRaw.filter(
+    (x): x is { name: string; blobUrl: string; filename: string } =>
+      typeof x === "object" &&
+      x !== null &&
+      typeof x.name === "string" &&
+      x.name.trim() &&
+      typeof x.blobUrl === "string" &&
+      x.blobUrl &&
+      typeof x.filename === "string" &&
+      x.filename,
+  );
+  if (items.length !== itemsRaw.length) {
+    return NextResponse.json({ error: "Bazı dosyalar geçersiz (ad veya blob URL eksik)" }, { status: 400 });
+  }
+  if (bookType !== "student_book" && bookType !== "workbook") {
+    return NextResponse.json({ error: "Geçersiz kitap tipi" }, { status: 400 });
+  }
+
+  let niceToHaveIds: string[] = [];
+  if (Array.isArray(niceToHaveIdsRaw)) {
+    niceToHaveIds = niceToHaveIdsRaw.filter((x): x is string => typeof x === "string");
+  }
+
+  let requestedBookTypes: string[] = ["student_book", "workbook"];
+  if (Array.isArray(requestedBookTypesRaw)) {
+    const filtered = requestedBookTypesRaw.filter(
+      (x): x is string => typeof x === "string" && VALID_BOOK_TYPES.includes(x),
+    );
+    if (filtered.length) requestedBookTypes = filtered;
+  }
+
+  let unitLimit: number | null = null;
+  if (Number.isInteger(unitLimitRaw) && unitLimitRaw > 0) {
+    unitLimit = unitLimitRaw;
+  }
+
+  let variantCount = 1;
+  if (Number.isInteger(variantCountRaw) && variantCountRaw >= 1 && variantCountRaw <= 4) {
+    variantCount = variantCountRaw;
+  }
+
+  const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
+  const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";
+  const targetLanguage =
+    typeof targetLanguageRaw === "string" && targetLanguageRaw.trim() ? targetLanguageRaw.trim() : null;
+  const sharedLevel = typeof level === "string" && level.trim() ? level.trim() : null;
+  const sharedNotes = typeof customNotes === "string" && customNotes.trim() ? customNotes.trim() : null;
+
+  const created: { projectId: string; runId: string }[] = [];
+
+  for (const item of items) {
+    const [project] = await db
+      .insert(projects)
+      .values({ name: item.name.trim(), level: sharedLevel, ownerId: userId })
+      .returning();
+
+    await db.insert(sourceUploads).values({
+      projectId: project.id,
+      blobUrl: item.blobUrl,
+      filename: item.filename,
+      bookType,
+    });
+
+    const [run] = await db
+      .insert(generationRuns)
+      .values({
+        projectId: project.id,
+        status: "pending",
+        selectedNiceToHaveIds: niceToHaveIds,
+        styleProfileId,
+        qualityMode,
+        targetLanguage,
+        customNotes: sharedNotes,
+        unitLimit,
+        requestedBookTypes,
+        variantCount,
+      })
+      .returning();
+
+    const workflowRun = await start(bookPipelineWorkflow, [run.id]);
+    await db.update(generationRuns).set({ workflowRunId: workflowRun.runId }).where(eq(generationRuns.id, run.id));
+
+    created.push({ projectId: project.id, runId: run.id });
+  }
+
+  return NextResponse.json({ created });
+}

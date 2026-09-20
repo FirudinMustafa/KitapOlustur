@@ -44,8 +44,30 @@ export default function NewProjectPage() {
   const [customNotes, setCustomNotes] = useState("");
   const [unitLimit, setUnitLimit] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  // Faz "Toplu/seri üretim": when more than one file is selected, the form
+  // switches into batch mode - a single shared "Proje adı" doesn't make
+  // sense for N files, so each gets its own name (defaulted from its
+  // filename, editable) while every other setting below stays shared across
+  // the whole batch.
+  const [batchFiles, setBatchFiles] = useState<File[]>([]);
+  const [batchNames, setBatchNames] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isBatch = batchFiles.length > 1;
+
+  function handleFilesSelected(fileList: FileList | null) {
+    const selected = fileList ? Array.from(fileList) : [];
+    if (selected.length > 1) {
+      setBatchFiles(selected);
+      setBatchNames(selected.map((f) => f.name.replace(/\.pdf$/i, "")));
+      setFile(null);
+    } else {
+      setBatchFiles([]);
+      setBatchNames([]);
+      setFile(selected[0] ?? null);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/nice-to-have")
@@ -87,16 +109,64 @@ export default function NewProjectPage() {
     e.preventDefault();
     setError(null);
 
+    if (!outputTypes.size) {
+      setError("Lütfen en az bir çıktı kitap tipi seçin.");
+      return;
+    }
+
+    if (isBatch) {
+      if (batchNames.some((n) => !n.trim())) {
+        setError("Lütfen her dosya için bir proje adı girin.");
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const items = await Promise.all(
+          batchFiles.map(async (f, i) => {
+            const blob = await upload(f.name, f, {
+              access: "public",
+              handleUploadUrl: "/api/blob/upload",
+              contentType: "application/pdf",
+            });
+            return { name: batchNames[i], blobUrl: blob.url, filename: f.name };
+          }),
+        );
+
+        const res = await fetch("/api/projects/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items,
+            level,
+            bookType,
+            customNotes,
+            niceToHaveIds: Array.from(selected),
+            styleProfileId: styleProfileId || null,
+            qualityMode,
+            targetLanguage: targetLanguage.trim() || null,
+            requestedBookTypes: Array.from(outputTypes),
+            variantCount: Number(variantCount) || 1,
+            unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Bir hata oluştu.");
+        }
+        router.push("/projects");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Bir hata oluştu.");
+        setSubmitting(false);
+      }
+      return;
+    }
+
     if (!file) {
       setError("Lütfen bir PDF dosyası seçin.");
       return;
     }
     if (!name.trim()) {
       setError("Lütfen bir proje adı girin.");
-      return;
-    }
-    if (!outputTypes.size) {
-      setError("Lütfen en az bir çıktı kitap tipi seçin.");
       return;
     }
 
@@ -148,15 +218,17 @@ export default function NewProjectPage() {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-6">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Proje adı</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Örn. New Horizons A2"
-            className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          />
-        </div>
+        {!isBatch && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Proje adı</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Örn. New Horizons A2"
+              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
@@ -200,10 +272,39 @@ export default function NewProjectPage() {
           <input
             type="file"
             accept="application/pdf"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            multiple
+            onChange={(e) => handleFilesSelected(e.target.files)}
             className="text-sm text-zinc-700 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-950 file:px-3 file:py-2 file:text-sm file:text-white dark:text-zinc-300 dark:file:bg-white dark:file:text-black"
           />
+          <span className="text-xs text-zinc-500">
+            Birden fazla PDF seçersen, hepsi aynı ayarlarla (aşağıdaki tüm seçenekler) tek seferde, ayrı ayrı
+            projeler olarak üretime başlatılır — bir serinin birden fazla kitabını aynı stille üretmek için.
+          </span>
         </div>
+
+        {isBatch && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+              {batchFiles.length} kitap - her biri için proje adı
+            </legend>
+            <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+              {batchFiles.map((f, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={batchNames[i] ?? ""}
+                    onChange={(e) =>
+                      setBatchNames((prev) => prev.map((n, j) => (j === i ? e.target.value : n)))
+                    }
+                    className="h-9 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  <span className="w-40 truncate text-xs text-zinc-500" title={f.name}>
+                    {f.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </fieldset>
+        )}
 
         <fieldset className="flex flex-col gap-2">
           <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
@@ -364,7 +465,11 @@ export default function NewProjectPage() {
           disabled={submitting}
           className="h-11 rounded-full bg-zinc-950 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
         >
-          {submitting ? "Yükleniyor…" : "Orkestra'yı başlat"}
+          {submitting
+            ? "Yükleniyor…"
+            : isBatch
+              ? `${batchFiles.length} orkestrayı başlat`
+              : "Orkestra'yı başlat"}
         </button>
       </form>
     </div>
