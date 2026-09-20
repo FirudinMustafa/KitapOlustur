@@ -13,8 +13,9 @@
 | G4 — Retry/backoff standardizasyonu | ✅ Tamamlandı — ama planlanandan farklı (2026-09-19) | Aşağıda "G4 — Tamamlanma Notu", **roadmap'in orijinal varsayımını düzeltiyor** |
 | G5 — Maliyet/kullanım dashboard'u | ✅ Tamamlandı (2026-09-19) | Aşağıda "G5 — Tamamlanma Notu" |
 | G6 — Gözlemlenebilirlik | 🟡 Kısmen tamamlandı — daraltılmış kapsam (2026-09-19) | Aşağıda "G6 — Tamamlanma Notu" |
-| Faz H — Genişleme fikirleri | 🟡 H1 + H4 + H5 + H6 tamamlandı (2026-09-19), H2/H3 başlanmadı | Aşağıda "H1"/"H4"/"H5"/"H6 — Tamamlanma Notu" |
+| Faz H — Genişleme fikirleri | ✅ H1, H2 (Faz 1+2+3), H3, H4, H5, H6 tamamlandı (2026-09-20) | Aşağıda ilgili "Tamamlanma Notu" bölümleri |
 | Hikaye Stüdyosu — serbest, chat-tabanlı içerik paneli | 🟡 Kod tamamlandı, canlı test bir hesap kısıtlamasıyla bloke (2026-09-19) | Aşağıda "Hikaye Stüdyosu — Tamamlanma Notu" |
+| Genel değerlendirme sonrası ek işler (görsel açıklama, çok-sesli diyalog, EPUB, LMS, F2, okunabilirlik QA, H2) | ✅ Tamamlandı (2026-09-20) | Aşağıda ilgili bölümler, ROADMAP sonunda |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
