@@ -2,6 +2,7 @@ import {
   generateObject,
   generateImage,
   experimental_generateSpeech as generateSpeech,
+  experimental_transcribe as transcribe,
   NoObjectGeneratedError,
   type LanguageModelUsage,
 } from "ai";
@@ -617,6 +618,56 @@ async function generateListeningAudio(
   return withAudio;
 }
 
+// Faz H2 Faz 2 (see ROADMAP.md): forced alignment for the interactive
+// reader's karaoke-style word highlighting (BookReader.tsx). A separate
+// step from generateListeningAudio (not folded into it) so alignment
+// failures/retries don't also redo the TTS synthesis - each step retries
+// independently, matching this pipeline's existing granular-step
+// convention (e.g. reviewUnit/reviewLanguageAccuracy/reviewReadingLevel
+// are three separate steps rather than one). Confirmed live end-to-end
+// before building this (2026-09-20): openai/whisper-1 via the same Gateway,
+// with providerOptions.openai.timestampGranularities: ["word"], really
+// does return one segment per word with real start/end times - not
+// assumed from provider docs alone.
+async function alignListeningAudio(
+  runId: string,
+  unitNumber: number,
+  listeningAudio: GeneratedUnit["listeningAudio"],
+): Promise<GeneratedUnit["listeningAudio"]> {
+  "use step";
+
+  if (!listeningAudio?.length) return listeningAudio;
+
+  const aligned = [];
+  for (const entry of listeningAudio) {
+    if (!entry.audioUrl) {
+      aligned.push(entry);
+      continue;
+    }
+    try {
+      const audioRes = await fetch(entry.audioUrl);
+      const audioBytes = new Uint8Array(await audioRes.arrayBuffer());
+      const result = await transcribe({
+        model: "openai/whisper-1",
+        audio: audioBytes,
+        providerOptions: { openai: { timestampGranularities: ["word"] } },
+      });
+      const wordTimestamps = result.segments.map((s) => ({
+        word: s.text,
+        startMs: Math.round(s.startSecond * 1000),
+        endMs: Math.round(s.endSecond * 1000),
+      }));
+      aligned.push({ ...entry, wordTimestamps });
+    } catch {
+      // Best-effort, like generateListeningAudio's own synthesis retries -
+      // a failed alignment just leaves this entry without wordTimestamps,
+      // and the reader falls back to a plain <audio> player for it.
+      aligned.push(entry);
+    }
+  }
+  return aligned;
+}
+
 async function savePendingVariants(runId: string, pendingVariants: PendingVariants) {
   "use step";
   await db.update(generationRuns).set({ pendingVariants }).where(eq(generationRuns.id, runId));
@@ -1198,7 +1249,9 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           requestedVariants.includes("test_booklet")
             ? generateTestBookletSide(runId, genContext)
             : Promise.resolve(null),
-          generateListeningAudio(runId, outlineUnit.number, mirrored.listeningAudio, ctx.run.qualityMode),
+          generateListeningAudio(runId, outlineUnit.number, mirrored.listeningAudio, ctx.run.qualityMode).then(
+            (audio) => alignListeningAudio(runId, outlineUnit.number, audio),
+          ),
         ]);
 
         return {

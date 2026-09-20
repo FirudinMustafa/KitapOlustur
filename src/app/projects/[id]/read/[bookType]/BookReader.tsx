@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schemas";
+import { useRef, useState } from "react";
+import type { GeneratedUnit, GeneratedPage, ContentBlock, WordTimestamp } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
 
 const VARIANT_LABELS: Record<Variant, string> = {
@@ -29,6 +29,43 @@ function pagesForVariant(unit: GeneratedUnit, variant: Variant): GeneratedPage[]
     case "test_booklet":
       return unit.testBookletPages ?? [];
   }
+}
+
+// Faz H2 Faz 2: karaoke-style word highlighting, driven by the <audio>
+// element's native `timeupdate` event (fires several times a second - no
+// need for a manual rAF loop). `wordTimestamps` comes from forced alignment
+// (workflows/book-pipeline.tsx's alignListeningAudio) - a real
+// word-level transcription of the audio that was just synthesized from
+// this exact script, not a guessed/even split of the text.
+function KaraokeAudio({ audioUrl, wordTimestamps }: { audioUrl: string; wordTimestamps: WordTimestamp[] }) {
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  function onTimeUpdate() {
+    const currentMs = (audioRef.current?.currentTime ?? 0) * 1000;
+    const idx = wordTimestamps.findIndex((w) => currentMs >= w.startMs && currentMs < w.endMs);
+    setActiveIndex(idx);
+  }
+
+  return (
+    <div>
+      <audio ref={audioRef} controls src={audioUrl} className="w-full" onTimeUpdate={onTimeUpdate} />
+      <p className="mt-2 text-sm leading-relaxed">
+        {wordTimestamps.map((w, i) => (
+          <span
+            key={i}
+            className={
+              i === activeIndex
+                ? "rounded bg-yellow-300 px-0.5 text-zinc-950 dark:bg-yellow-500"
+                : "text-zinc-700 dark:text-zinc-300"
+            }
+          >
+            {w.word}{" "}
+          </span>
+        ))}
+      </p>
+    </div>
+  );
 }
 
 function AnswerKeyToggle({ answerKey }: { answerKey: string[] }) {
@@ -186,7 +223,11 @@ export function BookReader({
                   entry.audioUrl ? (
                     <div key={i}>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">{entry.blockRef}</p>
-                      <audio controls src={entry.audioUrl} className="w-full" />
+                      {entry.wordTimestamps?.length ? (
+                        <KaraokeAudio audioUrl={entry.audioUrl} wordTimestamps={entry.wordTimestamps} />
+                      ) : (
+                        <audio controls src={entry.audioUrl} className="w-full" />
+                      )}
                     </div>
                   ) : null,
                 )}

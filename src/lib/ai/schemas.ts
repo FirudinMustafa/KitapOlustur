@@ -128,6 +128,13 @@ export const dialogueLineSchema = z.object({
 });
 export type DialogueLine = z.infer<typeof dialogueLineSchema>;
 
+export const wordTimestampSchema = z.object({
+  word: z.string(),
+  startMs: z.number(),
+  endMs: z.number(),
+});
+export type WordTimestamp = z.infer<typeof wordTimestampSchema>;
+
 export const listeningAudioSchema = z.object({
   blockRef: z.string().describe("Heading of the content block this audio script belongs to"),
   script: z.string(),
@@ -142,6 +149,13 @@ export const listeningAudioSchema = z.object({
     .string()
     .optional()
     .describe("Not set by the writer - filled in later once the script is synthesized into speech"),
+  // Faz H2 Faz 2: not set by the writer either - filled in by
+  // alignListeningAudio (workflows/book-pipeline.tsx) via forced alignment
+  // (word-level transcription of the audio that was just synthesized from
+  // this exact script). Powers the interactive reader's karaoke-style
+  // word-by-word highlighting (BookReader.tsx). Absent if alignment failed
+  // or hasn't run - the reader falls back to a plain <audio> player.
+  wordTimestamps: z.array(wordTimestampSchema).optional(),
 });
 export type ListeningAudio = z.infer<typeof listeningAudioSchema>;
 

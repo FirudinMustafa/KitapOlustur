@@ -684,3 +684,16 @@ Kullanıcı H3 ile devam etmeyi seçti. Roadmap'in kendi önerisi (Common Cartri
 **Dürüstlük notu (roadmap'in kendi riskiyle aynı):** Bu manifest IMS Common Cartridge 1.1 XSD yapısına göre yazıldı ama gerçek bir Moodle/Canvas ortamına yüklenip "gerçekten içe aktarılabiliyor" diye doğrulanmadı — ne bu oturumda ne daha önce böyle bir ortam mevcuttu. "Şemaya yapısal olarak uyuyor" ile "gerçek bir LMS'e temiz import ediliyor" aynı şey değil; ikincisi gerçek bir LMS test ortamı gerektiriyor.
 
 **Yapılmadı / bilinçli olarak kapsam dışı:** SCORM (1.2/2004) — ilerleme/puan takibi gerektiren JS API wrapper'ı, ayrı ve daha büyük bir iş. Gerçek bir LMS'de import testi (yukarıdaki dürüstlük notu).
+
+### H2 Faz 2 — Sesli Okuma ile Senkron Kelime Vurgulama (2026-09-20)
+
+Kullanıcı H2 Faz 2 ile devam etti. Roadmap'in kendi planı (forced-alignment + karaoke-style web vurgulama) birebir uygulandı — teknik varsayım kodu yazmadan önce **canlı test edildi**.
+
+- **Önce doğrulama:** `openai/tts-1-hd` ile üretilen bir ses, `openai/whisper-1`'e `providerOptions.openai.timestampGranularities: ["word"]` ile verildi — gerçekten kelime-bazlı segment'ler (her biri gerçek `startSecond`/`endSecond` ile) döndüğü canlı test edildi, sağlayıcı dokümantasyonuna güvenilmedi.
+- `src/lib/ai/schemas.ts`: `wordTimestampSchema` (`word`/`startMs`/`endMs`) + `listeningAudioSchema.wordTimestamps` (opsiyonel). **Migration gerekmedi** — bu veri `generatedBooks.content` jsonb'sinin içinde yaşıyor, ayrı bir DB kolonu değil.
+- `workflows/book-pipeline.tsx`: yeni `alignListeningAudio(runId, unitNumber, listeningAudio)` step'i — `generateListeningAudio`'dan **ayrı** bir step (aynı step'e gömülmedi): hizalama başarısız olup retry edilirse TTS'i tekrar üretmesin diye, mevcut `reviewUnit`/`reviewLanguageAccuracy`/`reviewReadingLevel` ayrı-step deseniyle tutarlı. Best-effort — hizalama başarısız olursa entry `wordTimestamps` olmadan kalıyor, okuyucu düz `<audio>`'ya geri dönüyor.
+- `src/app/projects/[id]/read/[bookType]/BookReader.tsx`: yeni `KaraokeAudio` bileşeni — `<audio>`'nun native `timeupdate` event'i (birkaç kez/saniye tetikleniyor, manuel `requestAnimationFrame` döngüsü gerekmiyor) ile mevcut kelimeyi `wordTimestamps` içinde arayıp vurguluyor. `wordTimestamps` yoksa (eski içerik veya hizalama başarısız oldu) sessizce eski düz `<audio>` davranışına düşüyor.
+- **Canlı uçtan uca doğrulama (Chrome):** Gerçek bir TTS+alignment çifti üretilip geçici test verisine enjekte edildi, tarayıcıda audio elementinin `currentTime`'ı 500ms'ye ayarlandı, doğru kelimenin ("brown", 440-700ms aralığında) gerçekten vurgulandığı DOM'dan doğrulandı — konsol hatasız. Test verisi ve blob temizlendi.
+- Doğrulama: `tsc`/`eslint`/`vitest` (52 test)/`next build` temiz. Workflow step sayısı 27 → 28 (`alignListeningAudio` onaylandı). Migration yok.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Çok-sesli diyalog + hizalama birlikte test edilmedi (her ikisi de kendi içinde çalışıyor ama concat edilmiş MP3'ün hizalaması, tek-sesli senaryodan daha karmaşık bir edge case olabilir — ayrı bir doğrulama gerektirir). EPUB/Common Cartridge çıktılarına karaoke vurgulaması eklenmedi (statik formatlar, `timeupdate` event'i olmayan bir ortamda anlamsız — sadece web okuyucuya özgü bir özellik).
