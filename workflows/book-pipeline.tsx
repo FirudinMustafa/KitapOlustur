@@ -1069,11 +1069,16 @@ async function getFlaggedImages(
     }));
 }
 
-async function saveContentForApproval(runId: string, round: number, units: GeneratedUnit[]) {
+async function saveContentForApproval(
+  runId: string,
+  round: number,
+  units: GeneratedUnit[],
+  previousVersions: Record<number, GeneratedUnit>,
+) {
   "use step";
   await db
     .update(generationRuns)
-    .set({ pendingContentApproval: { round, units } })
+    .set({ pendingContentApproval: { round, units, previousVersions } })
     .where(eq(generationRuns.id, runId));
 }
 
@@ -1498,9 +1503,18 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     // until nothing more is flagged, then the run proceeds to images - the
     // same "human editor requests a revision, writer resubmits" loop real
     // publishing uses, without re-running the whole per-unit pipeline.
+    // Faz "Versiyonlama/diff" (2026-09-20, ROADMAP.md): a granular-feedback
+    // regeneration overwrites units[idx] in place - without this, the human
+    // reviewing the next round would have no way to see what actually
+    // changed, just a whole new unit to re-read from scratch. Keyed by unit
+    // number so it naturally only ever holds the version right before the
+    // MOST RECENT regeneration (not a full history) - proportional to what
+    // the content-approval UI actually needs (compare current vs. what you
+    // last saw), not a general-purpose version control system.
+    const previousUnitVersions: Record<number, GeneratedUnit> = {};
     let contentApprovalRound = 0;
     for (;;) {
-      await saveContentForApproval(runId, contentApprovalRound, units);
+      await saveContentForApproval(runId, contentApprovalRound, units, previousUnitVersions);
       await setRunStatus(
         runId,
         "awaiting_content_approval",
@@ -1527,7 +1541,10 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         );
         const regenerated = await builder([change.comment]);
         const idx = units.findIndex((u) => u.unitNumber === change.unitNumber);
-        if (idx !== -1) units[idx] = regenerated;
+        if (idx !== -1) {
+          previousUnitVersions[change.unitNumber] = units[idx];
+          units[idx] = regenerated;
+        }
       }
       contentApprovalRound++;
     }

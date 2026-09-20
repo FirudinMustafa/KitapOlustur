@@ -51,7 +51,16 @@ export type PendingContentUnit = {
 // Faz "Granüler editöryel feedback": each approval round is numbered so its
 // resume token (content-approval:${runId}:${round}) stays unique across
 // however many regenerate-and-reapprove cycles a run goes through.
-export type PendingContentApproval = { round: number; units: PendingContentUnit[] } | null;
+// Faz "Versiyonlama/diff": previousVersions holds the pre-regeneration
+// version of any unit that was just rewritten from editorial feedback,
+// keyed by unit number - only present for units touched since the last
+// round, so a reviewer can see exactly what changed instead of re-reading
+// the whole unit.
+export type PendingContentApproval = {
+  round: number;
+  units: PendingContentUnit[];
+  previousVersions?: Record<number, PendingContentUnit>;
+} | null;
 
 export type PendingImageReview = { unitNumber: number; pageNumber: number; imageUrl: string; issues: string[] };
 
@@ -184,6 +193,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [approvingContent, setApprovingContent] = useState(false);
   const [unitChangeComments, setUnitChangeComments] = useState<Record<number, string>>({});
+  const [diffOpenFor, setDiffOpenFor] = useState<Record<number, boolean>>({});
   const [imageDecisions, setImageDecisions] = useState<Record<string, "accept" | "regenerate">>({});
   const [submittingImageReview, setSubmittingImageReview] = useState(false);
   const [approvingFinal, setApprovingFinal] = useState(false);
@@ -229,6 +239,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const improvementPlan = outline?.outline?.improvementPlan;
   const unitCount = outlineData?.units?.length;
   const pendingContentApproval = run?.pendingContentApproval?.units;
+  const previousUnitVersions = run?.pendingContentApproval?.previousVersions;
   const pendingImageReview = run?.pendingImageReview;
 
   async function refresh() {
@@ -721,6 +732,48 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                     <div className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-400">
                       <p className="font-medium">{firstBlock.heading}</p>
                       <p className="mt-0.5 line-clamp-3">{firstBlock.body}</p>
+                    </div>
+                  )}
+                  {previousUnitVersions?.[unit.unitNumber] && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() =>
+                          setDiffOpenFor((prev) => ({ ...prev, [unit.unitNumber]: !prev[unit.unitNumber] }))
+                        }
+                        className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                      >
+                        {diffOpenFor[unit.unitNumber] ? "Önceki sürümü gizle" : "Geri bildirim öncesi sürümle karşılaştır"}
+                      </button>
+                      {diffOpenFor[unit.unitNumber] &&
+                        (() => {
+                          const prevBlock = previousUnitVersions[unit.unitNumber].studentBookPages[0]?.blocks[0];
+                          return (
+                            <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <div className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                                <p className="font-semibold">Önceki (değişiklik istenmeden önce)</p>
+                                {prevBlock ? (
+                                  <>
+                                    <p className="mt-0.5 font-medium">{prevBlock.heading}</p>
+                                    <p className="mt-0.5 line-clamp-4">{prevBlock.body}</p>
+                                  </>
+                                ) : (
+                                  <p className="mt-0.5 italic">İçerik yok</p>
+                                )}
+                              </div>
+                              <div className="rounded border border-green-200 bg-green-50 p-2 text-xs text-green-900 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300">
+                                <p className="font-semibold">Şimdiki (yeniden üretildi)</p>
+                                {firstBlock ? (
+                                  <>
+                                    <p className="mt-0.5 font-medium">{firstBlock.heading}</p>
+                                    <p className="mt-0.5 line-clamp-4">{firstBlock.body}</p>
+                                  </>
+                                ) : (
+                                  <p className="mt-0.5 italic">İçerik yok</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
                     </div>
                   )}
                   <textarea
