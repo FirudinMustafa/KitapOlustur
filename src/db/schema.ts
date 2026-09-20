@@ -37,7 +37,7 @@ export const runStatusEnum = pgEnum("run_status", [
 export type RunStatus = (typeof runStatusEnum.enumValues)[number];
 export type BookType = (typeof bookTypeEnum.enumValues)[number];
 
-export const reviewTypeEnum = pgEnum("review_type", ["structure", "language"]);
+export const reviewTypeEnum = pgEnum("review_type", ["structure", "language", "level"]);
 
 // Faz H6: "draft" trades content quality for cost/speed on bulk generation
 // steps only (see BOOK_PIPELINE_MODEL_DRAFT in src/lib/ai/model.ts); review/

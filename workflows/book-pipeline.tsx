@@ -697,6 +697,41 @@ async function reviewLanguageAccuracy(
   return object;
 }
 
+// Level/readability QA: an LLM judgment call rather than a formula like
+// Flesch-Kincaid, deliberately - this pipeline generates content in any
+// subject and any target language (see H1), and syllable-counting
+// readability formulas are English-specific and would either misfire or
+// need to be silently skipped for most of what this app actually produces.
+// Asking the same review model whether the text's difficulty matches the
+// book's stated level generalizes across languages/subjects for free.
+async function reviewReadingLevel(
+  runId: string,
+  unitNumber: number,
+  targetLevel: string,
+  contentLanguage: string,
+  generated: GeneratedUnit,
+) {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: unitReviewSchema,
+      system:
+        "You are a curriculum specialist who checks whether a coursebook unit's actual difficulty matches its stated target level - vocabulary complexity, sentence length/structure, grammar concepts assumed, and how much scaffolding is given.",
+      prompt: [
+        `Target level: "${targetLevel}" (content language: ${contentLanguage})`,
+        `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+        "Judge whether the reading/language difficulty of the explanations, examples, and practice items is appropriate for this level - not too advanced (assumes vocabulary/grammar a learner at this level wouldn't have yet) and not too simplistic (patronizing, or well below the stated level). List concrete issues (with the specific word/sentence/section) if the level doesn't match. Set passed=true only if the difficulty is genuinely appropriate throughout.",
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "review", usage);
+  await db.insert(unitReviews).values({ runId, unitNumber, reviewType: "level", passed: object.passed, issues: object.issues });
+  return object;
+}
+
 // Faz E: one book-wide pedagogical review, run once after every unit has
 // been generated - catches cross-unit problems (difficulty progression,
 // vocabulary repetition/spacing, grammar sequencing, thematic consistency)
@@ -1157,13 +1192,14 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         generated = await buildUnit();
 
         await setRunStatus(runId, "reviewing", `Ünite ${n}/${totalUnits}: kalite ve dil kontrolü yapılıyor`);
-        const [structureReview, languageReview] = await Promise.all([
+        const [structureReview, languageReview, levelReview] = await Promise.all([
           reviewUnit(runId, n, outlineUnit, generated),
           reviewLanguageAccuracy(runId, n, outline.contentLanguage, generated),
+          reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, generated),
         ]);
 
-        const issues = [...structureReview.issues, ...languageReview.issues];
-        if ((!structureReview.passed || !languageReview.passed) && issues.length) {
+        const issues = [...structureReview.issues, ...languageReview.issues, ...levelReview.issues];
+        if ((!structureReview.passed || !languageReview.passed || !levelReview.passed) && issues.length) {
           await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: geri bildirimle yeniden üretiliyor`);
           generated = await buildUnit(issues);
         }
@@ -1176,15 +1212,16 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               undefined,
               `This is candidate variant ${i + 1} of ${variantCount} for this unit. Take a distinctly different creative angle (different examples, scenarios, or exercise styles) from the other variants while still meeting every requirement above.`,
             );
-            const [structureReview, languageReview] = await Promise.all([
+            const [structureReview, languageReview, levelReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
               reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),
+              reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, unit),
             ]);
             return {
               index: i,
               unit,
-              issues: [...structureReview.issues, ...languageReview.issues],
-              passed: structureReview.passed && languageReview.passed,
+              issues: [...structureReview.issues, ...languageReview.issues, ...levelReview.issues],
+              passed: structureReview.passed && languageReview.passed && levelReview.passed,
             };
           }),
         );

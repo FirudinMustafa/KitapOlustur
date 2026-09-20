@@ -120,6 +120,13 @@
       "when": 1789835000584,
       "tag": "0016_chief_boomerang",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789895175295,
+      "tag": "0017_sad_brood",
+      "breakpoints": true
     }
   ]
 }

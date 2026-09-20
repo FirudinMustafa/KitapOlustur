@@ -616,3 +616,13 @@ Genel değerlendirmede işaretlenen "dinleme parçaları tek sesli" eksikliğine
 - Doğrulama: `tsc`/`eslint`/`vitest` (44 test)/`next build` temiz. Migration gerekmedi (yeni jsonb alanı `generatedBooks.content` içinde saklanıyor, ayrı kolon değil).
 
 **Yapılmadı:** Sesin gerçekten diyalog mu monolog mu olduğunu QA aşamasında doğrulayan bir kontrol yok (yazar modelinin doğru doldurduğuna güveniliyor). ElevenLabs gibi daha zengin/karakter-spesifik seslere geçiş hâlâ `ai` v6→v7 sınırında bloke (H6 notuna bakınız).
+
+### Okunabilirlik/seviye QA (2026-09-20)
+
+Genel değerlendirmede işaretlenen "üretilen metnin gerçekten hedeflenen seviyede olduğunu doğrulayan bir QA yok" eksikliğine karşı. Kullanıcıya klasik Flesch-Kincaid mi yoksa LLM-tabanlı bir değerlendirme mi sorulduğunda **LLM-tabanlı** tercih edildi — gerekçe: bu pipeline her konuda/her dilde çalışıyor (Faz H1), hece-sayma formülleri sadece İngilizce'de anlamlı, diğerlerinde ya yanlış sonuç verir ya da koşullu olarak atlanması gerekirdi.
+
+- `src/db/schema.ts`: `reviewTypeEnum`'a üçüncü değer eklendi: `"level"` (mevcut `"structure"`/`"language"` yanına). Migration `drizzle/0017_sad_brood.sql` — tek satır, additive `ALTER TYPE ... ADD VALUE`.
+- `workflows/book-pipeline.tsx`: yeni `reviewReadingLevel(runId, unitNumber, targetLevel, contentLanguage, generated)` — `reviewUnit`/`reviewLanguageAccuracy` ile birebir aynı desende (`BOOK_PIPELINE_MODEL`, `unitReviewSchema` şemasını yeniden kullanıyor, ayrı bir şema gerekmedi), kitabın hedef seviyesine (`outline.level`, örn. "CEFR A2" veya "Grade 7") göre üretilen metnin zorluk derecesinin uygun olup olmadığını değerlendiriyor — ne çok ileri ne çok basit. Hem tekli-varyant hem çoklu-varyant üretim yollarındaki mevcut `Promise.all([reviewUnit, reviewLanguageAccuracy])` çağrılarına üçüncü bir paralel çağrı olarak eklendi; `passed` ve `issues` diğer ikisiyle aynı şekilde birleştiriliyor (varsa geri bildirimle yeniden üretim tetikleniyor).
+- Doğrulama: `tsc`/`eslint`/`vitest` (44 test)/`next build` temiz (workflow step sayısı 26 → 27, `reviewReadingLevel` onaylandı). Migration üretildi, henüz uygulanmadı.
+
+**Yapılmadı:** Ayrı bir UI göstergesi eklenmedi — mevcut "review" maliyet kalemine ve geri bildirim/retry akışına sessizce katıldı, `reviewLanguageAccuracy` eklendiğinde de bespoke bir UI gerekmemişti, aynı gerekçe geçerli.
