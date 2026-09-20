@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
-import { ClerkProvider, Show, SignInButton, UserButton } from "@clerk/nextjs";
+import { ClerkProvider, Show } from "@clerk/nextjs";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,32 +32,27 @@ export default function RootLayout({
         lang="tr"
         className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       >
-        <body className="min-h-full flex flex-col">
+        <body className="min-h-full">
           <TooltipProvider>
-            <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
-              <Show when="signed-in">
-                <nav className="flex items-center gap-4 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                  <Link href="/projects" className="hover:text-zinc-950 dark:hover:text-zinc-50">
-                    Kitap Projeleri
-                  </Link>
-                  <Link href="/studio" className="hover:text-zinc-950 dark:hover:text-zinc-50">
-                    Hikaye Stüdyosu
-                  </Link>
-                  <Link href="/search" className="hover:text-zinc-950 dark:hover:text-zinc-50">
-                    Ara
-                  </Link>
-                </nav>
-              </Show>
-              <div className="flex items-center gap-3">
-                <Show when="signed-out">
-                  <SignInButton mode="modal" />
-                </Show>
-                <Show when="signed-in">
-                  <UserButton />
-                </Show>
-              </div>
-            </header>
-            {children}
+            {/* Faz "Arayüz yenileme" (2026-09-21, ROADMAP.md): signed-out
+                routes (just /sign-in, /sign-up - everything else requires
+                auth via proxy.ts, so a signed-out visitor is always already
+                on one of these two) render bare, no sidebar - each page
+                already renders its own Clerk <SignIn>/<SignUp> form, no
+                extra trigger button needed. Signed-in routes get the
+                persistent ChatGPT/Claude-style sidebar shell. */}
+            <Show when="signed-out">{children}</Show>
+            <Show when="signed-in">
+              <SidebarProvider>
+                <AppSidebar />
+                <SidebarInset>
+                  <header className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border px-4">
+                    <SidebarTrigger />
+                  </header>
+                  {children}
+                </SidebarInset>
+              </SidebarProvider>
+            </Show>
           </TooltipProvider>
         </body>
       </html>

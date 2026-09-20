@@ -959,3 +959,24 @@ Kullanıcının "oran" ve "çözünürlük"ü iki ayrı seçici olarak isteği, 
 - Test sonrası enjekte edilen referans görsel silindi.
 
 **Yapılmadı / bilinçli olarak kapsam dışı:** Nano Banana Pro/2 (yukarıda gerekçelendirildi). Video (Higgsfield/Veo) panelin hiçbir parçasına dahil edilmedi. Referans kütüphanesi için gelişmiş klasörleme/arama yok - liste + sil kadar minimal. Gerçek bir uçtan uca görsel üretimi (gerçek bir GPT Image 2.5 çağrısı) test edilemedi - hem AI Gateway hem Blob storage billing-bloke.
+
+## Arayüz Yenileme — ChatGPT/Claude Tarzı Sidebar — Tamamlanma Notu (2026-09-21)
+
+Kullanıcının isteği: "simdi arayuzu cok daha iyi hale getir. chatgpt claude gibi arayuz olsun. side barr olsun renklendir. guzel bir sistem olsun yani" - uygulamanın tamamına yayılan bir gezinme kabuğu isteği: kalıcı bir sidebar, ChatGPT/Claude'a benzer bir düzen, renk.
+
+### Değişiklikler
+- shadcn/ui bu repoda zaten kuruluydu (`components.json` mevcuttu) - sıfırdan kurulum gerekmedi. `npx shadcn@latest add sidebar avatar dropdown-menu separator skeleton input` ile sidebar bileşen ailesi + destekleyici primitifler eklendi.
+- `src/app/globals.css`: shadcn'in varsayılan, tamamen renksiz (chroma=0) gri temasının yerine gerçek bir indigo/mor vurgu rengi (oklch hue≈279.5) - hem `:root` hem `.dark` blokları için. Renk, pipeline durum takipçisinin zaten kullandığı semantik renklerle (amber=bekliyor, yeşil=tamam, kırmızı=başarısız) çakışmayacak şekilde bilinçli seçildi.
+- `src/components/app-sidebar.tsx` (yeni): kalıcı, ChatGPT/Claude tarzı sidebar - üstte marka/logo, ana gezinme (Kitap Projeleri, Hikaye Stüdyosu, Ara), "+ Yeni Kitap" CTA, ardından mevcut `/api/projects` ve `/api/studio/projects` uç noktalarından istemci tarafında çekilen iki canlı "son öğeler" listesi (son projeler, son hikayeler - her biri aktif rotaya göre vurgulanıyor, bekleyen projelerde turuncu durum noktası), alt kısımda Clerk `UserButton`.
+- `src/app/layout.tsx`: `SidebarProvider`/`SidebarInset`/`SidebarTrigger` ile kabuk kuruldu. Signed-out rotalar (sadece `/sign-in`, `/sign-up` - her şey `proxy.ts` tarafından korunuyor) sidebar'sız, çıplak render ediliyor - zaten kendi Clerk `<SignIn>`/`<SignUp>` formlarını gösteriyorlar.
+- Bu shadcn kurulumunun sidebar primitiflerinin Radix'in `asChild`'ı değil, Base UI'ın `render` prop'unu kullandığı keşfedildi (`@base-ui/react/use-render`) - ilk taslak yanlışlıkla `asChild` kullanmıştı, `tsc` hatasıyla yakalanıp düzeltildi. Bu repodaki gelecekteki herhangi bir shadcn bileşen eklemesi için de geçerli bir uyarı.
+
+### Bulunan ve düzeltilen gerçek hatalar
+- **Gerçek bir React hydration-mismatch bug'ı, Chrome'da canlı bulundu:** shadcn'in ürettiği `SidebarMenuSkeleton`, iskelet genişliğini `Math.random()` ile bir `useState` lazy initializer'ında hesaplıyordu - bu, SSR sırasında ve istemci hydration'ı sırasında BAĞIMSIZ olarak iki kez çalışıp iki farklı rastgele değer üretiyor, her sayfa yüklemesinde gerçek bir hydration mismatch'e yol açıyordu (konsolda "--skeleton-width" değer farkıyla doğrulandı). Düzeltme: genişlik artık SSR/ilk render'da sabit bir varsayılana (`"70%"`) set ediliyor, gerçek rastgele değer sadece mount sonrası bir `useEffect` içinde hesaplanıyor - bu, bu reponun `react-hooks/set-state-in-effect` lint kuralının BİLİNÇLİ, gerekçeli bir istisnası (React'ın kendi dokümantasyonunun da kabul ettiği "hydration-safe rastgeleleştirme" deseni), satır içi bir yorumla açıklanıp `eslint-disable-next-line` ile işaretlendi.
+- `src/hooks/use-mobile.ts` (shadcn-üretimi): orijinal kod `setIsMobile`'ı bir `useEffect` içinde senkron çağırıyordu (`react-hooks/set-state-in-effect` ihlali). Lazy `useState` initializer'a çevrilip, effect sadece `matchMedia` değişiklik-aboneliğini tutacak şekilde düzeltildi.
+
+### Doğrulama
+- `tsc`/`eslint`/`vitest` (110 test, değişmedi)/`next build` temiz. Workflow step sayısı değişmedi (35) - bu değişiklik sadece UI kabuğunu etkiliyor, `workflows/book-pipeline.tsx`'e dokunmuyor.
+- **Chrome'da canlı doğrulandı:** sidebar doğru render ediliyor (marka, nav, "+ Yeni Kitap", son projeler/hikayeler listeleri - biri gerçek bir "Hata" durumlu projeyi doğru gösteriyor), aktif rota vurgusu çalışıyor, sayfa yeniden yüklendiğinde konsolda hydration uyarısı veya başka bir hata yok.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Bu tur sadece gezinme kabuğunu (sidebar + renk tokenleri) kapsadı - uygulamanın mevcut içerik sayfaları (`RunStatusView.tsx`, `StudioWorkspace.tsx`, `AdvancedImagePanel.tsx`, `/projects` ve `/studio` liste sayfalarının kart tasarımı) hâlâ eski, sabit zinc tabanlı Tailwind sınıflarını kullanıyor ve yeni vurgu rengi/tasarım diline geçirilmedi - bu, kapsamı önemli ölçüde büyütecek, ayrı bir iş olarak bırakıldı, kullanıcıya bu notla birlikte açıkça sorulacak. Mobil sidebar davranışı (küçük ekran drawer'ı) Chrome'da ayrıca test edilmedi - sadece masaüstü genişliğinde doğrulandı.
