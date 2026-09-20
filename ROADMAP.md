@@ -592,3 +592,16 @@ Kullanıcı isteği: "video altyapısı hazır olmalı, API'yi verince direkt ç
 Doğrulama: `tsc`/`eslint`/`vitest` (44 test)/`next build` temiz. Migration `0016` kullanıcı onayıyla uygulandı. Test sırasında oluşan geçici veriler temizlendi.
 
 **Yapılmadı / bilinçli olarak ertelendi:** Higgsfield'ın webhook alternatifi (imzasız, public URL gerektiriyor) kurulmadı - polling deseni tercih edildi, yerel geliştirmede de çalışır ve daha az altyapı gerektirir. Nano Banana (Gemini) ailesinin gerçek entegrasyonu (chat-tabanlı görsel üretimi, `generateImage()` değil `generateText()` üzerinden) araştırılmadı/yapılmadı - GPT Image 2/1-mini yeterli bir çözüm olarak seçildi.
+
+---
+
+## Genel değerlendirme sonrası hızlı iyileştirmeler (2026-09-20)
+
+Kullanıcının "orkestranın neresine geldik" değerlendirmesinde önerilen "hemen, düşük efor" maddelerinden biri: görsellere alt-text.
+
+### Görsel açıklama metni (alt-text yerine geçen çözüm)
+**Önemli düzeltme:** İlk varsayım ("görsellere alt-text eklemek ucuz bir kazanım") yanlış çıktı — `@react-pdf/renderer`'ın `Image` bileşeninin `alt` prop'u **hiç yok** (kütüphanenin kendi tip tanımlarından doğrulandı: `ImageProps` sadece `src`/`source`/`srcSet`/`sizes`/`cache`/`debug` alıyor). PDF/UA tagged accessibility bu kütüphanede desteklenmiyor.
+- Gerçekçi kazanım olarak: her ünite sayfası görselinin altına, o görseli üretmek için kullanılan `page.imagePrompt`'tan türetilen küçük, italik bir açıklama metni eklendi (`src/lib/pdf/BookDocument.tsx`, `pageIllustrationCaption` stili). Kapak görseli için karşılık gelen bir prompt saklanmadığından kapak görseline açıklama eklenmedi.
+- Eslint'in `jsx-a11y/alt-text` uyarısı (react-pdf'in `Image`'ını HTML `<img>` sanıyor, false-positive) her iki görsel için de açıklayıcı bir yorumla `eslint-disable-next-line` edildi.
+- Gerçek erişilebilirlik (ekran-okuyucu uyumlu format) için hâlâ EPUB/HTML export gerekiyor — bu düzeltme sadece PDF içinde okunabilir bir açıklama ekliyor, tam bir çözüm değil.
+- Doğrulama: `tsc`/`eslint` (BookDocument.tsx'teki 2 uyarı da temizlendi)/`vitest` (44 test)/`next build` temiz.

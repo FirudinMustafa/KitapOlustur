@@ -98,8 +98,15 @@ const styles = StyleSheet.create({
   coverIllustrationWrap: { borderRadius: 10, overflow: "hidden", maxHeight: 220 },
   coverIllustration: { width: "100%", objectFit: "cover" },
   coverPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  pageIllustrationWrap: { borderRadius: 8, overflow: "hidden", marginBottom: 14, maxHeight: 170 },
+  pageIllustrationWrap: { borderRadius: 8, overflow: "hidden", marginBottom: 4, maxHeight: 170 },
   pageIllustration: { width: "100%", objectFit: "cover" },
+  // @react-pdf/renderer's Image component has no `alt` prop - PDF/UA tagged
+  // accessibility text isn't something this library supports (confirmed in
+  // its type definitions). This caption is the closest practical
+  // equivalent: real, readable text describing the image, derived from the
+  // same prompt used to generate it. See ROADMAP.md's project-wide
+  // assessment (2026-09-20).
+  pageIllustrationCaption: { fontSize: 8, color: "#6b7280", fontStyle: "italic", marginBottom: 14 },
   coverPill: {
     fontFamily: "Helvetica-Bold",
     fontSize: 9,
@@ -355,6 +362,9 @@ export function BookDocument({
         <View style={styles.coverFooter}>
           {coverImageSrc && (
             <View style={styles.coverIllustrationWrap}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- see pageIllustrationCaption's
+                  comment above: @react-pdf/renderer's Image has no `alt` prop. No caption text
+                  is available here (unlike per-page images, the cover has no stored prompt). */}
               <Image src={coverImageSrc} style={styles.coverIllustration} />
             </View>
           )}
@@ -400,9 +410,16 @@ export function BookDocument({
             )}
 
             {pageImages?.[page.sourcePageNumber] && (
-              <View style={styles.pageIllustrationWrap}>
-                <Image src={pageImages[page.sourcePageNumber]} style={styles.pageIllustration} />
-              </View>
+              <>
+                <View style={styles.pageIllustrationWrap}>
+                  {/* eslint-disable-next-line jsx-a11y/alt-text -- this is @react-pdf/renderer's
+                      Image (print-layout component), not an HTML <img> - it has no `alt` prop
+                      to give (see the pageIllustrationCaption style comment above for the
+                      caption text that stands in for it). */}
+                  <Image src={pageImages[page.sourcePageNumber]} style={styles.pageIllustration} />
+                </View>
+                {page.imagePrompt && <Text style={styles.pageIllustrationCaption}>{page.imagePrompt}</Text>}
+              </>
             )}
 
             <Blocks blocks={page.blocks} showAnswerKey={showAnswerKey} palette={palette} />
