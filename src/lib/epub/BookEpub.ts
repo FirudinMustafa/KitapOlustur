@@ -1,7 +1,16 @@
 import JSZip from "jszip";
-import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schemas";
+import type { GeneratedUnit } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
+import {
+  VARIANT_LABELS,
+  escapeXml,
+  pagesForVariant,
+  renderBlockHtml,
+  renderGlossaryHtml,
+  fetchAsset,
+  extensionForMediaType,
+} from "@/lib/content-html";
 
 // EPUB export - the digital/accessible sibling to BookDocument.tsx's PDF.
 // Deliberately hand-rolled with jszip rather than an epub-generation
@@ -21,92 +30,6 @@ import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 // (fetched from their Blob URLs at build time), not linked externally -
 // external references aren't reliably supported across e-readers and would
 // break once/if the source blob is ever removed.
-
-const VARIANT_LABELS: Record<Variant, string> = {
-  student_book: "Student Book",
-  workbook: "Workbook",
-  teacher_book: "Teacher's Book",
-  test_booklet: "Test Booklet",
-};
-
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function paragraphs(text: string): string {
-  return text
-    .split(/\n+/)
-    .filter(Boolean)
-    .map((p) => `<p>${escapeXml(p)}</p>`)
-    .join("\n");
-}
-
-function pagesForVariant(unit: GeneratedUnit, variant: Variant): GeneratedPage[] {
-  switch (variant) {
-    case "student_book":
-      return unit.studentBookPages;
-    case "workbook":
-      return unit.workbookPages;
-    case "teacher_book":
-      return unit.teacherBookPages ?? [];
-    case "test_booklet":
-      return unit.testBookletPages ?? [];
-  }
-}
-
-function renderBlock(block: ContentBlock, showAnswerKey: boolean): string {
-  const items = block.items?.length
-    ? `<ol class="items">${block.items.map((item) => `<li>${escapeXml(item)}</li>`).join("")}</ol>`
-    : "";
-  const answerKey =
-    showAnswerKey && block.answerKey?.length
-      ? `<div class="answer-key"><p class="answer-key-label">ANSWER KEY</p><ol>${block.answerKey
-          .map((a) => `<li>${escapeXml(a)}</li>`)
-          .join("")}</ol></div>`
-      : "";
-  return `<section class="block block-${block.kind}">
-    <h3>${escapeXml(block.heading)}</h3>
-    ${paragraphs(block.body)}
-    ${items}
-    ${answerKey}
-  </section>`;
-}
-
-function renderGlossary(glossary: GeneratedPage["glossary"]): string {
-  if (!glossary?.length) return "";
-  return `<section class="glossary">
-    <h3>Glossary</h3>
-    <dl>
-      ${glossary
-        .map(
-          (entry) =>
-            `<dt>${escapeXml(entry.term)}</dt><dd>${escapeXml(entry.definition)}${
-              entry.example ? ` <em>e.g. ${escapeXml(entry.example)}</em>` : ""
-            }</dd>`,
-        )
-        .join("\n")}
-    </dl>
-  </section>`;
-}
-
-async function fetchAsset(url: string, fallbackMediaType: string): Promise<{ buffer: Buffer; mediaType: string }> {
-  const res = await fetch(url);
-  const buffer = Buffer.from(await res.arrayBuffer());
-  const mediaType = res.headers.get("content-type") ?? fallbackMediaType;
-  return { buffer, mediaType };
-}
-
-function extensionForMediaType(mediaType: string): string {
-  if (mediaType.includes("png")) return "png";
-  if (mediaType.includes("jpeg") || mediaType.includes("jpg")) return "jpg";
-  if (mediaType.includes("mpeg") || mediaType.includes("mp3")) return "mp3";
-  return "bin";
-}
 
 export async function buildEpub(input: {
   bookTitle: string;
@@ -241,8 +164,8 @@ th, td { border: 1px solid #d1d5db; padding: 0.4em; text-align: left; font-size:
       pageSections.push(`
         ${imageHtml}
         ${audioHtml}
-        ${page.blocks.map((b) => renderBlock(b, showAnswerKey)).join("\n")}
-        ${renderGlossary(page.glossary)}
+        ${page.blocks.map((b) => renderBlockHtml(b, showAnswerKey)).join("\n")}
+        ${renderGlossaryHtml(page.glossary)}
       `);
     }
 

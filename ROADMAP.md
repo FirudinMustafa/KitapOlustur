@@ -656,3 +656,20 @@ Kullanıcı üç büyük işten (H2, H3, çoklu-kullanıcı) H2 ile başlamayı 
 - Doğrulama: `tsc`/`eslint`/`vitest` (48 test)/`next build` temiz. Migration yok (roadmap'in Faz 1 vaadi doğrulandı: gerçekten şema değişikliği gerekmedi).
 
 **Yapılmadı / bilinçli olarak ertelendi:** H2 Faz 2 (sesli okuma ile senkron kelime vurgulama — forced-alignment gerektiriyor, ayrı bir iş) ve Faz 3 (gerçek etkileşimli aktivite tipleri — boşluk doldurma/eşleştirme, şema kırılımı içeriyor, mevcut tüm ünitelerin yeniden üretilmesini gerektirir) roadmap'in kendi notunda da "ayrı, dikkatli ele alınmalı" diye işaretlenmişti — bu turda yapılmadı.
+
+### H3 — IMS Common Cartridge (LMS) Export (2026-09-20)
+
+Kullanıcı H3 ile devam etmeyi seçti. Roadmap'in kendi önerisi (Common Cartridge, statik içerik, ilerleme takibi olmadan — SCORM'un gerektirdiği JS API wrapper'ı olmadan) birebir uygulandı.
+
+- **Refactor önce:** `src/lib/epub/BookEpub.ts`'teki HTML-render yardımcıları (`escapeXml`, `paragraphs`, `pagesForVariant`, `renderBlock`, `renderGlossary`, `fetchAsset`, `extensionForMediaType`) `src/lib/content-html.ts`'e taşındı — Common Cartridge de aynı "ContentBlock'u gerçek HTML'e çevir" işini yapıyor, kod tekrarı yerine paylaşılan modül tercih edildi. `BookEpub.ts` bu modülü import edecek şekilde güncellendi, davranışı değişmedi (4 mevcut EPUB testi hâlâ geçiyor).
+- Yeni `src/lib/lms-export/CommonCartridge.ts`: `buildCommonCartridge` — `imsmanifest.xml` (IMS CC 1.1 şeması) + ünite başına bir HTML dosyası + gömülü görseller, `jszip` ile paketleniyor. Roadmap'in kendi notu doğrultusunda hedef **Moodle + Canvas** olarak daraltıldı (Google Classroom'un native import formatı yok).
+- Yeni API route `src/app/api/projects/[id]/export/common-cartridge/route.ts` (GET, `?bookType=`) — PDF/EPUB'un aksine **istek anında** üretiliyor (pipeline assembly zamanında değil) — LMS export'un daha az kullanılan bir aksiyon olması bekleniyor, her run'da bu paketleme maliyetini/görsel fetch'lerini ödemenin gerekçesi yok. Blob'a yükleyip doğrudan oraya redirect ediyor — mevcut "PDF indir" linkiyle aynı UX (ekstra client-side JS gerekmiyor).
+- UI: "LMS paketi indir" linki, "PDF indir"/"EPUB indir"/"Etkileşimli oku"nun yanına eklendi.
+- **Canlı testte gerçek bir bug bulundu ve düzeltildi:** Aynı kitap tipi için export route'u iki kez çağrıldığında (örn. kullanıcı butona iki kez tıklarsa, ya da benim testimde olduğu gibi arka arkaya iki istek), ikinci istek Vercel Blob'un "bu blob zaten var" hatasıyla 500 döndü — çünkü sabit bir path'e (`addRandomSuffix: false`) yazıyor ama `allowOverwrite` belirtilmemişti (PDF/EPUB'da bu sorun yok çünkü onlar run başına sadece bir kez, assembly sırasında yazılıyor). `allowOverwrite: true` eklendi — her istek güncel içerikle üzerine yazıyor, sabit/öngörülebilir bir path koruyor.
+- **Canlı doğrulama:** gerçek, authenticated route üzerinden (Chrome'da JS ile `fetch`) çağrıldı, dönen bayt dizisinin gerçek bir ZIP olduğu (PK\x03\x04 magic number) doğrulandı, iki ardışık istek de 200/307 ile temiz sonuçlandı (overwrite düzeltmesi doğrulandı).
+- Test: `src/lib/lms-export/CommonCartridge.test.ts` (yeni, 4 test) — zip/manifest yapısı, XML escaping, varyant-bazlı answer-key/sayfa filtreleme.
+- Doğrulama: `tsc`/`eslint`/`vitest` (52 test, 48→52)/`next build` temiz. Migration yok.
+
+**Dürüstlük notu (roadmap'in kendi riskiyle aynı):** Bu manifest IMS Common Cartridge 1.1 XSD yapısına göre yazıldı ama gerçek bir Moodle/Canvas ortamına yüklenip "gerçekten içe aktarılabiliyor" diye doğrulanmadı — ne bu oturumda ne daha önce böyle bir ortam mevcuttu. "Şemaya yapısal olarak uyuyor" ile "gerçek bir LMS'e temiz import ediliyor" aynı şey değil; ikincisi gerçek bir LMS test ortamı gerektiriyor.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** SCORM (1.2/2004) — ilerleme/puan takibi gerektiren JS API wrapper'ı, ayrı ve daha büyük bir iş. Gerçek bir LMS'de import testi (yukarıdaki dürüstlük notu).

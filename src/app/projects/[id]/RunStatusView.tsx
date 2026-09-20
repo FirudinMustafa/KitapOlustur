@@ -734,6 +734,15 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       EPUB indir
                     </a>
                   )}
+                  <a
+                    href={`/api/projects/${projectId}/export/common-cartridge?bookType=${book.bookType}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Moodle/Canvas'a yüklenebilir IMS Common Cartridge paketi"
+                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    LMS paketi indir
+                  </a>
                   {book.markdown && (
                     <button
                       onClick={() =>
