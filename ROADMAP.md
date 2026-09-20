@@ -515,6 +515,17 @@ Kullanıcı, mevcut pipeline'ın (içerik→görsel→ses→alıştırma) paneld
 - Doğrulama: `tsc`/`eslint`/`vitest` (44 test, 6 dosya)/`next build` temiz. Migration gerekmedi (sadece mevcut veriden hesaplama).
 - **Yapılmadı / bilinçli olarak ertelendi:** Faz 2 (Higgsfield video) — kullanıcının Higgsfield hesabı/API key'i yok, tam image-to-video şeması doğrulanmadı; detaylar plan dosyasında.
 
+---
+
+## İleride yapılacak: Çoklu-kullanıcı/organizasyon (ertelendi, 2026-09-20)
+
+Genel proje değerlendirmesinde (2026-09-20) işaretlenen bir boşluk. Kullanıcıyla netleştirildi ve **şimdilik yapılmamasına karar verildi** — bugün bekleyen gerçek bir ortak/öğretmen kullanıcı yok, ileriye dönük bir ihtiyaç. Sonra gündeme gelirse:
+
+- **Kapsam netleşti:** Tam çoklu-kiracılı SaaS değil, "ekip/takım paylaşımı" — birkaç tanıdık/öğretmenin aynı projelere erişmesi. Hem `/projects` (PDF pipeline) hem `/studio` (Hikaye Stüdyosu) için.
+- **Tercih edilen altyapı:** Clerk'in kendi Organizations özelliği (davet akışı, rol yönetimi, `<OrganizationSwitcher>` UI'ı hazır geliyor) — kendi `organizations`/`members` tablomuzu sıfırdan yazmaktan çok daha az iş.
+- **Önceden kontrol edilmesi gerekenler (kod yazmadan önce):** Clerk Organizations özelliğinin mevcut Clerk instance/plan'da etkin olup olmadığı doğrulanmalı. `projects.ownerId`/`storyProjects.ownerId` (Clerk user id) → `organizationId`'ye taşınması gerekir; nullable tutulup mevcut projelerin "kişisel" kalması geriye dönük kırılmayı önler. Her mevcut yetkilendirme kontrol noktası (`requireProjectOwner`, `requireStoryProjectOwner`, ve ilgili server component'lerdeki inline `ownerId !== userId` kontrolleri) değiştirilmeli.
+- **Daha hafif bir alternatif** (eğer tam org/switcher UI'ı gereksiz görülürse): organizasyon kavramı olmadan, sadece "bu projeyi şu email'e paylaş" düzeyinde basit bir `projectMembers` tablosu — Clerk Organizations'ın verdiği değerin çoğunu çok daha küçük bir yüzeyle sağlar.
+
 ## Bağımlılık ve Sıralama Özeti
 
 ```
