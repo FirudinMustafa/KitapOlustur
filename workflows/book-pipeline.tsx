@@ -204,6 +204,7 @@ async function extractOutline(
   pdfUrl: string,
   pageMap: PageMap,
   targetLanguage?: string | null,
+  declaredLevel?: string | null,
 ): Promise<BookOutline> {
   "use step";
 
@@ -228,6 +229,9 @@ async function extractOutline(
                 targetLanguage
                   ? `Faz H1 - localization: the generated book will be produced in "${targetLanguage}", NOT the source PDF's own language. Set contentLanguage to the correct BCP-47 code for "${targetLanguage}" (e.g. "de" for German), and write bookTitle, tone, targetAudience, and every unit's title/learningObjectives/keyTerms in that language - translated and localized, not copied from the source. sourcePageRange stays numeric and is unaffected.`
                   : "Set contentLanguage to the BCP-47 code (e.g. 'en' or 'tr') matching the language the book is actually written in, and write all extracted text in that same language.",
+                declaredLevel
+                  ? `The user declared this project's target level as "${declaredLevel}" when creating it. Compare this to the level you actually observe in the material (don't just assume they match) and set declaredLevelAlignment: matches=true if they're reasonably consistent, matches=false with a concrete note (e.g. "user declared A2 but the material's vocabulary/grammar is clearly B1-level") if they diverge in a way that would matter for teaching.`
+                  : "The user did not declare a target level for this project - leave declaredLevelAlignment unset.",
               ].join("\n\n"),
             },
             { type: "file", mediaType: "application/pdf", data: new URL(pdfUrl) },
@@ -1307,7 +1311,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     const pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
 
     await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) çıkarılıyor");
-    const outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap, ctx.run.targetLanguage);
+    const outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap, ctx.run.targetLanguage, ctx.project.level);
 
     await setRunStatus(runId, "analyzing", "Nice-to-have listesine göre iyileştirme planı hazırlanıyor");
     const improvementPlan: ImprovementPlan = await analyzeImprovements(

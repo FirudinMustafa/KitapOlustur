@@ -71,6 +71,18 @@ export const bookOutlineSchema = z.object({
   tone: z.string(),
   targetAudience: z.string(),
   units: z.array(unitOutlineSchema),
+  // Faz "Müfredat hizalaması" (2026-09-20, ROADMAP.md): projects.level is a
+  // free-text field the user types at project creation, but nothing ever
+  // checked it against what the source material actually turns out to be -
+  // level (above) is derived purely from the PDF, with zero connection to
+  // the user's stated intent. Only set when the user actually declared a
+  // level; left unset otherwise (most runs, since the field is optional).
+  declaredLevelAlignment: z
+    .object({
+      matches: z.boolean(),
+      note: z.string().describe("Brief explanation, especially when matches=false - what the user declared vs what the material actually is"),
+    })
+    .optional(),
 });
 export type BookOutline = z.infer<typeof bookOutlineSchema>;
 

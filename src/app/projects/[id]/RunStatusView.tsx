@@ -71,10 +71,15 @@ type Run = {
 };
 
 type OutlineUnit = { number: number; title: string; level: string };
+// Faz "Müfredat hizalaması": only present when the user declared a target
+// level at project creation - compares it against what extractOutline
+// actually observed in the source material (see workflows/book-pipeline.tsx).
+type DeclaredLevelAlignment = { matches: boolean; note: string };
 type OutlineData = {
   bookTitle: string;
   subject: string;
   units: OutlineUnit[];
+  declaredLevelAlignment?: DeclaredLevelAlignment;
 };
 type ImprovementPlanData = {
   overallNotes: string;
@@ -552,6 +557,12 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
             {outlineData.bookTitle} · {outlineData.subject}
           </p>
+          {outlineData.declaredLevelAlignment && !outlineData.declaredLevelAlignment.matches && (
+            <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+              <p className="font-semibold">Seviye uyuşmazlığı: proje oluştururken belirttiğin seviye ile kaynak materyalin gerçek seviyesi eşleşmiyor olabilir.</p>
+              <p className="mt-1">{outlineData.declaredLevelAlignment.note}</p>
+            </div>
+          )}
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {outlineData.units.map((u) => (
               <div
