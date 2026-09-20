@@ -50,7 +50,13 @@ export const runStatusEnum = pgEnum("run_status", [
 export type RunStatus = (typeof runStatusEnum.enumValues)[number];
 export type BookType = (typeof bookTypeEnum.enumValues)[number];
 
-export const reviewTypeEnum = pgEnum("review_type", ["structure", "language", "level"]);
+// "moderation" (2026-09-20, ROADMAP.md): content-safety check for generated
+// text - the image QA prompt (reviewImage in workflows/book-pipeline.tsx)
+// already screened images for age-appropriateness, but nothing screened the
+// generated text itself for a children's-education product. Same enum, same
+// unitReviews table, same retry-with-feedback flow as the other three - not
+// a separate moderation system.
+export const reviewTypeEnum = pgEnum("review_type", ["structure", "language", "level", "moderation"]);
 
 // Faz H6: "draft" trades content quality for cost/speed on bulk generation
 // steps only (see BOOK_PIPELINE_MODEL_DRAFT in src/lib/ai/model.ts); review/

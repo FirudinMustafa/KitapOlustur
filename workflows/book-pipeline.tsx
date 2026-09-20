@@ -799,6 +799,37 @@ async function reviewReadingLevel(
   return object;
 }
 
+// Content-safety/moderation check for generated text (ROADMAP.md, 2026-09-20
+// project-wide assessment: "içerik moderasyonu yok"). reviewImage already
+// screens generated illustrations for age-appropriateness (see reviewImage's
+// prompt below) - this is the text-side counterpart, using the same
+// unitReviews table/retry-with-feedback flow as reviewUnit/
+// reviewLanguageAccuracy/reviewReadingLevel above rather than a separate
+// moderation system, since a failure here should be fixed by regenerating
+// the unit exactly like any other quality issue.
+async function reviewContentSafety(runId: string, unitNumber: number, generated: GeneratedUnit) {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: unitReviewSchema,
+      system:
+        "You are a content-safety reviewer for a children's/general-audience educational coursebook. You check generated text for anything unsafe or inappropriate for a school setting - you do not judge pedagogy, grammar, or level.",
+      prompt: [
+        `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+        "Check every heading, body text, practice item, example, and glossary entry for: violence or gore, sexual content, hate speech or discriminatory content, references to drugs/alcohol/self-harm, and any other content unsuitable for a school-age audience. This is educational rewriting of a real textbook, so most content will be entirely fine - only flag genuine, concrete problems, not stylistic preferences. Set passed=true unless there is an actual safety issue.",
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "review", usage);
+  await db
+    .insert(unitReviews)
+    .values({ runId, unitNumber, reviewType: "moderation", passed: object.passed, issues: object.issues });
+  return object;
+}
+
 // Faz E: one book-wide pedagogical review, run once after every unit has
 // been generated - catches cross-unit problems (difficulty progression,
 // vocabulary repetition/spacing, grammar sequencing, thematic consistency)
@@ -1393,14 +1424,18 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         generated = await buildUnit();
 
         await setRunStatus(runId, "reviewing", `Ünite ${n}/${totalUnits}: kalite ve dil kontrolü yapılıyor`);
-        const [structureReview, languageReview, levelReview] = await Promise.all([
+        const [structureReview, languageReview, levelReview, safetyReview] = await Promise.all([
           reviewUnit(runId, n, outlineUnit, generated),
           reviewLanguageAccuracy(runId, n, outline.contentLanguage, generated),
           reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, generated),
+          reviewContentSafety(runId, n, generated),
         ]);
 
-        const issues = [...structureReview.issues, ...languageReview.issues, ...levelReview.issues];
-        if ((!structureReview.passed || !languageReview.passed || !levelReview.passed) && issues.length) {
+        const issues = [...structureReview.issues, ...languageReview.issues, ...levelReview.issues, ...safetyReview.issues];
+        if (
+          (!structureReview.passed || !languageReview.passed || !levelReview.passed || !safetyReview.passed) &&
+          issues.length
+        ) {
           await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: geri bildirimle yeniden üretiliyor`);
           generated = await buildUnit(issues);
         }
@@ -1413,16 +1448,17 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               undefined,
               `This is candidate variant ${i + 1} of ${variantCount} for this unit. Take a distinctly different creative angle (different examples, scenarios, or exercise styles) from the other variants while still meeting every requirement above.`,
             );
-            const [structureReview, languageReview, levelReview] = await Promise.all([
+            const [structureReview, languageReview, levelReview, safetyReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
               reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),
               reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, unit),
+              reviewContentSafety(runId, n, unit),
             ]);
             return {
               index: i,
               unit,
-              issues: [...structureReview.issues, ...languageReview.issues, ...levelReview.issues],
-              passed: structureReview.passed && languageReview.passed && levelReview.passed,
+              issues: [...structureReview.issues, ...languageReview.issues, ...levelReview.issues, ...safetyReview.issues],
+              passed: structureReview.passed && languageReview.passed && levelReview.passed && safetyReview.passed,
             };
           }),
         );
