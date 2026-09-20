@@ -69,15 +69,17 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       })
     : null;
 
-  // Faz F1: count of flagged (unit, page) pairs. Logged across every
-  // generated variant (not just the one eventually selected), so this can
-  // over-count relative to the final assembled book - acceptable for a
-  // soft, informational signal. See ROADMAP.md Faz F.
-  const flaggedOriginalityCount = run
+  // Faz F1/F2: flagged (unit, page) pairs, each optionally carrying an F2
+  // LLM second opinion (src/db/schema.ts's OriginalityLlmAssessment). Logged
+  // across every generated variant (not just the one eventually selected),
+  // so this can over-count relative to the final assembled book - acceptable
+  // for a soft, informational signal. See ROADMAP.md Faz F.
+  const flaggedOriginalityChecks = run
     ? (await db.query.originalityChecks.findMany({ where: eq(originalityChecks.runId, run.id) })).filter(
         (r) => r.flagged,
-      ).length
-    : 0;
+      )
+    : [];
+  const flaggedOriginalityCount = flaggedOriginalityChecks.length;
 
   const feedback = run
     ? await db.query.teacherFeedback.findMany({
@@ -111,6 +113,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     flaggedImageCount,
     coherenceReview,
     flaggedOriginalityCount,
+    flaggedOriginalityChecks,
     feedback,
     unitProgress,
   });

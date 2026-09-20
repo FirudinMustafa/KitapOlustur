@@ -200,13 +200,20 @@ export const originalityChecks = pgTable("originality_checks", {
   unitNumber: integer("unit_number").notNull(),
   pageNumber: integer("page_number").notNull(),
   ngramOverlapScore: real("ngram_overlap_score").notNull(),
-  // F2 (LLM-assisted "structural distance" second opinion) is not
-  // implemented yet - column reserved so it can be filled in without a
-  // schema change later. See ROADMAP.md Faz F.
-  llmAssessment: jsonb("llm_assessment"),
+  // Faz F2: LLM-assisted second opinion, only computed for rows F1 already
+  // flagged (see checkOriginality in workflows/book-pipeline.tsx). Null for
+  // unflagged rows - never called for those, keeping the added LLM cost
+  // proportional to actual risk. See ROADMAP.md Faz F.
+  llmAssessment: jsonb("llm_assessment").$type<OriginalityLlmAssessment>(),
   flagged: boolean("flagged").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type OriginalityLlmAssessment = {
+  similarityLevel: "low" | "medium" | "high";
+  rationale: string;
+  concerningPhrases: string[];
+};
 
 // Faz H4: every generated variant (not just the one selected), archived
 // before the run's `pendingVariants` scratch column is cleared. Previously

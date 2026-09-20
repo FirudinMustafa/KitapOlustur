@@ -69,11 +69,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       })
     : null;
 
-  const flaggedOriginalityCount = run
+  const flaggedOriginalityChecks = run
     ? (await db.query.originalityChecks.findMany({ where: eq(originalityChecks.runId, run.id) })).filter(
         (r) => r.flagged,
-      ).length
-    : 0;
+      )
+    : [];
+  const flaggedOriginalityCount = flaggedOriginalityChecks.length;
 
   const feedback = run
     ? await db.query.teacherFeedback.findMany({
@@ -120,6 +121,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         outline: outline ? { outline: outline.outline as OutlineDocument["outline"] } : null,
         flaggedImageCount,
         flaggedOriginalityCount,
+        flaggedOriginalityChecks: flaggedOriginalityChecks.map((c) => ({
+          unitNumber: c.unitNumber,
+          pageNumber: c.pageNumber,
+          ngramOverlapScore: c.ngramOverlapScore,
+          llmAssessment: c.llmAssessment,
+        })),
         unitProgress,
         feedback: feedback.map((f) => ({ id: f.id, rating: f.rating, comment: f.comment })),
         coherenceReview: coherenceReview

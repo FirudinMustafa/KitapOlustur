@@ -75,6 +75,22 @@ type CoherenceReview = {
 
 type FeedbackEntry = { id: string; rating: number | null; comment: string | null };
 
+// Faz F2: LLM second opinion on an already-flagged (F1 n-gram) page - see
+// src/db/schema.ts's OriginalityLlmAssessment. Null when the pipeline ran
+// before F2 existed, or (shouldn't happen post-F2) if the LLM call failed.
+type OriginalityLlmAssessment = {
+  similarityLevel: "low" | "medium" | "high";
+  rationale: string;
+  concerningPhrases: string[];
+};
+
+type FlaggedOriginalityCheck = {
+  unitNumber: number;
+  pageNumber: number;
+  ngramOverlapScore: number;
+  llmAssessment: OriginalityLlmAssessment | null;
+};
+
 type ProjectData = {
   project: { id: string; name: string; level: string | null };
   upload: { filename: string; bookType: string } | null;
@@ -83,6 +99,7 @@ type ProjectData = {
   books: GeneratedBook[];
   flaggedImageCount?: number;
   flaggedOriginalityCount?: number;
+  flaggedOriginalityChecks?: FlaggedOriginalityCheck[];
   coherenceReview?: CoherenceReview | null;
   feedback?: FeedbackEntry[];
   unitProgress?: UnitProgress[];
@@ -161,6 +178,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
     books,
     flaggedImageCount,
     flaggedOriginalityCount,
+    flaggedOriginalityChecks,
     coherenceReview,
     feedback,
     unitProgress,
@@ -350,6 +368,60 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {!!flaggedOriginalityChecks?.length && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Orijinallik Raporu</h2>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              {flaggedOriginalityChecks.length} sayfa işaretlendi (bilgilendirici)
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            Bu bir hukuki değerlendirme değildir — kaynak kitapla yüksek metin benzerliği tespit edilen sayfalar,
+            manuel incelemeniz için burada listeleniyor.
+          </p>
+          <ul className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+            {flaggedOriginalityChecks.map((check, i) => (
+              <li key={i}>
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    Ünite {check.unitNumber} · Sayfa {check.pageNumber}
+                  </span>
+                  <span>n-gram örtüşme: {(check.ngramOverlapScore * 100).toFixed(0)}%</span>
+                  {check.llmAssessment && (
+                    <span
+                      className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                        check.llmAssessment.similarityLevel === "high"
+                          ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                          : check.llmAssessment.similarityLevel === "medium"
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            : "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                      }`}
+                    >
+                      İkinci görüş: {check.llmAssessment.similarityLevel}
+                    </span>
+                  )}
+                </div>
+                {check.llmAssessment && (
+                  <div className="mt-1">
+                    <p>{check.llmAssessment.rationale}</p>
+                    {check.llmAssessment.concerningPhrases.length > 0 && (
+                      <ul className="mt-1 list-disc pl-4">
+                        {check.llmAssessment.concerningPhrases.map((phrase, j) => (
+                          <li key={j} className="italic">
+                            &quot;{phrase}&quot;
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

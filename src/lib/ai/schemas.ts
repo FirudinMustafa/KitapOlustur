@@ -231,3 +231,26 @@ export const bookCoherenceReviewSchema = z.object({
   issues: z.array(coherenceIssueSchema),
 });
 export type BookCoherenceReview = z.infer<typeof bookCoherenceReviewSchema>;
+
+// ---- Faz F2: LLM-assisted originality second opinion ----
+// F1 (src/lib/originality.ts) is a cheap, deterministic n-gram overlap
+// score - good at catching verbatim copying but blind to "structural"
+// closeness (same sentence-by-sentence structure with just words swapped)
+// and prone to false positives on generic phrasing/common terminology that
+// legitimately recurs in any textbook on the same topic. F2 only runs on
+// pages F1 already flagged (keeps the added LLM cost proportional to actual
+// risk) and gives a second, more contextual opinion a human reviewer can
+// weigh alongside the raw score. Like F1, this is a risk signal for manual
+// review, not a legal determination.
+export const originalityLlmAssessmentSchema = z.object({
+  similarityLevel: z
+    .enum(["low", "medium", "high"])
+    .describe(
+      "Overall closeness to the source beyond simple word overlap - considers sentence structure, ordering, and whether reused phrasing is generic/unavoidable topic terminology vs. distinctively copied wording",
+    ),
+  rationale: z.string().describe("1-2 sentence explanation of the verdict"),
+  concerningPhrases: z
+    .array(z.string())
+    .describe("Specific phrases/sentences reused near-verbatim from the source that a human should look at, if any - empty if none"),
+});
+export type OriginalityLlmAssessment = z.infer<typeof originalityLlmAssessmentSchema>;

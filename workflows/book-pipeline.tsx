@@ -38,6 +38,7 @@ import {
   unitReviewSchema,
   imageReviewSchema,
   bookCoherenceReviewSchema,
+  originalityLlmAssessmentSchema,
   type ImageReview,
   type BookCoherenceReview,
   type PageMap,
@@ -411,6 +412,25 @@ async function generateComplementarySide(
 // is a risk signal, not a legal determination.
 const ORIGINALITY_NGRAM_THRESHOLD = 0.15;
 
+// Faz F2: for pages F1 already flagged, ask the full-quality model for a
+// second, more contextual opinion (structural closeness, and whether the
+// overlapping n-grams are distinctive copied wording vs. generic topic
+// terminology any textbook would share). Only runs on already-flagged
+// pages, not every page - keeps this extra LLM cost proportional to actual
+// risk instead of doubling the cost of every unit's originality check.
+async function assessOriginalityWithLlm(sourceText: string, generatedText: string, ngramOverlapScore: number) {
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: originalityLlmAssessmentSchema,
+      system:
+        "You assess whether AI-rewritten educational content has been adequately reworded from a source textbook page, or too closely reproduces the source's specific wording/sentence structure beyond just mirroring its topic and layout. You are giving a risk signal for a human legal/editorial reviewer, not a legal determination - be specific about which exact phrases (if any) look copied rather than just noting a generic overlap score.",
+      prompt: `Kaynak sayfa metni:\n"""${sourceText}"""\n\nÜretilen sayfa metni:\n"""${generatedText}"""\n\nDeterministik 5-gram kelime örtüşme skoru (referans için, kendi başına karar verme): ${ngramOverlapScore.toFixed(3)}`,
+    }),
+  );
+  return { object, usage };
+}
+
 async function checkOriginality(
   runId: string,
   unitNumber: number,
@@ -429,12 +449,20 @@ async function checkOriginality(
     const ngramOverlapScore = ngramJaccardSimilarity(source.sourceText, generatedText, 5);
     const flagged = ngramOverlapScore > ORIGINALITY_NGRAM_THRESHOLD;
 
+    let llmAssessment = null;
+    if (flagged) {
+      const { object, usage } = await assessOriginalityWithLlm(source.sourceText, generatedText, ngramOverlapScore);
+      llmAssessment = object;
+      await recordUsage(runId, "originalityLlmAssessment", usage);
+    }
+
     await db.insert(originalityChecks).values({
       runId,
       unitNumber,
       pageNumber: page.sourcePageNumber,
       ngramOverlapScore,
       flagged,
+      llmAssessment,
     });
   }
 }

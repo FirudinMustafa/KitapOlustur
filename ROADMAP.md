@@ -7,7 +7,7 @@
 | G1 — `recordUsage` concurrency düzeltmesi | ✅ Tamamlandı (2026-09-19) | Aşağıda "G1 — Tamamlanma Notu" |
 | Faz D — Görsel/Grafik QA Ajanı | ✅ Tamamlandı (2026-09-19) | Aşağıda "Faz D — Tamamlanma Notu" |
 | Faz E — Kitap-geneli tutarlılık/pedagoji denetçisi | ✅ Tamamlandı (2026-09-19) | Aşağıda "Faz E — Tamamlanma Notu" |
-| Faz F — Yasal/orijinallik kontrolü | 🟡 Kısmen tamamlandı (2026-09-19) | Sadece F1 (deterministik); F2 (LLM ikinci kademe) yapılmadı — aşağıda "Faz F — Tamamlanma Notu" |
+| Faz F — Yasal/orijinallik kontrolü | ✅ F1 + F2 tamamlandı (2026-09-20) | Aşağıda "Faz F — Tamamlanma Notu" ve "Faz F2 — Tamamlanma Notu" |
 | G2 — Test kapsamı | 🟡 Başlangıç kapsamı tamamlandı (2026-09-19) | Aşağıda "G2 — Tamamlanma Notu" |
 | G3 — Admin/yetkilendirme | ✅ Kod + provizyon tamamlandı (2026-09-19) | Aşağıda "G3 — Tamamlanma Notu" |
 | G4 — Retry/backoff standardizasyonu | ✅ Tamamlandı — ama planlanandan farklı (2026-09-19) | Aşağıda "G4 — Tamamlanma Notu", **roadmap'in orijinal varsayımını düzeltiyor** |
@@ -253,10 +253,21 @@ F1'in geri kalanı planlandığı gibi:
 - Doğrulama: `tsc`/`eslint`/`next build` temiz (workflow step sayısı 25 → 26, `checkOriginality` onaylandı).
 
 **Bilinçli olarak yapılmayanlar:**
-- **F2 (LLM-destekli "yapısal mesafe" ikinci kademe)** hiç uygulanmadı — roadmap'in kendisi de bunu "opsiyonel/ikinci kademe" olarak işaretlemişti. `llmAssessment` sütunu şemada hazır bekliyor.
 - **Embedding-tabanlı benzerlik skoru** (roadmap'in F1 tanımının bir parçasıydı, n-gram'la "VEYA" bağlacıyla) eklenmedi — bunun için ayrı bir embedding modeli/gateway entegrasyonu gerekir, bu da F1'i "LLM'siz, sıfır ek altyapı" tutma hedefiyle çelişirdi. Sadece n-gram kısmı uygulandı.
 - **Yaygın kalıp filtresi** ("What is your name?" gibi doğal olarak yüksek overlap üreten standart İngilizce öğretim kalıpları için istisna listesi, roadmap'in "Başarısızlık modları" bölümünde önerilmişti) eklenmedi — gerçek verilerle kaç yanlış-pozitif üretildiği görülmeden bir istisna listesi yazmak keyfi olurdu; bu, gerçek proje çalıştırmalarından sonra kalibre edilmeli.
-- **Sayfa bazlı karşılaştırma UI'ı** ("kaynakla karşılaştır" yan yana diff görünümü) eklenmedi — sadece toplam sayaç var, Faz D'deki görsel galerisi eksikliğiyle aynı gerekçeyle (mevcut UI hiçbir zaman sayfa-bazlı bir görünüm sunmuyordu).
+- **Sayfa bazlı karşılaştırma UI'ı** ("kaynakla karşılaştır" yan yana diff görünümü) eklenmedi — F2 ile birlikte artık bir "Orijinallik Raporu" bölümü var (aşağıya bakınız), ama bu tam bir yan-yana diff değil, LLM'in metinsel değerlendirmesi.
+
+### Faz F2 — Tamamlanma Notu (2026-09-20)
+
+Genel proje değerlendirmesinde ("orkestranın neresine geldik") en kritik boşluk olarak işaretlenen F2, kullanıcı onayıyla uygulandı.
+
+- `src/lib/ai/schemas.ts`: `originalityLlmAssessmentSchema` — `similarityLevel` (`low`/`medium`/`high`), `rationale`, `concerningPhrases` (kaynak metinden neredeyse birebir alınmış spesifik ifadeler).
+- `workflows/book-pipeline.tsx`: `checkOriginality` genişletildi — F1'in n-gram skoru bir sayfayı `flagged=true` yaptığında, **sadece o sayfalar için** `assessOriginalityWithLlm` çağrılıyor (`BOOK_PIPELINE_MODEL`/Sonnet 5, her zaman tam kalite — review/QA adımları taslak modda bile düşürülmüyor kuralıyla tutarlı). İşaretlenmemiş sayfalar için LLM hiç çağrılmıyor — F1'in "sıfıra yakın maliyet" felsefesini bozmadan, gerçek riski olan sayfalara odaklanıyor.
+- `src/db/schema.ts`: `originalityChecks.llmAssessment` artık `OriginalityLlmAssessment` tipiyle tiplendirildi (sütun zaten F1'den beri vardı, sadece `null` dolduruluyordu — **migration gerekmedi**).
+- API/UI: `/api/projects/[id]/route.ts` ve `src/app/projects/[id]/page.tsx` artık işaretlenmiş satırların tamamını (`llmAssessment` dahil) döndürüyor; `RunStatusView.tsx`'e yeni bir "Orijinallik Raporu" bölümü eklendi — her işaretli sayfa için n-gram yüzdesi + F2'nin similarity-level rozeti + gerekçe + varsa şüpheli ifadeler listeleniyor. "Bu bir hukuki değerlendirme değildir" ibaresi korundu.
+- Doğrulama: `tsc`/`eslint`/`vitest` (44 test)/`next build` temiz. Migration gerekmedi.
+
+**Bilinçli olarak yapılmayanlar (F2 kapsamında):** İnsan "hukuki onay" adımı (bir editörün F2 sonucunu görüp resmi olarak onaylaması/reddetmesi) eklenmedi — şu an sadece bilgilendirici gösterim var, workflow'u durduran/bekleten bir onay kapısı değil. Kaynak kitabın telif/lisans bilgisinin kayıt altına alınması (genel değerlendirmede ayrı bir madde olarak işaretlenmişti) F2'nin kapsamı dışında, çözülmedi.
 
 ---
 
