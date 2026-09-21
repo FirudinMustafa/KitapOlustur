@@ -491,7 +491,10 @@ export function BookDocument({
 }) {
   const variantLabel = VARIANT_LABELS[variant];
   const palette = PALETTE[variant];
-  const showAnswerKey = variant === "workbook" || variant === "teacher_book";
+  // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
+  // here despite generateTestBookletSide/generateCumulativeAssessment always
+  // producing an answer key - it was silently never rendered in any export.
+  const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
 
   return (
     <Document title={`${bookTitle} - ${variantLabel}`}>

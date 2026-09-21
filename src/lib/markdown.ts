@@ -51,7 +51,9 @@ function renderPages(pages: GeneratedPage[], showAnswerKey: boolean): string {
 
 export function unitsToMarkdown(bookTitle: string, units: GeneratedUnit[], variant: Variant): string {
   const header = `# ${bookTitle} — ${VARIANT_LABELS[variant]}\n`;
-  const showAnswerKey = variant === "workbook" || variant === "teacher_book";
+  // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
+  // here despite always generating an answer key - it was silently dropped.
+  const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
 
   const body = units
     .map(

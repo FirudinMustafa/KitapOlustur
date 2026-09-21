@@ -382,6 +382,11 @@ export default function NewProjectPage() {
               </label>
             ))}
           </div>
+          {outputTypes.has("test_booklet") && (
+            <span className="text-xs text-muted-foreground">
+              4+ ünite varsa otomatik olarak bir ara sınav, 2+ ünite varsa bir final sınavı eklenir.
+            </span>
+          )}
         </fieldset>
 
         <fieldset className="flex flex-col gap-2">

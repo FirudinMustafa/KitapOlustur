@@ -42,7 +42,9 @@ export async function buildCommonCartridge(input: {
 }): Promise<Buffer> {
   const { bookTitle, variant, units, level, pageImages } = input;
   const variantLabel = VARIANT_LABELS[variant];
-  const showAnswerKey = variant === "workbook" || variant === "teacher_book";
+  // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
+  // here despite always generating an answer key - it was silently dropped.
+  const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
 
   const zip = new JSZip();
   const resourceItems: string[] = [];

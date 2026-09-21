@@ -415,7 +415,9 @@ export function BookReader({
 }) {
   const unitsWithPages = units.filter((u) => pagesForVariant(u, variant).length > 0);
   const [activeUnit, setActiveUnit] = useState(unitsWithPages[0]?.unitNumber ?? null);
-  const showAnswerKey = variant === "workbook" || variant === "teacher_book";
+  // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
+  // here despite always generating an answer key - it was silently dropped.
+  const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
   const current = unitsWithPages.find((u) => u.unitNumber === activeUnit);
 
   return (

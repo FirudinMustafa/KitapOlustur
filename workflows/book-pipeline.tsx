@@ -75,6 +75,17 @@ const ALL_VARIANTS: Variant[] = ["student_book", "workbook", "teacher_book", "te
 // because an unset limit risks a silent mid-JSON truncation on rich units.
 const UNIT_SIDE_MAX_OUTPUT_TOKENS = 16000;
 
+// Faz "Teacher's Book/Test Booklet Genişletme": sentinel unitNumber/
+// sourcePageNumber values for the synthetic mid-term/final GeneratedUnit
+// entries (see generateCumulativeAssessment's call site) - chosen far above
+// any realistic real unit count or Faz 4c skeleton sourcePageNumber
+// (unitNumber * 1000 + i), so uniqueness across the whole book is guaranteed
+// without needing to inspect the real units first.
+const MIDTERM_UNIT_NUMBER = 90001;
+const FINAL_UNIT_NUMBER = 90002;
+const MIDTERM_MIN_UNITS = 4;
+const FINAL_MIN_UNITS = 2;
+
 // Wraps generateObject calls so a schema-validation failure (e.g. the model's
 // output got cut off before valid JSON closed) surfaces the raw finish reason
 // and a snippet of what the model actually returned, instead of just "response
@@ -581,7 +592,7 @@ async function generateTeacherBookSide(
         ...unitGenerationPromptHeader(input),
         `Here is the already-written student book content for this unit:\n${JSON.stringify(input.studentPages)}`,
         `Here is the already-written workbook content for this unit:\n${JSON.stringify(input.workbookPages)}`,
-        `Produce "pages" as Teacher's Book content for this unit (1-2 pages is enough): brief pacing/timing suggestions, notes on common learner errors for this topic, and a consolidated answer key covering every exercise above that has one. Do not repeat the student-facing text itself.`,
+        `Produce "pages" as Teacher's Book content for this unit (2-4 pages is enough): a lesson flow broken into warm-up, presentation, practice, and production stages with a rough minute estimate for each; a list of materials needed to teach the unit (e.g. flashcards, audio playback, a projector); differentiation notes with alternative activity suggestions for stronger and weaker students; brief pacing/timing suggestions; notes on common learner errors for this topic; and a consolidated answer key covering every exercise above that has one. Do not repeat the student-facing text itself.`,
       ].join("\n\n"),
     }),
   );
@@ -605,6 +616,59 @@ async function generateTestBookletSide(runId: string, input: UnitGenerationConte
       prompt: [
         ...unitGenerationPromptHeader(input),
         `Produce "pages" as a short assessment for this unit (1 page is enough): questions covering this unit's learning objectives and key terms, with a complete answer key. Vary question types where appropriate for the subject.`,
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "unitGeneration", usage);
+  return object;
+}
+
+// Faz "Teacher's Book/Test Booklet Genişletme" (2026-09-21, ROADMAP.md): a
+// book-level (multi-unit) assessment, generated once after every real unit's
+// content is final - a mid-term covering the first half of the book and a
+// final covering all of it, printed alongside the existing per-unit Test
+// Booklet pages. Reuses generatedComplementarySideSchema (same shape as
+// every other book side) rather than a dedicated schema, and is appended to
+// the `units` array as a synthetic GeneratedUnit with empty
+// studentBookPages/workbookPages (see call site) - not a new bookType/
+// Variant, since pagesForVariant/assembleAndSaveBooks never assume every
+// unit has real student/workbook content (Faz 4c already established this).
+async function generateCumulativeAssessment(
+  runId: string,
+  book: {
+    bookTitle: string;
+    subject: string;
+    contentLanguage: string;
+    level: string;
+    tone: string;
+    targetAudience: string;
+    styleBible: StyleBible;
+    textModel: string;
+  },
+  kind: "midterm" | "final",
+  coveredUnits: { number: number; title: string; keyTerms: string[]; learningObjectives: string[] }[],
+) {
+  "use step";
+
+  const label = kind === "midterm" ? "mid-term exam" : "final exam";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: book.textModel,
+      schema: generatedComplementarySideSchema,
+      maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
+      system: `You are an assessment writer producing a comprehensive ${label} for a coursebook, covering multiple units at once, to be printed in the Test Booklet.`,
+      prompt: [
+        `Book title: ${book.bookTitle}`,
+        `Subject: ${book.subject}`,
+        `Write ALL content in this language (BCP-47): ${book.contentLanguage}`,
+        `Overall level: ${book.level}`,
+        `Tone: ${book.tone}`,
+        `Target audience: ${book.targetAudience}`,
+        `Shared style bible for this book - reuse this terminology consistently:\n${JSON.stringify(book.styleBible)}`,
+        `Units covered by this ${label}, in order (JSON):\n${JSON.stringify(coveredUnits)}`,
+        `Produce "pages" (2-4 pages is enough) forming a single ${label} that draws questions from EVERY unit listed above, proportionally sampling each unit's key terms and learning objectives - do not skip any listed unit. Use a balanced mix of question types (multiple choice, fill-in-the-blank, short open-ended) appropriate for the subject. End with a complete, clearly separated answer key. Do not set imagePrompt on any page - this is a text-only exam.`,
       ].join("\n\n"),
     }),
   );
@@ -848,7 +912,7 @@ async function reviewLanguageAccuracy(
       prompt: [
         `Content language (BCP-47): ${contentLanguage}`,
         `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
-        "Read every heading, body text, practice item, answer key entry, and glossary entry. Flag any grammar mistakes, unnatural or awkward phrasing, spelling errors, or incorrect terminology. Be strict - this content will be printed in a real coursebook. Set passed=true only if the language is fully correct and natural throughout.",
+        "Read every heading, body text, practice item, answer key entry, and glossary entry - including any Teacher's Book pacing/lesson-plan notes and any Test Booklet exam questions/answer keys present in this unit's content. Flag any grammar mistakes, unnatural or awkward phrasing, spelling errors, or incorrect terminology. Be strict - this content will be printed in a real coursebook. Set passed=true only if the language is fully correct and natural throughout.",
       ].join("\n\n"),
     }),
   );
@@ -912,7 +976,7 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
         "You are a content-safety reviewer for a children's/general-audience educational coursebook. You check generated text for anything unsafe or inappropriate for a school setting - you do not judge pedagogy, grammar, or level.",
       prompt: [
         `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
-        "Check every heading, body text, practice item, example, and glossary entry for: violence or gore, sexual content, hate speech or discriminatory content, references to drugs/alcohol/self-harm, and any other content unsuitable for a school-age audience. This is educational rewriting of a real textbook, so most content will be entirely fine - only flag genuine, concrete problems, not stylistic preferences. Set passed=true unless there is an actual safety issue.",
+        "Check every heading, body text, practice item, example, and glossary entry - including any Teacher's Book pacing/lesson-plan notes and any Test Booklet exam questions/answer keys present in this unit's content - for: violence or gore, sexual content, hate speech or discriminatory content, references to drugs/alcohol/self-harm, and any other content unsuitable for a school-age audience. This is educational rewriting of a real textbook, so most content will be entirely fine - only flag genuine, concrete problems, not stylistic preferences. Set passed=true unless there is an actual safety issue.",
       ].join("\n\n"),
     }),
   );
@@ -1719,6 +1783,79 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         }
       }
       contentApprovalRound++;
+    }
+
+    // Faz "Teacher's Book/Test Booklet Genişletme" (2026-09-21, ROADMAP.md):
+    // book-level mid-term/final assessment, generated AFTER the content-
+    // approval gate above closes (so it only ever sees final, human-approved
+    // unit content) and BEFORE image generation (so illustration/QA of these
+    // new pages, if any, flows through the same pipeline as every other
+    // page). Appended directly to `units` as synthetic GeneratedUnit entries
+    // - test_booklet is already opt-in via requestedBookTypes, so this needs
+    // no separate opt-in of its own, only a minimum-unit-count gate below
+    // which a cumulative test wouldn't be meaningful.
+    if (requestedVariants.includes("test_booklet")) {
+      // Captured before any synthetic splice/push below mutates `units`, so
+      // both the midpoint math and the final exam's unit coverage stay
+      // correct regardless of insertion order.
+      const realUnits = units.slice();
+      const realUnitCount = realUnits.length;
+      const bookContext = {
+        bookTitle: outline.bookTitle,
+        subject: outline.subject,
+        contentLanguage: outline.contentLanguage,
+        level: outline.level,
+        tone: outline.tone,
+        targetAudience: outline.targetAudience,
+        styleBible,
+        textModel: ctx.textModel,
+      };
+      const summarize = (real: GeneratedUnit[]) =>
+        real.map((u) => {
+          const outlineUnit = outline.units.find((ou) => ou.number === u.unitNumber);
+          return {
+            number: u.unitNumber,
+            title: u.title,
+            keyTerms: outlineUnit?.keyTerms ?? [],
+            learningObjectives: outlineUnit?.learningObjectives ?? [],
+          };
+        });
+
+      if (realUnitCount >= MIDTERM_MIN_UNITS) {
+        const midpoint = Math.ceil(realUnitCount / 2);
+        const midtermSide = await generateCumulativeAssessment(
+          runId,
+          bookContext,
+          "midterm",
+          summarize(realUnits.slice(0, midpoint)),
+        );
+        units.splice(midpoint, 0, {
+          unitNumber: MIDTERM_UNIT_NUMBER,
+          title: "Ara Sınav",
+          studentBookPages: [],
+          workbookPages: [],
+          testBookletPages: midtermSide.pages.map((page, i) => ({
+            ...page,
+            sourcePageNumber: 900000 + i,
+          })),
+          glossary: [],
+        });
+      }
+
+      if (realUnitCount >= FINAL_MIN_UNITS) {
+        const finalSide = await generateCumulativeAssessment(runId, bookContext, "final", summarize(realUnits));
+        units.push({
+          unitNumber: FINAL_UNIT_NUMBER,
+          title: "Final Sınavı",
+          studentBookPages: [],
+          workbookPages: [],
+          testBookletPages: finalSide.pages.map((page, i) => ({
+            ...page,
+            sourcePageNumber: 950000 + i,
+          })),
+          glossary: [],
+        });
+      }
     }
 
     await setRunStatus(runId, "generating_images", "Ünite görselleri üretiliyor");

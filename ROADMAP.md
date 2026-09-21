@@ -34,6 +34,7 @@
 | Faz 4a — Kapak/Görsel Oranı Düzeltmesi (kapak görselleri artık dikey/1024×1536 üretiliyor) | ✅ Tamamlandı, gerçek uçtan uca doğrulandı (2026-09-21) | Aşağıda "Kapak/Görsel Oranı Düzeltmesi — Tamamlanma Notu"; Faz 4b/4c/4d (beceri dengesi, ünite iskeleti, Teacher/Test genişletme) sıradaki fazlar |
 | Faz 4b — Beceri Dengesi Denetçisi (engelleyici, 5. otomatik denetim - reading/writing/listening/speaking) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Beceri Dengesi Denetçisi — Tamamlanma Notu"; Faz 4c/4d sıradaki fazlar |
 | Faz 4c — Sabit Ünite İskeleti (opt-in, kullanıcı tanımlı bölüm sırası - kaynak PDF'in sayfa yapısından bağımsız üretim) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Sabit Ünite İskeleti — Tamamlanma Notu"; Faz 4d sıradaki faz |
+| Faz 4d — Teacher's Book/Test Booklet Genişletme (ders akışı/materyal/farklılaştırma + kitap-geneli ara sınav/final + showAnswerKey hata düzeltmesi) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Teacher's Book/Test Booklet Genişletme — Tamamlanma Notu"; "İçerik derinliği" ana fazı tamamlandı |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1326,3 +1327,75 @@ sınırları için). Bölüm başına hedef sayfa sayısı/uzunluk kontrolü. `p
 eklenmesi - `sectionLabel` bilinçli olarak ayrı, orthogonal bir alan olarak eklendi.
 EPUB/DOCX'te `sectionLabel`'ın görünür kılınması - bu fazda sadece PDF'e eklendi, ayrı, düşük
 riskli bir takip işi. Sıradaki faz: Faz 4d (Teacher's Book/Test Booklet genişletme).
+
+## Teacher's Book/Test Booklet Genişletme — Tamamlanma Notu (2026-09-21)
+
+**Context:** Faz 4a/4b/4c tamamlandı. Kullanıcının belirlediği "İçerik derinliği" yol haritasının
+son alt-fazı. Kök tespit (2026-09-21 stratejik brainstorming): "Teacher's Book/Test Booklet ünite
+başına 1-2 sayfa" - Teacher's Book sadece tempo/hata/cevap anahtarından ibaretti, Test Booklet
+ünite başına tek sabit bir değerlendirmeydi, kitap-geneli (üniteler-arası) bir sınav kavramı hiç
+yoktu.
+
+**Tasarım kararları (kullanıcıyla netleştirildi):**
+- Kitap-geneli bir ara sınav + final sınavı eklendi - `test_booklet` istendiğinde otomatik üretilen
+  yeni bir "kümülatif değerlendirme" adımı (yeni bir opt-in checkbox/DB sütunu EKLENMEDİ -
+  `test_booklet` zaten opt-in, bu sadece onun içeriğini zenginleştiriyor).
+- Teacher's Book, ders akışı (warm-up/sunum/pratik/üretim aşamaları) + materyal listesi +
+  farklılaştırma notları yönünde zenginleştirildi - mevcut genel sayfa şemasına, yeni bir
+  yapılandırılmış alan eklemeden, sadece prompt üzerinden.
+
+**Araştırmada bulunan gerçek bir hata, bu fazın parçası olarak düzeltildi:** `showAnswerKey`
+bayrağı (`variant === "workbook" || variant === "teacher_book"`) `test_booklet`'i hiç
+içermiyordu - modelin ürettiği "complete answer key" ALTI farklı render/export yolunun (PDF, EPUB,
+DOCX, web reader `BookReader.tsx`, Common Cartridge LMS export, markdown export) hiçbirinde
+render edilmiyordu, sessizce düşüyordu. Hepsine `|| variant === "test_booklet"` eklendi.
+
+**Değişiklikler:**
+- `workflows/book-pipeline.tsx`: yeni `generateCumulativeAssessment(runId, book, kind, coveredUnits)`
+  fonksiyonu - `"use step"`, mevcut `generatedComplementarySideSchema` yeniden kullanılıyor (yeni
+  şema tanımlanmadı). `bookPipelineWorkflow`'da çağrı noktası, insan içerik-onay kapısı
+  KAPANDIKTAN SONRA, görsel üretiminden ÖNCE: `test_booklet` istenmişse ve gerçek ünite sayısı
+  `>= 4` ise bir ara sınav (ilk yarı üniteleri kapsayan, kitabın ortasına `units.splice` ile
+  eklenen), `>= 2` ise bir final sınavı (tüm üniteleri kapsayan, `units.push` ile sona eklenen)
+  üretiliyor. Her ikisi de sentetik `GeneratedUnit` girdileri olarak modellendi
+  (`studentBookPages: []`, `workbookPages: []`, sadece `testBookletPages` dolu, sentinel
+  `unitNumber` 90001/90002, `sourcePageNumber` 900000+/950000+ aralığında yeniden atanmış) - yeni
+  bir `bookType`/`Variant` değeri EKLENMEDİ, mevcut `pagesForVariant`'ın `?? []` fallback'i
+  sayesinde diğer varyantlara sıfır sayfa katkısı yapıyorlar, migration gerekmedi.
+- `generateTeacherBookSide` prompt'u genişletildi: ders akışı, materyal listesi, farklılaştırma
+  notları eklendi, sayfa sayısı talimatı "1-2 sayfa" → "2-4 sayfa" oldu.
+- `reviewContentSafety`/`reviewLanguageAccuracy` prompt'larına tek satırlık netleştirme eklendi:
+  ünitenin Teacher's Book/Test Booklet içeriği de (zaten JSON'da mevcuttu) artık açıkça
+  isimlendirilerek denetleniyor.
+- `showAnswerKey` düzeltmesi: `src/lib/pdf/BookDocument.tsx`, `src/lib/epub/BookEpub.ts`,
+  `src/lib/docx/BookDocx.ts`, `src/app/projects/[id]/read/[bookType]/BookReader.tsx`,
+  `src/lib/lms-export/CommonCartridge.ts`, `src/lib/markdown.ts` (araştırmanın bulduğu 3 yerin
+  yanı sıra 3 tane daha bulundu, hepsi düzeltildi).
+- `src/app/projects/new/page.tsx`: Test Kitapçığı checkbox'ı işaretliyken küçük bir bilgi notu
+  gösteriliyor ("4+ ünite varsa otomatik olarak bir ara sınav, 2+ ünite varsa bir final sınavı
+  eklenir").
+
+**Doğrulama:** `npx tsc --noEmit`/`npx eslint .` temiz, `npx vitest run` 120/120 geçti, `npx next
+build` workflow step sayısının **38'e** çıktığını doğruladı (yeni `"use step"` fonksiyonu
+`generateCumulativeAssessment`). Chrome'da: bir projeye enjekte edilen sahte `generatedBooks`
+içeriğine (4 gerçek ünite + `unitNumber: 90001`/`90002` sentetik ara sınav/final üniteleri, her
+birinin `testBookletPages`'inde `answerKey` dolu bloklar) mevcut "assemble-only rerun ile gerçek
+PDF üret" deseni uygulanarak: (1) gerçek üretilen `test_booklet.pdf`'te "Ara Sınav"ın Ünite 1-2'den
+sonra (kitabın ortasında), "Final Sınavı"nın en sonda doğru konumda göründüğü, (2) her iki sınavın
+ve tüm ünite testlerinin cevap anahtarının artık GERÇEKTEN render edildiği (hem sayfa içi hem de
+sondaki konsolide "Answer Key" sayfasında, "Unit 90001: Ara Sınav" ve "Unit 90002: Final Sınavı"
+başlıklarıyla doğru sırada), (3) `student_book.pdf`'in bu 2 sentetik üniteden hiç etkilenmediği
+(7 sayfa - kapak+telif+içindekiler+4 gerçek ünite, fazladan boş sayfa/çökme yok) görsel olarak
+doğrulandı. Test sonrası enjekte edilen veri ve rerun'un oluşturduğu ekstra `generationRuns`
+satırı temizlendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Kümülatif sınav içeriği için ayrı bir otomatik
+denetim/QA adımı (ünite-indeksli değiller, 5 mevcut denetçiden hiçbirinden geçmiyorlar). Kümülatif
+sınavların insan içerik-onay/yeniden-üretim döngüsüne dahil edilmesi. Ara sınav/final eşiklerinin
+(`>=4`, `>=2`) kullanıcı tarafından yapılandırılabilir hale getirilmesi. Kümülatif sınavların
+TOC/Contents sayfasında listelenmesi (TOC `outline.units`'ten türüyor, sentetik üniteler dizide
+ama outline'da yok - kozmetik, düşük öncelikli bir takip işi). `pageTypeEnum`'a yeni değerler
+eklenmesi - Faz 4c'deki gerekçeyle bilinçli olarak atlandı.
+
+Bu, kullanıcının belirlediği "İçerik derinliği" (Cambridge/Oxford parity) ana fazının son alt-fazı
+- Faz 4a/4b/4c/4d hepsi tamamlandı.

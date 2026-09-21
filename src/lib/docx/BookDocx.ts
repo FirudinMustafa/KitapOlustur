@@ -142,7 +142,9 @@ export async function buildDocx(input: {
 }): Promise<Buffer> {
   const { bookTitle, variant, units, level, contentsUnits, pageImages } = input;
   const variantLabel = VARIANT_LABELS[variant];
-  const showAnswerKey = variant === "workbook" || variant === "teacher_book";
+  // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
+  // here despite always generating an answer key - it was silently dropped.
+  const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
 
   const children: (Paragraph | Table)[] = [
     new Paragraph({ text: `${bookTitle} — ${variantLabel}`, heading: HeadingLevel.TITLE }),
