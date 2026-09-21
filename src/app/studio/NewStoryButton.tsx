@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 export function NewStoryButton() {
   const router = useRouter();
@@ -23,12 +24,8 @@ export function NewStoryButton() {
   }
 
   return (
-    <button
-      onClick={createStory}
-      disabled={loading}
-      className="flex h-9 items-center justify-center rounded-full bg-zinc-950 px-4 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-    >
+    <Button onClick={createStory} disabled={loading}>
       {loading ? "Oluşturuluyor…" : "Yeni Hikaye"}
-    </button>
+    </Button>
   );
 }

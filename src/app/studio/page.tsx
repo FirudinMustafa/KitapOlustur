@@ -25,8 +25,8 @@ export default async function StudioLibraryPage() {
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">Hikaye Stüdyosu</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <h1 className="text-2xl font-semibold text-foreground">Hikaye Stüdyosu</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Sohbet ederek serbest hikaye/metin yaz, görsel ve seslendirme üret.
           </p>
         </div>
@@ -34,7 +34,7 @@ export default async function StudioLibraryPage() {
       </div>
 
       {allStoryProjects.length === 0 && (
-        <p className="mt-8 text-sm text-zinc-500">Henüz bir hikaye yok. Başlamak için &quot;Yeni Hikaye&quot;ye tıkla.</p>
+        <p className="mt-8 text-sm text-muted-foreground">Henüz bir hikaye yok. Başlamak için &quot;Yeni Hikaye&quot;ye tıkla.</p>
       )}
 
       <StudioLibraryList storyProjects={allStoryProjects} />

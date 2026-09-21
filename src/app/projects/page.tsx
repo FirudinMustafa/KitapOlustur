@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { projects, generationRuns } from "@/db/schema";
 import { STATUS_LABELS, AWAITING_STATUSES, formatElapsedTurkish } from "@/lib/run-status";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -35,17 +36,12 @@ export default async function ProjectsPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">Projeler</h1>
-        <Link
-          href="/projects/new"
-          className="flex h-9 items-center justify-center rounded-full bg-zinc-950 px-4 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-        >
-          Yeni kitap yükle
-        </Link>
+        <h1 className="text-2xl font-semibold text-foreground">Projeler</h1>
+        <Button render={<Link href="/projects/new" />}>Yeni kitap yükle</Button>
       </div>
 
       {withRuns.length === 0 && (
-        <p className="mt-8 text-sm text-zinc-500">Henüz bir proje yok. Başlamak için bir PDF yükle.</p>
+        <p className="mt-8 text-sm text-muted-foreground">Henüz bir proje yok. Başlamak için bir PDF yükle.</p>
       )}
 
       <ul className="mt-8 flex flex-col gap-3">
@@ -53,11 +49,11 @@ export default async function ProjectsPage() {
           <li key={project.id}>
             <Link
               href={`/projects/${project.id}`}
-              className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+              className="flex items-center justify-between gap-4 rounded-xl bg-card p-4 text-card-foreground ring-1 ring-foreground/10 transition-colors hover:bg-accent hover:ring-primary/30"
             >
               <div>
-                <p className="font-medium text-zinc-900 dark:text-zinc-100">{project.name}</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                <p className="font-medium text-foreground">{project.name}</p>
+                <p className="text-xs text-muted-foreground">
                   {project.level ? `${project.level} · ` : ""}
                   {new Date(project.createdAt).toLocaleString("tr-TR")}
                 </p>
@@ -71,7 +67,7 @@ export default async function ProjectsPage() {
                         ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
                         : latestRun && AWAITING_STATUSES.has(latestRun.status)
                           ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                          : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                          : "bg-secondary text-secondary-foreground"
                   }`}
                 >
                   {latestRun ? STATUS_LABELS[latestRun.status] ?? latestRun.status : "—"}

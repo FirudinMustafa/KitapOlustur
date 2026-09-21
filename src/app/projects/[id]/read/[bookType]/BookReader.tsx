@@ -26,7 +26,7 @@ function MultipleChoiceExercise({ exercise }: { exercise: Extract<InteractiveExe
   const [selected, setSelected] = useState<number | null>(null);
   return (
     <div className="mt-2">
-      <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{exercise.question}</p>
+      <p className="text-sm font-medium text-foreground">{exercise.question}</p>
       <div className="mt-2 flex flex-col gap-1.5">
         {exercise.options.map((option, i) => {
           const isCorrect = i === exercise.correctIndex;
@@ -42,7 +42,7 @@ function MultipleChoiceExercise({ exercise }: { exercise: Extract<InteractiveExe
                   ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
                   : showFeedback && isSelected
                     ? "border-red-500 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-200"
-                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                    : "border-input text-foreground/80 hover:bg-accent"
               }`}
             >
               {option}
@@ -53,7 +53,7 @@ function MultipleChoiceExercise({ exercise }: { exercise: Extract<InteractiveExe
       {selected !== null && (
         <button
           onClick={() => setSelected(null)}
-          className="mt-2 text-xs font-medium text-blue-700 underline hover:no-underline dark:text-blue-400"
+          className="mt-2 text-xs font-medium text-primary underline hover:no-underline"
         >
           Tekrar dene
         </button>
@@ -73,7 +73,7 @@ function FillBlankExercise({ exercise }: { exercise: Extract<InteractiveExercise
 
   return (
     <div className="mt-2">
-      <p className="text-sm leading-loose text-zinc-800 dark:text-zinc-200">
+      <p className="text-sm leading-loose text-foreground">
         {segments.map((segment, i) => (
           <span key={i}>
             {segment}
@@ -86,7 +86,7 @@ function FillBlankExercise({ exercise }: { exercise: Extract<InteractiveExercise
                     ? isCorrect(i)
                       ? "border-green-500 bg-green-50 dark:bg-green-950"
                       : "border-red-500 bg-red-50 dark:bg-red-950"
-                    : "border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900"
+                    : "border-input bg-background"
                 }`}
               />
             )}
@@ -95,7 +95,7 @@ function FillBlankExercise({ exercise }: { exercise: Extract<InteractiveExercise
       </p>
       <button
         onClick={() => setChecked(true)}
-        className="mt-2 rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        className="mt-2 rounded-full border border-input px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-accent"
       >
         Kontrol et
       </button>
@@ -133,8 +133,8 @@ function MatchingExercise({ exercise }: { exercise: Extract<InteractiveExercise,
               solved.has(i)
                 ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
                 : selectedLeft === i
-                  ? "border-blue-500 bg-blue-50 dark:bg-blue-950"
-                  : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  ? "border-primary bg-primary/10"
+                  : "border-input text-foreground/80 hover:bg-accent"
             }`}
           >
             {pair.left}
@@ -154,7 +154,7 @@ function MatchingExercise({ exercise }: { exercise: Extract<InteractiveExercise,
                   ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
                   : wrongFlash === i
                     ? "border-red-500 bg-red-50 dark:bg-red-950"
-                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                    : "border-input text-foreground/80 hover:bg-accent"
               }`}
             >
               {right}
@@ -230,7 +230,7 @@ function KaraokeAudio({ audioUrl, wordTimestamps }: { audioUrl: string; wordTime
             className={
               i === activeIndex
                 ? "rounded bg-yellow-300 px-0.5 text-zinc-950 dark:bg-yellow-500"
-                : "text-zinc-700 dark:text-zinc-300"
+                : "text-foreground/80"
             }
           >
             {w.word}{" "}
@@ -247,12 +247,12 @@ function AnswerKeyToggle({ answerKey }: { answerKey: string[] }) {
     <div className="mt-2">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="text-xs font-medium text-blue-700 underline hover:no-underline dark:text-blue-400"
+        className="text-xs font-medium text-primary underline hover:no-underline"
       >
         {open ? "Cevap anahtarını gizle" : "Cevap anahtarını göster"}
       </button>
       {open && (
-        <ol className="mt-1 list-decimal pl-5 text-sm text-zinc-700 dark:text-zinc-300">
+        <ol className="mt-1 list-decimal pl-5 text-sm text-foreground/80">
           {answerKey.map((a, i) => (
             <li key={i}>{a}</li>
           ))}
@@ -264,15 +264,15 @@ function AnswerKeyToggle({ answerKey }: { answerKey: string[] }) {
 
 function BlockView({ block, showAnswerKey }: { block: ContentBlock; showAnswerKey: boolean }) {
   return (
-    <section className="mb-4 rounded-lg border-l-4 border-blue-500 bg-zinc-50 p-4 dark:bg-zinc-900">
-      <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">{block.heading}</h3>
+    <section className="mb-4 rounded-lg border-l-4 border-primary bg-card p-4 text-card-foreground">
+      <h3 className="font-semibold text-foreground">{block.heading}</h3>
       {block.body.split(/\n+/).map((p, i) => (
-        <p key={i} className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
+        <p key={i} className="mt-1 text-sm text-foreground/80">
           {p}
         </p>
       ))}
       {!!block.items?.length && (
-        <ol className="mt-2 list-decimal pl-5 text-sm text-zinc-800 dark:text-zinc-200">
+        <ol className="mt-2 list-decimal pl-5 text-sm text-foreground">
           {block.items.map((item, i) => (
             <li key={i}>{item}</li>
           ))}
@@ -320,7 +320,7 @@ function PageView({
           {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image, no build-time optimization to gain */}
           <img src={imageUrl} alt="" className="max-h-64 w-full rounded-md object-cover" />
           {page.imagePrompt && (
-            <figcaption className="mt-1 text-xs italic text-zinc-500 dark:text-zinc-400">{page.imagePrompt}</figcaption>
+            <figcaption className="mt-1 text-xs italic text-muted-foreground">{page.imagePrompt}</figcaption>
           )}
         </figure>
       )}
@@ -355,8 +355,8 @@ export function BookReader({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8 lg:flex-row">
       <nav className="w-full shrink-0 lg:w-56">
-        <h1 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{bookTitle}</h1>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <h1 className="text-lg font-semibold text-foreground">{bookTitle}</h1>
+        <p className="text-xs text-muted-foreground">
           {VARIANT_LABELS[variant]}
           {level ? ` · ${level}` : ""}
         </p>
@@ -367,8 +367,8 @@ export function BookReader({
                 onClick={() => setActiveUnit(unit.unitNumber)}
                 className={`w-full rounded-md px-2 py-1.5 text-left text-sm ${
                   unit.unitNumber === activeUnit
-                    ? "bg-zinc-950 text-white dark:bg-white dark:text-black"
-                    : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-foreground/80 hover:bg-accent"
                 }`}
               >
                 Unit {unit.unitNumber}: {unit.title}
@@ -380,23 +380,23 @@ export function BookReader({
 
       <main className="min-w-0 flex-1">
         {!current ? (
-          <p className="text-sm text-zinc-500">Bu kitap tipi için içerik bulunamadı.</p>
+          <p className="text-sm text-muted-foreground">Bu kitap tipi için içerik bulunamadı.</p>
         ) : (
           <>
             {current.unitNumber === unitsWithPages[0]?.unitNumber && coverImageSrc && (
               // eslint-disable-next-line @next/next/no-img-element -- see PageView's comment above
               <img src={coverImageSrc} alt="" className="mb-6 max-h-48 w-full rounded-lg object-cover" />
             )}
-            <h2 className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+            <h2 className="mb-4 text-xl font-semibold text-foreground">
               Unit {current.unitNumber}: {current.title}
             </h2>
             {!!current.listeningAudio?.length && (
-              <div className="mb-6 flex flex-col gap-2 rounded-lg bg-zinc-100 p-3 dark:bg-zinc-900">
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Dinleme</p>
+              <div className="mb-6 flex flex-col gap-2 rounded-lg bg-card p-3 text-card-foreground ring-1 ring-foreground/10">
+                <p className="text-xs font-medium text-muted-foreground">Dinleme</p>
                 {current.listeningAudio.map((entry, i) =>
                   entry.audioUrl ? (
                     <div key={i}>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{entry.blockRef}</p>
+                      <p className="text-xs text-muted-foreground">{entry.blockRef}</p>
                       {entry.wordTimestamps?.length ? (
                         <KaraokeAudio audioUrl={entry.audioUrl} wordTimestamps={entry.wordTimestamps} />
                       ) : (

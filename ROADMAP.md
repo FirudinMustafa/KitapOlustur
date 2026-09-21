@@ -980,3 +980,35 @@ Kullanıcının isteği: "simdi arayuzu cok daha iyi hale getir. chatgpt claude 
 - **Chrome'da canlı doğrulandı:** sidebar doğru render ediliyor (marka, nav, "+ Yeni Kitap", son projeler/hikayeler listeleri - biri gerçek bir "Hata" durumlu projeyi doğru gösteriyor), aktif rota vurgusu çalışıyor, sayfa yeniden yüklendiğinde konsolda hydration uyarısı veya başka bir hata yok.
 
 **Yapılmadı / bilinçli olarak kapsam dışı:** Bu tur sadece gezinme kabuğunu (sidebar + renk tokenleri) kapsadı - uygulamanın mevcut içerik sayfaları (`RunStatusView.tsx`, `StudioWorkspace.tsx`, `AdvancedImagePanel.tsx`, `/projects` ve `/studio` liste sayfalarının kart tasarımı) hâlâ eski, sabit zinc tabanlı Tailwind sınıflarını kullanıyor ve yeni vurgu rengi/tasarım diline geçirilmedi - bu, kapsamı önemli ölçüde büyütecek, ayrı bir iş olarak bırakıldı, kullanıcıya bu notla birlikte açıkça sorulacak. Mobil sidebar davranışı (küçük ekran drawer'ı) Chrome'da ayrıca test edilmedi - sadece masaüstü genişliğinde doğrulandı.
+
+## Arayüz Yenileme, Faz 2 — Tüm İçerik Sayfalarının Restyle'ı — Tamamlanma Notu (2026-09-21)
+
+Kullanıcının isteği (bir önceki fazın kapsam notuna yanıt): "evet, diğer sayfaları da restyle et". Yukarıdaki fazda kasıtlı olarak dışarıda bırakılan tüm sayfalar bu turda yeni indigo/mor vurgu rengine ve shadcn token sistemine geçirildi - sidebar dışındaki UYGULAMANIN TAMAMI artık aynı tasarım dilini kullanıyor.
+
+### Kapsam
+Zinc/gri tabanlı sabit Tailwind sınıfları kullanan her dosya bulundu (`grep -rl "zinc-" src`) ve tek tek işlendi:
+- `src/app/page.tsx` (ana giriş sayfası), `src/app/search/page.tsx` (arama), `src/app/projects/page.tsx` (proje listesi), `src/app/projects/new/page.tsx` (yeni kitap formu - en büyük form, tüm input/select/checkbox/radio/textarea alanları), `src/app/studio/page.tsx` + `StudioLibraryList.tsx` + `NewStoryButton.tsx` (Hikaye Stüdyosu listesi) - bunlar doğrudan işlendi.
+- Üç büyük dosya - `src/app/projects/[id]/RunStatusView.tsx` (1218 satır), `src/app/studio/[id]/StudioWorkspace.tsx` + `AdvancedImagePanel.tsx` (~700 satır), `src/app/projects/[id]/PipelineStageTracker.tsx` + `src/app/projects/[id]/read/[bookType]/BookReader.tsx` (~575 satır) - paralel, birbirinden bağımsız üç fork'a devredildi (mekanik ama büyük hacimli bir class-name/element değişimi, ana konuşmanın bağlamını şişirmeden). Her fork kendi `tsc`/`eslint` doğrulamasını yaptı.
+
+### Token/bileşen dönüşüm kuralları (tüm dosyalarda tutarlı uygulandı)
+- `text-zinc-950/900 dark:text-zinc-50/100` → `text-foreground`; `text-zinc-500/600 dark:text-zinc-400` → `text-muted-foreground`.
+- `border-zinc-200/300 dark:border-zinc-700/800` → `border-border` (form alanları için `border-input`).
+- `bg-white/zinc-50 dark:bg-zinc-900/black` (kart/panel arka planları) → `bg-card text-card-foreground ring-1 ring-foreground/10` (ilk fazda `src/app/projects/page.tsx`'te kurulan desenle birebir) veya düz `bg-background`.
+- `bg-zinc-950 ... dark:bg-white` (birincil butonlar) → yeni eklenen shadcn `Button` bileşeni (`@/components/ui/button`), gezinme linkleri için Base UI'ın `render={<Link .../>}` prop'uyla.
+- Düz `<input>`/sayı alanları → shadcn `Input` bileşeni (`@/components/ui/input`); `<textarea>`/`<select>` native bırakıldı, sadece token'lara geçirildi; checkbox/radio'lara `accent-primary` eklendi.
+- Zinc/gri paletine ait OLMAYAN amber (bekliyor), green (tamam), red/destructive (başarısız/hata) semantik durum renkleri - ROADMAP'in ilk fazında belgelendiği gibi, yeni vurgu rengiyle karışmaması için bilinçli olarak HİÇ dokunulmadan bırakıldı.
+- `PipelineStageTracker.tsx`'teki "aktif adım" vurgusu (önceden mavi) → yeni `primary`/`ring-primary` vurgu rengine taşındı - bu tam olarak yeni aksan rengin var olma amacı ("hangi adımdayız" göstergesi).
+- Yeni eklenen shadcn `Card` bileşeni (`npx shadcn@latest add card`) kart tasarımı için kuruldu ama Base UI `render` prop'unu desteklemediği (düz bir `div`) fark edildiği için liste sayfalarında doğrudan kullanılmadı - onun yerine Card'ın kendi class'ları (`bg-card`, `ring-1 ring-foreground/10`, `rounded-xl`) doğrudan `Link` üzerine uygulandı (bkz. aşağıdaki bulunan/düzeltilen hata).
+
+### Bulunan ve düzeltilen gerçek bir hata (Chrome'da canlı testte)
+Yeni `Button` bileşenini `render={<Link .../>}` ile bir gezinme linki olarak kullanan HER sayfada (`/`, `/projects`, `/projects/[id]` içindeki indirme/okuma linkleri) Chrome'un dev overlay'inde gerçek bir konsol hatası ("1 Issue" göstergesi) çıktı:
+> `Base UI: A component that acts as a button expected a native <button> because the 'nativeButton' prop is true. Rendering a non-<button> removes native button semantics...`
+
+Kök neden: shadcn'in `Button` bileşeni Base UI'ın `ButtonPrimitive`'ini sarıyor, ve bu primitive varsayılan olarak `nativeButton=true` - yani her zaman gerçek bir `<button>` render edildiğini varsayıyor. `render` prop'uyla bir `<Link>`/`<a>` verildiğinde bu varsayım bozuluyor ama `nativeButton` otomatik `false` olmuyor. **Düzeltme, kullanım yerlerinde değil KAYNAKTA yapıldı** - `src/components/ui/button.tsx`'e `nativeButton={nativeButton ?? !render}` eklendi: `render` verilmişse ve çağıran açıkça override etmemişse `nativeButton` otomatik `false` oluyor. Bu, gelecekte bu bileşenin herhangi bir yeni `render={<Link .../>}` kullanımının da aynı hataya düşmesini kalıcı olarak önlüyor - tek tek çağrı yerlerinde yama yapmak yerine.
+
+### Doğrulama
+- `tsc`/`eslint` (repo geneli, tüm dosyalar) temiz - sadece önceden var olan, ilgisiz bir workflow route.js uyarısı kaldı. `vitest` (110 test) ve `next build` (35 workflow step, değişmedi) temiz.
+- **Chrome'da canlı doğrulandı**: `/projects`, `/projects/new` (tüm form - metin/sayı/checkbox/radio/textarea/select alanları, gönder butonu), `/studio` (liste), `/studio/[id]` (sohbet arayüzü + genişletilmiş Gelişmiş Görsel Üretimi paneli - model/çözünürlük/adet seçiciler, referans yükleme, fikir üret, magic buton), `/projects/[id]` (Pipeline durumu takipçisi + gerçek bir hata durumu - kırmızı hata kutusu, yeniden çalıştır formu) - hepsi doğru render edildi, `nativeButton` hatası düzeltmeden sonra kayboldu, hiçbir sayfada konsol hatası kalmadı.
+- Restyle sırasında rastlanan, koda değil geçici bağlantıya ait bir durum: `/projects/new` sayfasına ilk gidişte bir kez Neon veritabanı bağlantı hatası (`fetch failed`) görüldü - sayfa yenilenince kayboldu, kod değişikliğiyle ilgisi yok (bilinen bir serverless-DB soğuk başlangıç/ağ dalgalanması davranışı).
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** `BookReader.tsx`'te karaoke kelime-vurgulama efektinin `bg-yellow-300 text-zinc-950` renk çifti kasıtlı olarak dokunulmadan bırakıldı - bu nötr bir arayüz rengi değil, yüksek kontrastlı bir vurgu efekti; sadece metin rengini token'a çevirmek sarı zemin üzerindeki kontrastı bozardı. Mobil sidebar/drawer davranışı yine test edilmedi (sadece masaüstü genişliği). Gerçek bir uçtan uca görsel/ses üretimi bu turda da denenmedi (AI Gateway/Blob billing-bloke durumu devam ediyor, önceki fazlardan bilinen bir kısıtlama).

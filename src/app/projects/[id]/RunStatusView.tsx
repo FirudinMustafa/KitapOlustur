@@ -6,6 +6,8 @@ import { BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
 import type { UnitProgress } from "@/lib/unit-progress";
 import { PipelineStageTracker } from "./PipelineStageTracker";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { checkPrintReadiness } from "@/lib/print-readiness";
 
 type ListeningAudioEntry = { blockRef: string; script: string; audioUrl?: string };
@@ -421,8 +423,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-12">
-      <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{project.name}</h1>
-      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+      <h1 className="text-2xl font-semibold text-foreground">{project.name}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
         {project.level ? `${project.level} · ` : ""}
         {upload ? `Kaynak: ${upload.filename}` : ""}
       </p>
@@ -442,9 +444,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       </div>
 
       {coherenceReview && (
-        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Kitap Tutarlılık Raporu</h2>
+            <h2 className="text-sm font-semibold text-foreground">Kitap Tutarlılık Raporu</h2>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                 coherenceReview.passed
@@ -455,26 +457,26 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               {coherenceReview.passed ? "Sorun bulunamadı" : `${coherenceReview.issues.length} not (bilgilendirici)`}
             </span>
           </div>
-          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-400 sm:grid-cols-4">
+          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-4">
             <div>
               <dt>Zorluk ilerlemesi</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{coherenceReview.difficultyProgressionScore}/100</dd>
+              <dd className="font-medium text-foreground">{coherenceReview.difficultyProgressionScore}/100</dd>
             </div>
             <div>
               <dt>Kelime tekrarı</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{coherenceReview.vocabularyRepetitionScore}/100</dd>
+              <dd className="font-medium text-foreground">{coherenceReview.vocabularyRepetitionScore}/100</dd>
             </div>
             <div>
               <dt>Gramer sıralaması</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{coherenceReview.grammarSequencingScore}/100</dd>
+              <dd className="font-medium text-foreground">{coherenceReview.grammarSequencingScore}/100</dd>
             </div>
             <div>
               <dt>Tematik tutarlılık</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">{coherenceReview.thematicConsistencyScore}/100</dd>
+              <dd className="font-medium text-foreground">{coherenceReview.thematicConsistencyScore}/100</dd>
             </div>
           </dl>
           {coherenceReview.issues.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1 border-t border-zinc-100 pt-3 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+            <ul className="mt-3 flex flex-col gap-1 border-t border-border pt-3 text-xs text-muted-foreground">
               {coherenceReview.issues.map((issue, i) => (
                 <li key={i}>
                   <span
@@ -483,7 +485,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                         ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
                         : issue.severity === "medium"
                           ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                          : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                          : "bg-secondary text-secondary-foreground"
                     }`}
                   >
                     Ünite {issue.unitNumber} · {issue.category}
@@ -497,22 +499,22 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {!!flaggedOriginalityChecks?.length && (
-        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Orijinallik Raporu</h2>
+            <h2 className="text-sm font-semibold text-foreground">Orijinallik Raporu</h2>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
               {flaggedOriginalityChecks.length} sayfa işaretlendi (bilgilendirici)
             </span>
           </div>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-2 text-xs text-muted-foreground">
             Bu bir hukuki değerlendirme değildir — kaynak kitapla yüksek metin benzerliği tespit edilen sayfalar,
             manuel incelemeniz için burada listeleniyor.
           </p>
-          <ul className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+          <ul className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
             {flaggedOriginalityChecks.map((check, i) => (
               <li key={i}>
                 <div className="flex items-center gap-1.5">
-                  <span className="inline-block rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  <span className="inline-block rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
                     Ünite {check.unitNumber} · Sayfa {check.pageNumber}
                   </span>
                   <span>n-gram örtüşme: {(check.ngramOverlapScore * 100).toFixed(0)}%</span>
@@ -551,48 +553,48 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {!!totalTokens && (
-        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Maliyet ve Kullanım</h2>
-          <ul className="mt-3 flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
+          <h2 className="text-sm font-semibold text-foreground">Maliyet ve Kullanım</h2>
+          <ul className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
             {tokenBreakdown.map(([key, tokens]) => (
               <li key={key} className="flex items-center justify-between">
                 <span>{STEP_LABELS[key] ?? key}</span>
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">{tokens.toLocaleString("tr-TR")}</span>
+                <span className="font-medium text-foreground">{tokens.toLocaleString("tr-TR")}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-3 border-t border-zinc-100 pt-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
             Yaklaşık metin ({run?.modelVersion ?? "Sonnet 5"}) maliyeti: ~${estimatedCostMin.toFixed(3)}–$
             {estimatedCostMax.toFixed(3)}
-            <span className="block text-[10px] text-zinc-400">
+            <span className="block text-[10px] text-muted-foreground/70">
               (girdi/çıktı token&apos;ları ayrı tutulmadığı için kesin değer değil, olası aralık; taslak modda
               inceleme/dizelge adımları yine de Sonnet 5 üzerinden faturalanır)
             </span>
           </p>
           {(imageCount > 0 || audioCount > 0) && (
-            <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+            <div className="mt-3 border-t border-border pt-3">
               {imageCount > 0 && (
-                <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                <p className="text-xs text-muted-foreground">
                   {imageCount} görsel üretildi (GPT Image){" "}
                   {imageCostUsd > 0 ? (
-                    <span className="font-medium text-zinc-900 dark:text-zinc-100">~${imageCostUsd.toFixed(3)}</span>
+                    <span className="font-medium text-foreground">~${imageCostUsd.toFixed(3)}</span>
                   ) : (
-                    <span className="text-zinc-400">(maliyet bu run için ölçülmedi)</span>
+                    <span className="text-muted-foreground/70">(maliyet bu run için ölçülmedi)</span>
                   )}
                 </p>
               )}
               {audioCount > 0 && (
-                <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {audioCount} ses klibi üretildi (TTS){" "}
                   {audioCostUsd > 0 ? (
-                    <span className="font-medium text-zinc-900 dark:text-zinc-100">${audioCostUsd.toFixed(3)}</span>
+                    <span className="font-medium text-foreground">${audioCostUsd.toFixed(3)}</span>
                   ) : (
-                    <span className="text-zinc-400">(maliyet bu run için ölçülmedi)</span>
+                    <span className="text-muted-foreground/70">(maliyet bu run için ölçülmedi)</span>
                   )}
                 </p>
               )}
               {hasRealCost && (
-                <span className="mt-1 block text-[10px] text-zinc-400">
+                <span className="mt-1 block text-[10px] text-muted-foreground/70">
                   Görsel maliyeti orta-kalite, 1024×1024 için yayınlanmış bir tahmin (gerçek boyut/kaliteye göre
                   değişebilir); ses maliyeti gerçek karakter sayısına göre kesin (tts-1-hd: $30/1M karakter).
                 </span>
@@ -633,33 +635,25 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             {outlineData.units.map((u) => (
               <div
                 key={u.number}
-                className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+                className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-card-foreground"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  <span className="text-sm font-medium text-foreground">
                     {u.number}. {u.title}
                   </span>
-                  <span className="text-xs text-zinc-500">{u.level}</span>
+                  <span className="text-xs text-muted-foreground">{u.level}</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <Badge variant="outline" className="border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                    İçerik
-                  </Badge>
-                  <Badge variant="outline" className="border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                    Görsel
-                  </Badge>
-                  <Badge variant="outline" className="border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                    Ses
-                  </Badge>
-                  <Badge variant="outline" className="border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                    İnceleme
-                  </Badge>
+                  <Badge variant="secondary">İçerik</Badge>
+                  <Badge variant="secondary">Görsel</Badge>
+                  <Badge variant="secondary">Ses</Badge>
+                  <Badge variant="secondary">İnceleme</Badge>
                 </div>
               </div>
             ))}
           </div>
           {improvementPlan?.overallNotes && (
-            <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-400">
+            <p className="mt-3 text-xs text-muted-foreground">
               <span className="font-medium">İyileştirme planı: </span>
               {improvementPlan.overallNotes}
             </p>
@@ -669,29 +663,32 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               <label className="text-xs font-medium text-amber-800 dark:text-amber-300">
                 Ünite sınırı (opsiyonel, değiştirmek için)
               </label>
-              <input
+              <Input
                 type="number"
                 min={1}
                 value={approvalUnitLimit}
                 onChange={(e) => setApprovalUnitLimit(e.target.value)}
                 placeholder="Örn. 4"
-                className="h-9 w-32 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="h-9 w-32"
               />
             </div>
-            <button
+            <Button
               onClick={() => handleApproval(true)}
               disabled={approving}
-              className="h-9 rounded-full bg-amber-600 px-4 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+              size="sm"
+              className="h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
             >
               {approving ? "Gönderiliyor…" : "Onayla ve üret"}
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => handleApproval(false)}
               disabled={approving}
-              className="h-9 rounded-full border border-zinc-300 px-4 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-full px-4 text-xs"
             >
               Reddet
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -710,10 +707,10 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               return (
                 <div
                   key={v.index}
-                  className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+                  className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-card-foreground"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    <span className="text-sm font-medium text-foreground">
                       Varyant {v.index + 1}
                     </span>
                     <span
@@ -726,11 +723,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       {v.passed ? "Kontrolden geçti" : `${v.issues.length} not`}
                     </span>
                   </div>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-muted-foreground">
                     {v.unit.studentBookPages.length} Student Book + {v.unit.workbookPages.length} Workbook sayfası
                   </p>
                   {firstBlock && (
-                    <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                    <div className="text-xs text-muted-foreground">
                       <p className="font-medium">{firstBlock.heading}</p>
                       <p className="mt-0.5 line-clamp-3">{firstBlock.body}</p>
                     </div>
@@ -742,13 +739,14 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       ))}
                     </ul>
                   )}
-                  <button
+                  <Button
                     onClick={() => handleSelectVariant(run.pendingVariants!.unitNumber, v.index)}
                     disabled={selectingVariant}
-                    className="mt-1 h-8 rounded-full bg-amber-600 px-3 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                    size="sm"
+                    className="mt-1 h-8 rounded-full bg-amber-600 px-3 text-xs text-white hover:bg-amber-700"
                   >
                     Bunu seç
-                  </button>
+                  </Button>
                 </div>
               );
             })}
@@ -775,16 +773,16 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               return (
                 <div
                   key={unit.unitNumber}
-                  className="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+                  className="rounded-lg border border-border bg-card p-3 text-card-foreground"
                 >
-                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  <p className="text-sm font-medium text-foreground">
                     Ünite {unit.unitNumber}: {unit.title}
                   </p>
-                  <p className="mt-0.5 text-xs text-zinc-500">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     {unit.studentBookPages.length} Student Book + {unit.workbookPages.length} Workbook sayfası
                   </p>
                   {firstBlock && (
-                    <div className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                    <div className="mt-1.5 text-xs text-muted-foreground">
                       <p className="font-medium">{firstBlock.heading}</p>
                       <p className="mt-0.5 line-clamp-3">{firstBlock.body}</p>
                     </div>
@@ -795,7 +793,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                         onClick={() =>
                           setDiffOpenFor((prev) => ({ ...prev, [unit.unitNumber]: !prev[unit.unitNumber] }))
                         }
-                        className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                        className="text-xs font-medium text-primary hover:underline"
                       >
                         {diffOpenFor[unit.unitNumber] ? "Önceki sürümü gizle" : "Geri bildirim öncesi sürümle karşılaştır"}
                       </button>
@@ -838,31 +836,34 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                     }
                     rows={2}
                     placeholder="Bu üniteye değişiklik iste (opsiyonel)"
-                    className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-950"
+                    className="mt-2 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
               );
             })}
           </div>
           <div className="mt-4 flex gap-3">
-            <button
+            <Button
               onClick={() => handleContentApproval(true)}
               disabled={approvingContent}
-              className="h-9 rounded-full bg-amber-600 px-4 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+              size="sm"
+              className="h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
             >
               {approvingContent
                 ? "Gönderiliyor…"
                 : Object.values(unitChangeComments).some((c) => c.trim())
                   ? "Değişiklik isteklerini gönder"
                   : "Onayla, görsellere geç"}
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => handleContentApproval(false)}
               disabled={approvingContent}
-              className="h-9 rounded-full border border-zinc-300 px-4 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-full px-4 text-xs"
             >
               Tümünü reddet (üretimi iptal et)
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -886,11 +887,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               return (
                 <div
                   key={key}
-                  className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+                  className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-card-foreground"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image */}
                   <img src={img.imageUrl} alt="" className="max-h-40 w-full rounded-md object-cover" />
-                  <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  <p className="text-xs font-medium text-foreground">
                     Ünite {img.unitNumber} · Sayfa {img.pageNumber}
                   </p>
                   {img.issues.length > 0 && (
@@ -906,7 +907,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       className={`h-8 flex-1 rounded-full px-3 text-xs font-medium ${
                         decision === "accept"
                           ? "bg-green-600 text-white"
-                          : "border border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+                          : "border border-border text-foreground hover:bg-accent"
                       }`}
                     >
                       Kabul et
@@ -916,7 +917,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       className={`h-8 flex-1 rounded-full px-3 text-xs font-medium ${
                         decision === "regenerate"
                           ? "bg-amber-600 text-white"
-                          : "border border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+                          : "border border-border text-foreground hover:bg-accent"
                       }`}
                     >
                       Yeniden üret
@@ -926,13 +927,14 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               );
             })}
           </div>
-          <button
+          <Button
             onClick={handleImageReviewSubmit}
             disabled={submittingImageReview}
-            className="mt-4 h-9 rounded-full bg-amber-600 px-4 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+            size="sm"
+            className="mt-4 h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
           >
             {submittingImageReview ? "Gönderiliyor…" : "Kararları gönder"}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -949,28 +951,31 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             &quot;tamamlandı&quot; olarak işaretlenecek - reddedersen üretim durur, hiçbir dosya oluşmaz.
           </p>
           <div className="mt-4 flex gap-3">
-            <button
+            <Button
               onClick={() => handleFinalApproval(true)}
               disabled={approvingFinal}
-              className="h-9 rounded-full bg-amber-600 px-4 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+              size="sm"
+              className="h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
             >
               {approvingFinal ? "Gönderiliyor…" : "Onayla ve derle"}
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => handleFinalApproval(false)}
               disabled={approvingFinal}
-              className="h-9 rounded-full border border-zinc-300 px-4 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-full px-4 text-xs"
             >
               Değişiklik iste
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {run?.status === "changes_requested" && (
-        <div className="mt-4 rounded-lg border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
-          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Değişiklik istendi, kitaplar derlenmedi.</p>
-          <p className="mt-1 text-xs text-zinc-500">
+        <div className="mt-4 rounded-lg border border-dashed border-border p-4">
+          <p className="text-sm font-medium text-foreground">Değişiklik istendi, kitaplar derlenmedi.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
             Bu run&apos;ın tüm içerik/görsel verisi hâlâ duruyor - yeniden üretmek için aşağıdaki &quot;Yeniden
             çalıştır&quot; seçeneğini kullanabilirsin.
           </p>
@@ -978,43 +983,45 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "done" && (
-        <div className="mt-4 rounded-lg border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
-          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+        <div className="mt-4 rounded-lg border border-dashed border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground">
             AI çağrısı yapmadan, mevcut içerikten ek kitap tipi derle
           </p>
           <div className="mt-2 flex flex-wrap gap-3">
             {Object.entries(BOOK_TYPE_LABELS).map(([type, label]) => (
-              <label key={type} className="flex items-center gap-1.5 text-sm">
+              <label key={type} className="flex items-center gap-1.5 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={assembleTypes.has(type)}
                   onChange={() => toggleAssembleType(type)}
+                  className="accent-primary"
                 />
                 {label}
               </label>
             ))}
           </div>
-          <button
+          <Button
             onClick={handleAssembleOnly}
             disabled={assembling || !assembleTypes.size}
-            className="mt-3 h-9 rounded-full bg-zinc-950 px-4 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+            size="sm"
+            className="mt-3 h-9 rounded-full px-4 text-xs"
           >
             {assembling ? "Başlatılıyor…" : "Seçilenleri derle"}
-          </button>
+          </Button>
         </div>
       )}
 
       {run?.status === "done" && (
-        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Öğretmen geri bildirimi</h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
+          <h2 className="text-sm font-semibold text-foreground">Öğretmen geri bildirimi</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
             Bu geri bildirim şu an sadece kaydediliyor; gelecekte üretim kalitesini iyileştirmek için kullanılacak.
           </p>
           <div className="mt-3 flex flex-col gap-2">
             <select
               value={feedbackRating}
               onChange={(e) => setFeedbackRating(e.target.value)}
-              className="h-9 w-40 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="h-9 w-40 rounded-lg border border-input bg-background px-2 text-sm text-foreground"
             >
               <option value="">Puan (opsiyonel)</option>
               <option value="1">1 - Çok zayıf</option>
@@ -1028,21 +1035,22 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               onChange={(e) => setFeedbackComment(e.target.value)}
               rows={3}
               placeholder="Sınıfta nasıl gitti, neyi değiştirmek isterdin?"
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
             />
-            <button
+            <Button
               onClick={handleSubmitFeedback}
               disabled={submittingFeedback || (!feedbackRating && !feedbackComment.trim())}
-              className="h-9 w-fit rounded-full bg-zinc-950 px-4 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              size="sm"
+              className="h-9 w-fit rounded-full px-4 text-xs"
             >
               {submittingFeedback ? "Gönderiliyor…" : "Gönder"}
-            </button>
+            </Button>
           </div>
           {!!feedback?.length && (
-            <ul className="mt-4 flex flex-col gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+            <ul className="mt-4 flex flex-col gap-2 border-t border-border pt-3">
               {feedback.map((f) => (
-                <li key={f.id} className="text-xs text-zinc-600 dark:text-zinc-400">
-                  {f.rating != null && <span className="font-medium text-zinc-900 dark:text-zinc-100">{f.rating}/5 · </span>}
+                <li key={f.id} className="text-xs text-muted-foreground">
+                  {f.rating != null && <span className="font-medium text-foreground">{f.rating}/5 · </span>}
                   {f.comment}
                 </li>
               ))}
@@ -1052,34 +1060,30 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {upload && (
-        <div className="mt-4 flex items-end gap-3 rounded-lg border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+        <div className="mt-4 flex items-end gap-3 rounded-lg border border-dashed border-border p-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            <label className="text-xs font-medium text-muted-foreground">
               Ünite sınırıyla yeniden çalıştır (opsiyonel)
             </label>
-            <input
+            <Input
               type="number"
               min={1}
               value={rerunUnitLimit}
               onChange={(e) => setRerunUnitLimit(e.target.value)}
               placeholder="Örn. 4"
-              className="h-9 w-32 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="h-9 w-32"
             />
           </div>
-          <button
-            onClick={handleRerun}
-            disabled={rerunning}
-            className="h-9 rounded-full bg-zinc-950 px-4 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-          >
+          <Button onClick={handleRerun} disabled={rerunning} size="sm" className="h-9 rounded-full px-4 text-xs">
             {rerunning ? "Başlatılıyor…" : "Yeniden çalıştır"}
-          </button>
+          </Button>
         </div>
       )}
 
       {books.length > 0 && (
-        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Baskıya Hazırlık</h2>
+            <h2 className="text-sm font-semibold text-foreground">Baskıya Hazırlık</h2>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                 printReadiness.issues.length === 0
@@ -1090,10 +1094,10 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               {printReadiness.issues.length === 0 ? "Hazır" : `${printReadiness.issues.length} sorun`}
             </span>
           </div>
-          <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-400 sm:grid-cols-2">
+          <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2">
             <div>
               <dt>ISBN</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+              <dd className="font-medium text-foreground">
                 {printReadiness.isbn.provided
                   ? printReadiness.isbn.valid
                     ? project.isbn
@@ -1103,7 +1107,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             </div>
             <div>
               <dt>Kapak çözünürlüğü/oranı</dt>
-              <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+              <dd className="font-medium text-foreground">
                 {printReadiness.cover
                   ? `${printReadiness.cover.widthPx}×${printReadiness.cover.heightPx}px (${
                       printReadiness.cover.isPortrait ? "dikey" : "yatay"
@@ -1113,7 +1117,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             </div>
           </dl>
           {printReadiness.issues.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1 border-t border-zinc-100 pt-3 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+            <ul className="mt-3 flex flex-col gap-1 border-t border-border pt-3 text-xs text-muted-foreground">
               {printReadiness.issues.map((issue, i) => (
                 <li key={i}>{issue}</li>
               ))}
@@ -1124,83 +1128,84 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
 
       {books.length > 0 && (
         <div className="mt-6 flex flex-col gap-4">
-          <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">Üretilen kitaplar</h2>
+          <h2 className="text-lg font-medium text-foreground">Üretilen kitaplar</h2>
           {books.map((book) => {
             const audioTracks = audioTracksFor(book);
             return (
-            <div key={book.id} className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">
+            <div key={book.id} className="rounded-xl border border-border bg-card p-4 text-card-foreground">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-foreground">
                   {BOOK_TYPE_LABELS[book.bookType] ?? book.bookType}
                 </span>
-                <div className="flex gap-2">
-                  <Link
-                    href={`/projects/${projectId}/read/${book.bookType}`}
-                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                  >
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" className="rounded-full px-3 text-xs" render={<Link href={`/projects/${projectId}/read/${book.bookType}`} />}>
                     Etkileşimli oku
-                  </Link>
+                  </Button>
                   {book.pdfBlobUrl && (
-                    <a
-                      href={book.pdfBlobUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-                    >
+                    <Button size="sm" className="rounded-full px-3 text-xs" render={<a href={book.pdfBlobUrl} target="_blank" rel="noopener noreferrer" />}>
                       PDF indir
-                    </a>
+                    </Button>
                   )}
                   {book.epubBlobUrl && (
-                    <a
-                      href={book.epubBlobUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                    >
+                    <Button variant="outline" size="sm" className="rounded-full px-3 text-xs" render={<a href={book.epubBlobUrl} target="_blank" rel="noopener noreferrer" />}>
                       EPUB indir
-                    </a>
+                    </Button>
                   )}
-                  <a
-                    href={`/api/projects/${projectId}/export/common-cartridge?bookType=${book.bookType}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Moodle/Canvas'a yüklenebilir IMS Common Cartridge paketi"
-                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full px-3 text-xs"
+                    render={
+                      <a
+                        href={`/api/projects/${projectId}/export/common-cartridge?bookType=${book.bookType}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Moodle/Canvas'a yüklenebilir IMS Common Cartridge paketi"
+                      />
+                    }
                   >
                     LMS paketi indir
-                  </a>
-                  <a
-                    href={`/api/projects/${projectId}/export/docx?bookType=${book.bookType}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Word/Google Docs'ta düzenlenebilir .docx"
-                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full px-3 text-xs"
+                    render={
+                      <a
+                        href={`/api/projects/${projectId}/export/docx?bookType=${book.bookType}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Word/Google Docs'ta düzenlenebilir .docx"
+                      />
+                    }
                   >
                     DOCX indir
-                  </a>
+                  </Button>
                   {book.markdown && (
-                    <button
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full px-3 text-xs"
                       onClick={() =>
                         setShowMarkdown((prev) => ({ ...prev, [book.id]: !prev[book.id] }))
                       }
-                      className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
                     >
                       {showMarkdown[book.id] ? "Önizlemeyi gizle" : "Önizle"}
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
               {showMarkdown[book.id] && book.markdown && (
-                <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs text-foreground">
                   {book.markdown}
                 </pre>
               )}
               {audioTracks.length > 0 && (
-                <div className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Dinleme sesleri</p>
+                <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+                  <p className="text-xs font-medium text-muted-foreground">Dinleme sesleri</p>
                   {audioTracks.map((track, i) => (
                     <div key={i} className="flex flex-col gap-1">
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-xs text-muted-foreground">
                         Ünite {track.unitNumber} · {track.blockRef}
                       </span>
                       <audio controls src={track.audioUrl} className="h-8 w-full" />

@@ -10,15 +10,15 @@ export function StudioLibraryList({ storyProjects }: { storyProjects: StoryProje
         <li key={story.id}>
           <Link
             href={`/studio/${story.id}`}
-            className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+            className="flex items-center justify-between gap-4 rounded-xl bg-card px-4 py-3 text-card-foreground ring-1 ring-foreground/10 transition-colors hover:bg-accent hover:ring-primary/30"
           >
             <div>
-              <p className="font-medium text-zinc-900 dark:text-zinc-100">{story.title}</p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="font-medium text-foreground">{story.title}</p>
+              <p className="text-xs text-muted-foreground">
                 {new Date(story.updatedAt).toLocaleString("tr-TR")}
               </p>
             </div>
-            <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+            <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
               {story.qualityMode === "draft" ? "Taslak" : "Final"}
             </span>
           </Link>

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { STUDIO_IMAGE_MODELS, STUDIO_IMAGE_SIZES, type StudioImageModelId, type StudioImageSizeId } from "@/lib/ai/model";
 import type { savedReferenceImages, storyArtifacts } from "@/db/schema";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type ReferenceImage = typeof savedReferenceImages.$inferSelect;
 type StoryArtifact = typeof storyArtifacts.$inferSelect;
@@ -199,24 +201,24 @@ export function AdvancedImagePanel({
     mentionQuery !== null ? allTags.filter((t) => t.toLowerCase().includes(mentionQuery)) : [];
 
   return (
-    <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
+    <div className="mt-4 rounded-xl border border-border">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-zinc-800 dark:text-zinc-200"
+        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-foreground"
       >
         Gelişmiş Görsel Üretimi
-        <span className="text-xs text-zinc-400">{open ? "Gizle" : "Göster"}</span>
+        <span className="text-xs text-muted-foreground">{open ? "Gizle" : "Göster"}</span>
       </button>
 
       {open && (
-        <div className="flex flex-col gap-4 border-t border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="flex flex-col gap-4 border-t border-border p-4">
           <div className="flex flex-wrap gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Model</label>
+              <label className="text-xs font-medium text-muted-foreground">Model</label>
               <select
                 value={model}
                 onChange={(e) => setModel(e.target.value as StudioImageModelId)}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground"
               >
                 {STUDIO_IMAGE_MODELS.map((m) => (
                   <option key={m.id} value={m.id} title={m.description}>
@@ -226,11 +228,11 @@ export function AdvancedImagePanel({
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Çözünürlük</label>
+              <label className="text-xs font-medium text-muted-foreground">Çözünürlük</label>
               <select
                 value={size}
                 onChange={(e) => setSize(e.target.value as StudioImageSizeId)}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground"
               >
                 {STUDIO_IMAGE_SIZES.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -240,22 +242,22 @@ export function AdvancedImagePanel({
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Adet</label>
-              <input
+              <label className="text-xs font-medium text-muted-foreground">Adet</label>
+              <Input
                 type="number"
                 min={1}
                 max={4}
                 value={count}
                 onChange={(e) => setCount(Math.min(4, Math.max(1, Number(e.target.value) || 1)))}
-                className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="w-16"
               />
             </div>
           </div>
 
           <div>
-            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Kayıtlı Referanslar</p>
+            <p className="text-xs font-medium text-muted-foreground">Kayıtlı Referanslar</p>
             <div className="mt-1.5 flex flex-wrap gap-2">
-              {references.length === 0 && <p className="text-xs text-zinc-400">Henüz kayıtlı referans yok.</p>}
+              {references.length === 0 && <p className="text-xs text-muted-foreground">Henüz kayıtlı referans yok.</p>}
               {references.map((r) => (
                 <div key={r.id} className="w-20">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -267,8 +269,8 @@ export function AdvancedImagePanel({
                         onClick={() => toggleTag(t)}
                         className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
                           selectedTags.has(t)
-                            ? "bg-blue-600 text-white"
-                            : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-secondary-foreground"
                         }`}
                       >
                         @{t}
@@ -286,39 +288,41 @@ export function AdvancedImagePanel({
                 onChange={(e) => e.target.files?.[0] && handleUploadReference(e.target.files[0])}
                 className="hidden"
               />
-              <input
+              <Input
                 value={uploadTags}
                 onChange={(e) => setUploadTags(e.target.value)}
                 placeholder="Etiketler (virgülle ayır)"
-                className="h-8 flex-1 rounded-md border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="h-8 flex-1"
               />
-              <button
+              <Button
+                variant="outline"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingRef}
-                className="h-8 rounded-full border border-zinc-300 px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                className="h-8 rounded-full px-3 text-xs"
               >
                 {uploadingRef ? "Yükleniyor…" : "Referans yükle"}
-              </button>
+              </Button>
             </div>
           </div>
 
           <div>
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 type="number"
                 min={1}
                 max={10}
                 value={brainstormCount}
                 onChange={(e) => setBrainstormCount(Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
-                className="h-8 w-16 rounded-md border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="h-8 w-16"
               />
-              <button
+              <Button
+                variant="outline"
                 onClick={handleBrainstorm}
                 disabled={brainstorming}
-                className="h-8 rounded-full border border-zinc-300 px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                className="h-8 rounded-full px-3 text-xs"
               >
                 {brainstorming ? "Fikir üretiliyor…" : "Fikir üret"}
-              </button>
+              </Button>
             </div>
             {brainstormIdeas.length > 0 && (
               <div className="mt-2 flex flex-col gap-1.5">
@@ -326,7 +330,7 @@ export function AdvancedImagePanel({
                   <button
                     key={i}
                     onClick={() => setPrompt(idea)}
-                    className="rounded-md border border-zinc-200 px-2 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                    className="rounded-lg border border-border px-2 py-1.5 text-left text-xs text-foreground hover:bg-accent"
                   >
                     {idea}
                   </button>
@@ -342,15 +346,15 @@ export function AdvancedImagePanel({
               onChange={(e) => handlePromptChange(e.target.value)}
               rows={3}
               placeholder="Görsel için prompt yaz - @etiket ile kayıtlı bir referansa atıfta bulunabilirsin"
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
             />
             {mentionQuery !== null && matchingMentionTags.length > 0 && (
-              <div className="absolute z-10 mt-1 w-48 rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <div className="absolute z-10 mt-1 w-48 rounded-lg border border-border bg-popover shadow-lg">
                 {matchingMentionTags.map((t) => (
                   <button
                     key={t}
                     onClick={() => insertMentionTag(t)}
-                    className="block w-full px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    className="block w-full px-3 py-1.5 text-left text-xs text-popover-foreground hover:bg-accent"
                   >
                     @{t}
                   </button>
@@ -359,26 +363,23 @@ export function AdvancedImagePanel({
             )}
           </div>
 
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
+            <Button
+              variant="outline"
               onClick={handleMagicPrompt}
               disabled={improvingPrompt || !prompt.trim()}
               title="Promptu yapay zekanın anlayacağı şekilde geliştir"
-              className="h-9 rounded-full border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              className="h-9 rounded-full px-3"
             >
               {improvingPrompt ? "Geliştiriliyor…" : "✨ Magic"}
-            </button>
-            <button
-              onClick={handleGenerate}
-              disabled={generating || !prompt.trim()}
-              className="h-9 rounded-full bg-zinc-950 px-4 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-            >
+            </Button>
+            <Button onClick={handleGenerate} disabled={generating || !prompt.trim()} className="h-9 rounded-full px-4">
               {generating ? "Üretiliyor…" : "Üret"}
-            </button>
+            </Button>
             {estimatedCostUsd != null && (
-              <span className="text-xs text-zinc-500">Tahmini maliyet: ~${estimatedCostUsd.toFixed(3)}</span>
+              <span className="text-xs text-muted-foreground">Tahmini maliyet: ~${estimatedCostUsd.toFixed(3)}</span>
             )}
           </div>
         </div>

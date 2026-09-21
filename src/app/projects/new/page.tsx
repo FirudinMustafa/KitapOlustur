@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
 import { isValidIsbn13 } from "@/lib/isbn";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type NiceToHaveItem = {
   id: string;
@@ -218,8 +220,8 @@ export default function NewProjectPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-12">
-      <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">Yeni kitap yükle</h1>
-      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+      <h1 className="text-2xl font-semibold text-foreground">Yeni kitap yükle</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
         Herhangi bir konudaki ders kitabının PDF&apos;ini yükle; konusu ve dili otomatik tespit
         edilip aynı yapıdan yola çıkan özgün bir versiyonu üretilecek.
       </p>
@@ -227,32 +229,32 @@ export default function NewProjectPage() {
       <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-6">
         {!isBatch && (
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Proje adı</label>
-            <input
+            <label className="text-sm font-medium text-foreground">Proje adı</label>
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Örn. New Horizons A2"
-              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="h-10"
             />
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Seviye (opsiyonel)</label>
-            <input
+            <label className="text-sm font-medium text-foreground">Seviye (opsiyonel)</label>
+            <Input
               value={level}
               onChange={(e) => setLevel(e.target.value)}
               placeholder="Örn. A2"
-              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="h-10"
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Yüklenen kitap tipi</label>
+            <label className="text-sm font-medium text-foreground">Yüklenen kitap tipi</label>
             <select
               value={bookType}
               onChange={(e) => setBookType(e.target.value as "student_book" | "workbook")}
-              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground"
             >
               <option value="student_book">Student Book</option>
               <option value="workbook">Workbook</option>
@@ -262,19 +264,19 @@ export default function NewProjectPage() {
 
         {!isBatch && (
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">ISBN (opsiyonel)</label>
-            <input
+            <label className="text-sm font-medium text-foreground">ISBN (opsiyonel)</label>
+            <Input
               value={isbn}
               onChange={(e) => setIsbn(e.target.value)}
               placeholder="Örn. 978-0-306-40615-7 - basılı/yayınlanacak bir kitap için gerçek ISBN'in"
-              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="h-10"
             />
             {isbn.trim() && !isValidIsbn13(isbn) && (
-              <span className="text-xs text-red-600 dark:text-red-400">
+              <span className="text-xs text-destructive">
                 Geçerli bir ISBN-13 değil (sağlama toplamı tutmuyor).
               </span>
             )}
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-muted-foreground">
               Girilirse PDF&apos;in künye sayfasına gerçek, taranabilir bir EAN-13 barkod olarak basılır. Sahte/rastgele
               bir ISBN üretilmez - kendi satın aldığın gerçek ISBN&apos;i olmalı.
             </span>
@@ -282,29 +284,29 @@ export default function NewProjectPage() {
         )}
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Hedef dil (opsiyonel)</label>
-          <input
+          <label className="text-sm font-medium text-foreground">Hedef dil (opsiyonel)</label>
+          <Input
             value={targetLanguage}
             onChange={(e) => setTargetLanguage(e.target.value)}
             placeholder="Boş bırakılırsa kaynak kitabın dili kullanılır. Örn. Almanca, German, de"
-            className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="h-10"
           />
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted-foreground">
             Belirtilirse kitap, kaynak PDF farklı bir dilde olsa bile bu dilde üretilir (çeviri değil, o dilde
             yeniden yazım).
           </span>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Kaynak PDF</label>
+          <label className="text-sm font-medium text-foreground">Kaynak PDF</label>
           <input
             type="file"
             accept="application/pdf"
             multiple
             onChange={(e) => handleFilesSelected(e.target.files)}
-            className="text-sm text-zinc-700 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-950 file:px-3 file:py-2 file:text-sm file:text-white dark:text-zinc-300 dark:file:bg-white dark:file:text-black"
+            className="text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:text-primary-foreground"
           />
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted-foreground">
             Birden fazla PDF seçersen, hepsi aynı ayarlarla (aşağıdaki tüm seçenekler) tek seferde, ayrı ayrı
             projeler olarak üretime başlatılır — bir serinin birden fazla kitabını aynı stille üretmek için.
           </span>
@@ -312,20 +314,20 @@ export default function NewProjectPage() {
 
         {isBatch && (
           <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <legend className="text-sm font-medium text-foreground">
               {batchFiles.length} kitap - her biri için proje adı
             </legend>
-            <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
               {batchFiles.map((f, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <input
+                  <Input
                     value={batchNames[i] ?? ""}
                     onChange={(e) =>
                       setBatchNames((prev) => prev.map((n, j) => (j === i ? e.target.value : n)))
                     }
-                    className="h-9 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    className="h-9 flex-1"
                   />
-                  <span className="w-40 truncate text-xs text-zinc-500" title={f.name}>
+                  <span className="w-40 truncate text-xs text-muted-foreground" title={f.name}>
                     {f.name}
                   </span>
                 </div>
@@ -335,16 +337,17 @@ export default function NewProjectPage() {
         )}
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+          <legend className="text-sm font-medium text-foreground">
             Üretilecek kitap tipleri
           </legend>
-          <div className="flex flex-wrap gap-4 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <div className="flex flex-wrap gap-4 rounded-lg border border-border p-3">
             {OUTPUT_BOOK_TYPES.map((type) => (
-              <label key={type.value} className="flex items-center gap-1.5 text-sm">
+              <label key={type.value} className="flex items-center gap-1.5 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={outputTypes.has(type.value)}
                   onChange={() => toggleOutputType(type.value)}
+                  className="accent-primary"
                 />
                 {type.label}
               </label>
@@ -353,9 +356,9 @@ export default function NewProjectPage() {
         </fieldset>
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Stil profili</legend>
-          <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-            {styleProfiles.length === 0 && <p className="text-sm text-zinc-500">Yükleniyor…</p>}
+          <legend className="text-sm font-medium text-foreground">Stil profili</legend>
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            {styleProfiles.length === 0 && <p className="text-sm text-muted-foreground">Yükleniyor…</p>}
             {styleProfiles.map((profile) => (
               <label key={profile.id} className="flex items-start gap-2 text-sm">
                 <input
@@ -363,11 +366,11 @@ export default function NewProjectPage() {
                   name="styleProfile"
                   checked={styleProfileId === profile.id}
                   onChange={() => setStyleProfileId(profile.id)}
-                  className="mt-0.5"
+                  className="mt-0.5 accent-primary"
                 />
                 <span>
-                  <span className="font-medium text-zinc-900 dark:text-zinc-100">{profile.name}</span>
-                  <span className="block text-xs text-zinc-500 dark:text-zinc-400">{profile.description}</span>
+                  <span className="font-medium text-foreground">{profile.name}</span>
+                  <span className="block text-xs text-muted-foreground">{profile.description}</span>
                 </span>
               </label>
             ))}
@@ -375,12 +378,12 @@ export default function NewProjectPage() {
         </fieldset>
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+          <legend className="text-sm font-medium text-foreground">
             Nice-to-have iyileştirmeler
           </legend>
-          <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
             {items.length === 0 && (
-              <p className="text-sm text-zinc-500">Yükleniyor…</p>
+              <p className="text-sm text-muted-foreground">Yükleniyor…</p>
             )}
             {items.map((item) => (
               <label key={item.id} className="flex items-start gap-2 text-sm">
@@ -388,11 +391,11 @@ export default function NewProjectPage() {
                   type="checkbox"
                   checked={selected.has(item.id)}
                   onChange={() => toggleItem(item.id)}
-                  className="mt-0.5"
+                  className="mt-0.5 accent-primary"
                 />
                 <span>
-                  <span className="font-medium text-zinc-900 dark:text-zinc-100">{item.label}</span>
-                  <span className="block text-xs text-zinc-500 dark:text-zinc-400">{item.description}</span>
+                  <span className="font-medium text-foreground">{item.label}</span>
+                  <span className="block text-xs text-muted-foreground">{item.description}</span>
                 </span>
               </label>
             ))}
@@ -400,7 +403,7 @@ export default function NewProjectPage() {
         </fieldset>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+          <label className="text-sm font-medium text-foreground">
             Ek notlar (opsiyonel)
           </label>
           <textarea
@@ -408,26 +411,26 @@ export default function NewProjectPage() {
             onChange={(e) => setCustomNotes(e.target.value)}
             rows={3}
             placeholder="Örn. daha fazla uygulama örneği, gerçek hayat bağlamı vb."
-            className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
           />
         </div>
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Üretim kalitesi</legend>
-          <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <legend className="text-sm font-medium text-foreground">Üretim kalitesi</legend>
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
             <label className="flex items-start gap-2 text-sm">
               <input
                 type="radio"
                 name="qualityMode"
                 checked={qualityMode === "final"}
                 onChange={() => setQualityMode("final")}
-                className="mt-0.5"
+                className="mt-0.5 accent-primary"
               />
               <span>
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                <span className="font-medium text-foreground">
                   Final (Sonnet 5 + Nano Banana Pro)
                 </span>
-                <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                <span className="block text-xs text-muted-foreground">
                   Tam kalite, basılabilir sonuç için — metin Sonnet 5, görseller Nano Banana Pro (Gemini 3 Pro
                   Image) ile üretilir. Varsayılan.
                 </span>
@@ -439,13 +442,13 @@ export default function NewProjectPage() {
                 name="qualityMode"
                 checked={qualityMode === "draft"}
                 onChange={() => setQualityMode("draft")}
-                className="mt-0.5"
+                className="mt-0.5 accent-primary"
               />
               <span>
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                <span className="font-medium text-foreground">
                   Taslak (Haiku 4.5 + Imagen 4, daha ucuz)
                 </span>
-                <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                <span className="block text-xs text-muted-foreground">
                   Ünite içeriği ve görseller daha ucuz modellerle üretilir — yapıyı hızlıca önizlemek için.
                   Kalite/dil incelemesi (review) her zaman tam kalite modeliyle yapılır.
                 </span>
@@ -456,49 +459,45 @@ export default function NewProjectPage() {
 
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className="text-sm font-medium text-foreground">
               Ünite sınırı (opsiyonel)
             </label>
-            <input
+            <Input
               type="number"
               min={1}
               value={unitLimit}
               onChange={(e) => setUnitLimit(e.target.value)}
               placeholder="Örn. 4 - hızlı test için sadece ilk N üniteyi üretir"
-              className="h-10 w-40 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="h-10 w-40"
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className="text-sm font-medium text-foreground">
               Ünite başına varyant sayısı
             </label>
-            <input
+            <Input
               type="number"
               min={1}
               max={4}
               value={variantCount}
               onChange={(e) => setVariantCount(e.target.value)}
-              className="h-10 w-40 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="h-10 w-40"
             />
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-muted-foreground">
               1&apos;den fazlaysa her ünite için aralarından seçim yapman istenir.
             </span>
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="h-11 rounded-full bg-zinc-950 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-        >
+        <Button type="submit" disabled={submitting} size="lg" className="h-11 rounded-full px-6">
           {submitting
             ? "Yükleniyor…"
             : isBatch
               ? `${batchFiles.length} orkestrayı başlat`
               : "Orkestra'yı başlat"}
-        </button>
+        </Button>
       </form>
     </div>
   );
