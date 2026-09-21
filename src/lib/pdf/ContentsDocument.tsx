@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, StyleSheet, Svg, Circle, Path } from "@react-pdf/renderer";
 import { PALETTE, type Variant } from "./BookDocument";
+import { TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 
 export type CourseUnitSummary = {
   number: number;
@@ -56,16 +57,21 @@ export function ContentsPageContent({
   level,
   variant = "student_book",
   units,
+  trimSize = "a4",
 }: {
   bookTitle: string;
   level: string;
   variant?: Variant;
   units: CourseUnitSummary[];
+  trimSize?: TrimSizeId;
 }) {
   const palette = PALETTE[variant];
 
   return (
-    <Page size="A4" style={styles.page}>
+    <Page
+      size={{ width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt }}
+      style={styles.page}
+    >
       <View style={[styles.headerBand, { backgroundColor: palette.primaryDark }]}>
         <Svg viewBox="0 0 600 140" style={styles.headerDecoration}>
           <Circle cx="560" cy="10" r="80" fill="#ffffff" opacity={0.06} />

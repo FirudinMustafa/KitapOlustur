@@ -69,6 +69,12 @@ export const reviewTypeEnum = pgEnum("review_type", ["structure", "language", "l
 // unchanged unless a user opts into draft mode.
 export const qualityModeEnum = pgEnum("quality_mode", ["draft", "final"]);
 
+// Yapılandırılabilir Trim Size (Baskı Boyutu) (2026-09-21, ROADMAP.md):
+// default "a4" so existing behavior (and existing rows, once backfilled) is
+// unchanged unless a user picks a real print trim size at project creation.
+// See src/lib/pdf/page-geometry.ts's TRIM_SIZES for the pt dimensions.
+export const trimSizeEnum = pgEnum("trim_size", ["a4", "6x9", "7x10"]);
+
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -78,6 +84,11 @@ export const projects = pgTable("projects", {
   // Validated (ISBN-13 checksum, see src/lib/isbn.ts) before being saved -
   // never auto-generated, this has to be a real ISBN the user owns/bought.
   isbn: text("isbn"),
+  // Yapılandırılabilir Trim Size (Baskı Boyutu): chosen once at project
+  // creation, no edit-after-creation UI - see page-geometry.ts's TRIM_SIZES
+  // and the "kapsam dışı" note in ROADMAP.md about why LayoutEditor.tsx/
+  // BookReader.tsx stay fixed at A4 regardless of this value.
+  trimSize: trimSizeEnum("trim_size").notNull().default("a4"),
   // Faz G3: Clerk user id of the project's owner. Nullable so existing rows
   // created before auth was added don't break the migration - a null owner
   // is treated as inaccessible (owned by no one), not as public, by every

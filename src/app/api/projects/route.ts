@@ -7,6 +7,7 @@ import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
 import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
+import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
 
 const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
 
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
     targetLanguage: targetLanguageRaw,
     unitSkeleton: unitSkeletonRaw,
     spacedRepetition: spacedRepetitionRaw,
+    trimSize: trimSizeRaw,
     blobUrl,
     filename,
     isbn: isbnRaw,
@@ -120,6 +122,12 @@ export async function POST(request: Request) {
   // unchanged behavior for every project unless explicitly checked.
   const spacedRepetition = spacedRepetitionRaw === true;
 
+  // Yapılandırılabilir Trim Size: falls back to "a4" (unchanged existing
+  // behavior) for anything missing/invalid - chosen once at project
+  // creation, no edit-after-creation UI.
+  const trimSize: TrimSizeId =
+    typeof trimSizeRaw === "string" && trimSizeRaw in TRIM_SIZES ? (trimSizeRaw as TrimSizeId) : "a4";
+
   const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
   const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";
   const targetLanguage =
@@ -131,6 +139,7 @@ export async function POST(request: Request) {
       name: name.trim(),
       level: typeof level === "string" && level.trim() ? level.trim() : null,
       isbn,
+      trimSize,
       ownerId: userId,
     })
     .returning();

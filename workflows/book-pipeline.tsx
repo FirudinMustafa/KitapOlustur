@@ -64,6 +64,7 @@ import {
 import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
+import type { TrimSizeId } from "@/lib/pdf/page-geometry";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { buildEpub } from "@/lib/epub/BookEpub";
 
@@ -1468,6 +1469,7 @@ async function assembleAndSaveBooks(
   coverImageSrc: string,
   pageImages: Record<number, string>,
   isbn?: string | null,
+  trimSize?: TrimSizeId,
 ) {
   "use step";
 
@@ -1493,6 +1495,7 @@ async function assembleAndSaveBooks(
         pageImages={pageImages}
         generatedAt={generatedAt}
         isbn={isbn ?? undefined}
+        trimSize={trimSize}
       />,
     );
     const blob = await put(`generated/${runId}/${variant}.pdf`, pdfBuffer, {
@@ -1598,6 +1601,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         assets.coverImageSrc,
         assets.pageImages,
         ctx.project.isbn,
+        ctx.project.trimSize,
       );
       await setRunStatus(runId, "done", "Tamamlandı");
       return { runId, status: "done" as const };
@@ -2072,6 +2076,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       coverImageSrc,
       pageImages,
       ctx.project.isbn,
+      ctx.project.trimSize,
     );
 
     await setRunStatus(runId, "done", "Tamamlandı");

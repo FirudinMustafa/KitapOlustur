@@ -4,7 +4,7 @@ import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument"
 import { seededShuffle } from "@/lib/content-html";
 import { encodeEan13 } from "@/lib/barcode/ean13";
 import { formatIsbn13 } from "@/lib/isbn";
-import { PAGE_PADDING } from "./page-geometry";
+import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 
 // ISBN/baskıya hazırlık (2026-09-20, ROADMAP.md): renders a real, scannable
 // EAN-13 barcode on the imprint page when the project has a validated ISBN
@@ -425,6 +425,7 @@ function ImprintPage({
   generatedAt,
   palette,
   isbn,
+  trimSize = "a4",
 }: {
   bookTitle: string;
   variantLabel: string;
@@ -432,9 +433,10 @@ function ImprintPage({
   generatedAt: string;
   palette: Palette;
   isbn?: string;
+  trimSize?: TrimSizeId;
 }) {
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size={{ width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt }} style={styles.page}>
       <View style={styles.imprintBlock}>
         <Text style={[styles.imprintTitle, { color: palette.primaryDark }]}>{bookTitle}</Text>
         <Text style={styles.imprintLine}>{variantLabel} · {level}</Text>
@@ -478,6 +480,7 @@ export function BookDocument({
   pageImages,
   generatedAt,
   isbn,
+  trimSize = "a4",
 }: {
   bookTitle: string;
   variant: Variant;
@@ -488,9 +491,11 @@ export function BookDocument({
   pageImages?: Record<number, string>;
   generatedAt?: string;
   isbn?: string;
+  trimSize?: TrimSizeId;
 }) {
   const variantLabel = VARIANT_LABELS[variant];
   const palette = PALETTE[variant];
+  const pageSize = { width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt };
   // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
   // here despite generateTestBookletSide/generateCumulativeAssessment always
   // producing an answer key - it was silently never rendered in any export.
@@ -498,7 +503,7 @@ export function BookDocument({
 
   return (
     <Document title={`${bookTitle} - ${variantLabel}`}>
-      <Page size="A4" style={styles.coverPage}>
+      <Page size={pageSize} style={styles.coverPage}>
         <View style={[styles.coverBand, { backgroundColor: palette.primaryDark }]}>
           <Svg viewBox="0 0 600 480" style={styles.coverDecoration}>
             <Circle cx="540" cy="60" r="150" fill="#ffffff" opacity={0.06} />
@@ -536,13 +541,20 @@ export function BookDocument({
         generatedAt={generatedAt ?? ""}
         palette={palette}
         isbn={isbn}
+        trimSize={trimSize}
       />
 
-      <ContentsPageContent bookTitle={bookTitle} level={level} variant={variant} units={contentsUnits} />
+      <ContentsPageContent
+        bookTitle={bookTitle}
+        level={level}
+        variant={variant}
+        units={contentsUnits}
+        trimSize={trimSize}
+      />
 
       {units.flatMap((unit) =>
         pagesForVariant(unit, variant).map((page, idx) => (
-          <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size="A4" style={styles.page} wrap>
+          <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={pageSize} style={styles.page} wrap>
             <View style={styles.runningHeader}>
               <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
                 UNIT {unit.unitNumber} · {unit.title.toUpperCase()}
@@ -609,7 +621,7 @@ export function BookDocument({
       )}
 
       {showAnswerKey && (
-        <Page size="A4" style={styles.page} wrap>
+        <Page size={pageSize} style={styles.page} wrap>
           <View style={[styles.answerKeyTitleBand, { backgroundColor: palette.primaryDark }]}>
             <Text style={styles.answerKeyTitle}>Answer Key</Text>
           </View>

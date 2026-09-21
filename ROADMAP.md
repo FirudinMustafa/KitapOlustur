@@ -37,6 +37,7 @@
 | Faz 4d — Teacher's Book/Test Booklet Genişletme (ders akışı/materyal/farklılaştırma + kitap-geneli ara sınav/final + showAnswerKey hata düzeltmesi) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Teacher's Book/Test Booklet Genişletme — Tamamlanma Notu"; "İçerik derinliği" ana fazı tamamlandı |
 | Gerçek Kelime-Frekans/CEFR Kalibrasyonu (İngilizce, `reviewReadingLevel`'a deterministik ek kanıt) | ✅ Tamamlandı, birim testleriyle doğrulandı (2026-09-21) | Aşağıda "Kelime-Frekans/CEFR Kalibrasyonu — Tamamlanma Notu" |
 | Aralıklı Tekrar (Spaced Repetition) Sayfaları (opt-in, her 4 ünitede bir "Tekrar" recap/practice sayfaları) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Aralıklı Tekrar Sayfaları — Tamamlanma Notu" |
+| Yapılandırılabilir Trim Size (Baskı Boyutu) (A4/6×9/7×10, proje oluştururken tek seferlik seçim) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Yapılandırılabilir Trim Size — Tamamlanma Notu"; kullanıcının 3 "ek fikir"inin sonuncusu |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1516,3 +1517,65 @@ gerekçeyle (onay kapısı kapandıktan sonra üretiliyorlar). Etkilenen üniten
 pekiştirilen terimlerle güncellenmesi - `reviewBookCoherence` zaten mevcut glossary'yi okuyor, bu
 yeterli görüldü. Bununla, kullanıcının seçtiği 3 "ek fikir"den 2'si tamamlandı (CEFR kalibrasyonu +
 aralıklı tekrar) - kalan tek ek fikir yapılandırılabilir trim size (baskı boyutu).
+
+## Yapılandırılabilir Trim Size — Tamamlanma Notu (2026-09-21)
+
+**Context:** Kullanıcının seçtiği 3. (ve son) "ek fikir". PDF her zaman sabit A4 boyutunda
+üretiliyordu. Bu faz, proje oluştururken gerçek bir baskı trim size'ı (A4/6×9 inç/7×10 inç)
+seçilebilmesini ve PDF'in fiziksel sayfa boyutunun buna göre üretilmesini sağladı.
+
+**Araştırmada bulunan kritik gerçekler:**
+- react-pdf'in `<Page size>` prop'u sadece `"A4"` gibi isimli sabitlerle sınırlı değil - `{width,
+  height}` (pt) nesnesi de kabul ediyor, bu yüzden değişiklik basit bir prop güncellemesiydi.
+- Kapak/iç sayfa görselleri zaten GPT Image'ın sabit 3 boyutundan (1024×1536/1536×1024) üretilip
+  `objectFit: "cover"` ile herhangi bir kutuya kırpılıyor (Faz 4a) - trim size görsel üretim
+  katmanını hiç etkilemedi.
+- EPUB/DOCX bu özellikten tamamen bağımsız kaldı - EPUB reflowable, DOCX'in zaten bir sayfa boyutu
+  kavramı yok.
+
+**Kritik tasarım kararı (bilinçli olarak kapsamı düşük riskli tutan):** `LayoutEditor.tsx` (Faz
+3'ün serbest sayfa dizilimi editörü) ve `BookReader.tsx` (web önizleme) **dokunulmadan A4
+oranında kaldı**. Araştırma, Faz 3'ün `BlockLayout.{x,y,width,height}` verisinin MUTLAK pt
+koordinatları A4 tuval boyutuna göre sakladığını ortaya çıkardı - trim size'ı bu iki dosyaya da
+yaymak, önceden kaydedilmiş özel blok konumlarının yeni sayfa boyutuyla uyumsuz hale gelmesi
+riskini taşırdı (yeniden ölçekleme/veri taşıma mantığı gerektiren, çok daha büyük bir iş). Trim
+size proje oluşturulurken TEK SEFERLİK seçiliyor (ISBN gibi, sonradan değiştirme UI'ı yok) - bu
+sayede bir projenin ömrü boyunca tutarlı kalıyor.
+
+**Değişiklikler:**
+- `src/db/schema.ts`: yeni `trimSizeEnum` (`"a4" | "6x9" | "7x10"`) ve `projects.trimSize`
+  sütunu (varsayılan `"a4"`), migration `drizzle/0028_sharp_satana.sql` ile canlı Neon DB'ye
+  uygulandı.
+- `src/lib/pdf/page-geometry.ts`: mevcut A4 sabitleri (`PAGE_WIDTH_PT` vb.) AYNEN KALDI
+  (LayoutEditor.tsx/BookReader.tsx değişmeden bunları kullanmaya devam ediyor); yeni, ayrı bir
+  `TRIM_SIZES` kayıt defteri eklendi (sadece PDF render tüketiyor).
+- `src/lib/pdf/BookDocument.tsx`/`ContentsDocument.tsx`: opsiyonel `trimSize` prop'u eklendi
+  (varsayılan `"a4"`), 5 adet `size="A4"` literali `TRIM_SIZES`'tan türetilen dinamik
+  `{width, height}` ile değiştirildi.
+- `workflows/book-pipeline.tsx`: `assembleAndSaveBooks`'a yeni bir `trimSize` parametresi
+  eklendi, iki çağrı noktası (tam üretim + assemble-only rerun) `ctx.project.trimSize`'ı
+  geçiriyor - `isbn`'in zaten geçirildiği birebir aynı desen.
+- `src/app/api/projects/route.ts`/`batch/route.ts`: `trimSize` body'den okunup `TRIM_SIZES`'ın
+  anahtarlarına karşı doğrulanıyor (geçersiz/eksikse `"a4"`), `projects` insert'ine ekleniyor.
+- `src/app/projects/new/page.tsx`: "Baskı boyutu (trim size)" radio-buton grubu (A4/6×9/7×10),
+  seçilen trim size proje oluşturulduktan sonra değiştirilemeyeceği notuyla birlikte.
+
+**Doğrulama:** `npx tsc --noEmit`/`npx eslint .` temiz, `npx vitest run` 129/129 geçti, `npx next
+build` workflow step sayısının **39'da değişmeden kaldığını** doğruladı (`assembleAndSaveBooks`
+zaten var olan bir `"use step"` fonksiyonu, sadece bir parametre daha aldı). Chrome'da: bir
+projenin `trimSize`'ı `"6x9"` olarak enjekte edilip, mevcut "assemble-only rerun ile gerçek PDF
+üret" deseni kullanılarak gerçek üretilen `student_book.pdf`'in sayfa en-boy oranının A4'ün
+0.707'si yerine 6×9'un 0.667 oranına (ölçülen: ~0.664) karşılık geldiği görsel olarak
+doğrulandı. Test sonrası enjekte edilen veri ve rerun'un oluşturduğu ekstra `generationRuns`
+satırı temizlendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** `LayoutEditor.tsx`/`BookReader.tsx`'in trim size'a
+göre yeniden boyutlandırılması (en büyük, bilinçli karar - yukarıda açıklandı). Trim size'ın proje
+oluşturulduktan sonra değiştirilebilmesi. Bleed marjları, CMYK renk profili dönüşümü, sırt
+genişliği hesabı, üç-panelli "cover wrap" - ROADMAP'in Faz 4a'dan beri tutarlı biçimde "gerçek bir
+baskı vendörüyle somutlaştırılması gereken, çok daha büyük bir iş" olarak işaretlediği kalemler.
+`print-readiness.ts`'in sabit 1800×2700px önerisinin trim size'a göre uyarlanması.
+
+Bununla, kullanıcının seçtiği 3 "ek fikir"in ÜÇÜ DE tamamlandı (gerçek kelime-frekans/CEFR
+kalibrasyonu, aralıklı tekrar sayfaları, yapılandırılabilir trim size) - "İçerik derinliği"
+(Cambridge/Oxford parity) ana fazı ve tüm alt-dalları tamamlanmış oldu.

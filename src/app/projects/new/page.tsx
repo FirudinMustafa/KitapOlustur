@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
 import { isValidIsbn13 } from "@/lib/isbn";
+import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -56,6 +57,9 @@ export default function NewProjectPage() {
   // Aralıklı Tekrar (Spaced Repetition) Sayfaları: opt-in, varsayılan kapalı -
   // mevcut davranış herkes için aynen kalıyor.
   const [spacedRepetition, setSpacedRepetition] = useState(false);
+  // Yapılandırılabilir Trim Size: varsayılan "a4" - mevcut davranış aynen
+  // kalıyor, proje oluşturulduktan sonra değiştirilemez (ISBN gibi).
+  const [trimSize, setTrimSize] = useState<TrimSizeId>("a4");
   const [file, setFile] = useState<File | null>(null);
   // Faz "Toplu/seri üretim": when more than one file is selected, the form
   // switches into batch mode - a single shared "Proje adı" doesn't make
@@ -183,6 +187,7 @@ export default function NewProjectPage() {
             unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
             unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
             spacedRepetition,
+            trimSize,
           }),
         });
         if (!res.ok) {
@@ -236,6 +241,7 @@ export default function NewProjectPage() {
           unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
           unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
           spacedRepetition,
+          trimSize,
           blobUrl: blob.url,
           filename: file.name,
         }),
@@ -614,6 +620,32 @@ export default function NewProjectPage() {
             Her 4 ünitede bir, önceki ünitelerin kelime/dilbilgisini pekiştiren ek &quot;Tekrar&quot;
             sayfaları (öğrenci kitabında bir okuma, çalışma kitabında bir alıştırma) otomatik olarak
             eklenir.
+          </span>
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-sm font-medium text-foreground">Baskı boyutu (trim size)</legend>
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            {(Object.keys(TRIM_SIZES) as TrimSizeId[]).map((id) => (
+              <label key={id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="trimSize"
+                  checked={trimSize === id}
+                  onChange={() => setTrimSize(id)}
+                  className="accent-primary"
+                />
+                <span className="text-foreground">
+                  {TRIM_SIZES[id].label}
+                  {id === "a4" && <span className="text-xs text-muted-foreground"> (varsayılan)</span>}
+                </span>
+              </label>
+            ))}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            PDF&apos;in fiziksel sayfa boyutunu belirler - proje oluşturulduktan sonra değiştirilemez.
+            Sayfa Dizilimi Editörü ve web okuyucu önizlemesi hâlâ A4 oranında gösterilir; sadece dışa
+            aktarılan PDF seçilen boyutta üretilir.
           </span>
         </fieldset>
 
