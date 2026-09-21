@@ -103,6 +103,15 @@ function renderInteractiveHtml(block: ContentBlock, showAnswerKey: boolean): str
   return `<div class="interactive interactive-matching"><table>${rows}</table></div>`;
 }
 
+// Faz "Sayfa Dizilimi Editörü": `block.layout` (if present) is intentionally
+// ignored here - EPUB is reflowable by design (this file feeds BookEpub.ts
+// and Common Cartridge), and arbitrary absolute positioning only makes sense
+// against a fixed canvas (EPUB3 Fixed Layout), which would sacrifice the
+// reflow/accessibility that's the whole reason EPUB exists as a sibling to
+// PDF. Layout only affects the PDF renderer (src/lib/pdf/BookDocument.tsx)
+// and the web reader's preview (BookReader.tsx) - EPUB/Common Cartridge
+// always render every block in plain reading order, same as before this
+// field existed.
 export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): string {
   const items = block.items?.length
     ? `<ol class="items">${block.items.map((item) => `<li>${escapeXml(item)}</li>`).join("")}</ol>`

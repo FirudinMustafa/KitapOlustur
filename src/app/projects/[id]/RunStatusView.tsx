@@ -1171,7 +1171,17 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
 
       {books.length > 0 && (
         <div className="mt-6 flex flex-col gap-4">
-          <h2 className="text-lg font-medium text-foreground">Üretilen kitaplar</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium text-foreground">Üretilen kitaplar</h2>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full px-3 text-xs"
+              render={<Link href={`/projects/${projectId}/layout`} />}
+            >
+              Sayfa Düzenini Aç
+            </Button>
+          </div>
           {books.map((book) => {
             const audioTracks = audioTracksFor(book);
             return (

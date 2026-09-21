@@ -86,6 +86,12 @@ function renderInteractiveParagraphs(block: ContentBlock, showAnswerKey: boolean
   return [new Paragraph({ spacing: { before: 100 } }), table as unknown as Paragraph];
 }
 
+// Faz "Sayfa Dizilimi Editörü": `block.layout` (if present) is intentionally
+// ignored here - Word's document model is fundamentally sequential/flow-
+// based, and the `docx` library as used in this file has no wired-up
+// mechanism for absolute-positioned text frames. Layout only affects the PDF
+// renderer (src/lib/pdf/BookDocument.tsx) and the web reader's preview
+// (BookReader.tsx) - DOCX always renders every block in plain reading order.
 function renderBlockParagraphs(block: ContentBlock, showAnswerKey: boolean): (Paragraph | Table)[] {
   const out: (Paragraph | Table)[] = [
     new Paragraph({ text: block.heading, heading: HeadingLevel.HEADING_3, spacing: { before: 200 } }),

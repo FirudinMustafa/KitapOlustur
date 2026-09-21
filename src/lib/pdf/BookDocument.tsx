@@ -4,6 +4,7 @@ import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument"
 import { seededShuffle } from "@/lib/content-html";
 import { encodeEan13 } from "@/lib/barcode/ean13";
 import { formatIsbn13 } from "@/lib/isbn";
+import { PAGE_PADDING } from "./page-geometry";
 
 // ISBN/baskıya hazırlık (2026-09-20, ROADMAP.md): renders a real, scannable
 // EAN-13 barcode on the imprint page when the project has a validated ISBN
@@ -114,7 +115,15 @@ function BlockIcon({ kind, color }: { kind: ContentBlockKind; color: string }) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 44, paddingBottom: 56, fontSize: 10.5, fontFamily: "Times-Roman", color: "#1f2937" },
+  page: {
+    paddingTop: PAGE_PADDING.top,
+    paddingRight: PAGE_PADDING.right,
+    paddingBottom: PAGE_PADDING.bottom,
+    paddingLeft: PAGE_PADDING.left,
+    fontSize: 10.5,
+    fontFamily: "Times-Roman",
+    color: "#1f2937",
+  },
 
   // Cover
   coverPage: { padding: 0 },
@@ -293,8 +302,32 @@ function InteractiveExerciseView({ block, showAnswerKey }: { block: ContentBlock
 
 function BlockCard({ block, showAnswerKey, palette }: { block: ContentBlock; showAnswerKey: boolean; palette: Palette }) {
   const colors = BLOCK_COLORS[block.kind];
+  // Faz "Sayfa Dizilimi Editörü": absent for every block generated before
+  // this existed and every block never manually repositioned - renders in
+  // normal document flow exactly as before. Present only when the user
+  // dragged this block in LayoutEditor.tsx; coordinates are PDF points
+  // (src/lib/pdf/page-geometry.ts) relative to the FULL page (0,0 = the A4
+  // sheet's own top-left corner), not the padding-inset content box -
+  // confirmed by styles.footer below, an existing absolute-positioned
+  // element that manually re-adds `left: 44`/`right: 44` to land on the
+  // page's own margin, which would double-offset if react-pdf resolved
+  // absolute children against the padding box instead of the page's outer
+  // edge. LayoutEditor.tsx's canvas and BookReader.tsx's preview both use
+  // this same full-page coordinate space. Absolute positioning here opts
+  // this block OUT of react-pdf's automatic page-break reflow (`wrap`) -
+  // overflowing content clips/overlaps rather than flowing to a new page, a
+  // known, accepted v1 limitation.
+  const layoutStyle = block.layout
+    ? {
+        position: "absolute" as const,
+        left: block.layout.x,
+        top: block.layout.y,
+        width: block.layout.width,
+        height: block.layout.height,
+      }
+    : {};
   return (
-    <View style={[styles.sectionCard, { borderLeftColor: palette.primary }]}>
+    <View style={[styles.sectionCard, { borderLeftColor: palette.primary }, layoutStyle]}>
       <Text style={styles.sectionHeading}>{block.heading}</Text>
       <Text style={styles.body}>{block.body}</Text>
       {block.items?.length || block.interactive ? (
@@ -515,14 +548,32 @@ export function BookDocument({
 
             {pageImages?.[page.sourcePageNumber] && (
               <>
-                <View style={styles.pageIllustrationWrap}>
+                <View
+                  style={[
+                    styles.pageIllustrationWrap,
+                    // Faz "Sayfa Dizilimi Editörü": same opt-in absolute
+                    // positioning as BlockCard's `layout` field, see there
+                    // for the pagination-reflow caveat.
+                    page.imageLayout
+                      ? {
+                          position: "absolute" as const,
+                          left: page.imageLayout.x,
+                          top: page.imageLayout.y,
+                          width: page.imageLayout.width,
+                          height: page.imageLayout.height,
+                        }
+                      : {},
+                  ]}
+                >
                   {/* eslint-disable-next-line jsx-a11y/alt-text -- this is @react-pdf/renderer's
                       Image (print-layout component), not an HTML <img> - it has no `alt` prop
                       to give (see the pageIllustrationCaption style comment above for the
                       caption text that stands in for it). */}
                   <Image src={pageImages[page.sourcePageNumber]} style={styles.pageIllustration} />
                 </View>
-                {page.imagePrompt && <Text style={styles.pageIllustrationCaption}>{page.imagePrompt}</Text>}
+                {page.imagePrompt && !page.imageLayout && (
+                  <Text style={styles.pageIllustrationCaption}>{page.imagePrompt}</Text>
+                )}
               </>
             )}
 

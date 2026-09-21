@@ -153,6 +153,26 @@ export const interactiveExerciseSchema = z.discriminatedUnion("type", [
 ]);
 export type InteractiveExercise = z.infer<typeof interactiveExerciseSchema>;
 
+// Faz "Sayfa Dizilimi Editörü": not written by the writer model - only ever
+// set by the LayoutEditor's save flow (src/lib/layout-merge.ts). Coordinates
+// are in PDF points (src/lib/pdf/page-geometry.ts is the single source of
+// truth both BookDocument.tsx's react-pdf render and the editor's canvas
+// derive from), so no px<->pt conversion drift is possible between what the
+// user positioned and what actually renders. Absent (the common case, for
+// every block generated before this existed and every block never manually
+// positioned) means "render in normal document flow, exactly as before" -
+// every renderer (BookDocument.tsx, BookReader.tsx) falls back to that flow
+// when this is unset. EPUB/DOCX/Common Cartridge intentionally ignore this
+// field entirely (see content-html.ts/BookDocx.ts) - reflowable EPUB and
+// Word's sequential model can't host arbitrary absolute placement.
+export const blockLayoutSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
+export type BlockLayout = z.infer<typeof blockLayoutSchema>;
+
 export const contentBlockSchema = z.object({
   kind: contentBlockKindEnum,
   heading: z.string(),
@@ -168,6 +188,7 @@ export const contentBlockSchema = z.object({
     .describe(
       "For a practice/assessment block, an optional structured exercise (multiple_choice, fill_blank, or matching) the interactive web reader can render as a real, auto-checkable activity instead of static text. Leave unset for blocks that don't fit one of these three shapes - items/answerKey alone are fine.",
     ),
+  layout: blockLayoutSchema.optional(),
 });
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 
@@ -227,6 +248,12 @@ export const generatedPageSchema = z.object({
     .describe(
       "If this page should carry an illustration, a prompt for an image generator - inspired by the source page's imagery but reimagined as new, original artwork, not a copy",
     ),
+  // Faz "Sayfa Dizilimi Editörü": same rationale as contentBlockSchema's
+  // `layout` - only set by the layout editor's save flow, positions the
+  // page's own illustration (looked up separately via pageImages, keyed by
+  // sourcePageNumber) instead of its default "full-width, above all blocks"
+  // placement.
+  imageLayout: blockLayoutSchema.optional(),
 });
 export type GeneratedPage = z.infer<typeof generatedPageSchema>;
 

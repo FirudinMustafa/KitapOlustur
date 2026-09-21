@@ -30,6 +30,7 @@
 | Hikaye Stüdyosu — Gelişmiş Görsel Üretim Paneli (model/çözünürlük/adet seçimi, referans kütüphanesi+etiketleme+@-mention, brainstorm, magic prompt) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21), gerçek bir bug bulunup düzeltildi | Aşağıda "Gelişmiş Görsel Üretim Paneli — Tamamlanma Notu"; Nano Banana Pro/2 bilinçli olarak kapsam dışı |
 | Arayüz yenileme (ChatGPT/Claude tarzı sidebar + tüm sayfaların yeni tema token'larına geçirilmesi) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Arayüz Yenileme" notları (Faz 1 + Faz 2) |
 | Onay Zinciri Görünürlüğü ("Görünür AI Persona Zinciri" - tek kullanıcı, isimlendirilmiş editöryel persona rozetleri) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Stratejik Brainstorming + Onay Zinciri Görünürlüğü — Tamamlanma Notu"; gerçek çoklu-kullanıcı/RBAC bilinçli olarak kapsam dışı, sıradaki fazlar: sayfa dizilimi editörü + içerik derinliği/Cambridge-parity |
+| Sayfa Dizilimi Editörü (tam serbest kompozisyon - blok sürükle/boyutlandır, PDF + web önizleme) | ✅ Tamamlandı, gerçek uçtan uca doğrulandı (2026-09-21) | Aşağıda "Sayfa Dizilimi Editörü — Tamamlanma Notu"; EPUB/DOCX bilinçli olarak kapsam dışı |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1040,3 +1041,93 @@ Tek gerçek insan aktör (proje sahibi) aynı kalıyor - zaten arka planda çal�
 - **UI, gerçek bir projeye (`Firudin WorkBook`) enjekte edilen sahte `extractedOutlines` + `unitReviews` (bazıları `passed:false`) + `pendingContentApproval`/`pendingImageReview` verisiyle Chrome'da canlı doğrulandı**: içerik onayı ekranında her iki ünite için de doğru persona rozetleri (✓/⚠, not sayısı) render edildi; `previousVersions`'da olan ünite için "geri bildirimle yeniden kontrol edildi" notu ve diff toggle'ı doğru çalıştı; görsel inceleme ekranında "Sanat Yönetmeni" etiketi; final onay ekranında "Yayın Müdürü" etiketi; pipeline rail'inde her aşamanın altında doğru persona alt-etiketleri. Konsol hatasız (bir Chrome-uzantısı kaynaklı, uygulamayla ilgisiz "message channel closed" hatası hariç). Test sonrası run `status='failed'`'a geri döndürüldü, sahte `unitReviews`/`extractedOutlines` satırları silindi.
 
 **Yapılmadı / bilinçli olarak kapsam dışı (kullanıcıyla netleştirildi):** Gerçek çoklu-kullanıcı/RBAC (Clerk Organizations ile gerçek çevirmen/editör/tasarımcı hesapları) - kullanıcı bunun yerine görünür-tek-kullanıcılı simülasyonu tercih etti, gerçek roller ayrı, daha büyük bir faz. Sayfa dizilimi editörü (blok sıralama VEYA tam serbest kompozisyon) ve içerik derinliği/Cambridge-parity işleri (CEFR zorunluluğu, kapak oranı düzeltmesi, sayfa şablonları, Teacher's Book/Test Booklet genişletme) - kullanıcı bunları da istedi ama sırayla, ayrı planlama turları olarak; bu faz sadece onay zinciri görünürlüğünü kapsadı.
+
+## Sayfa Dizilimi Editörü — Tamamlanma Notu (2026-09-21)
+
+Stratejik brainstorming oturumunun üçüncü fazı: kullanıcı, bir kitap sayfasındaki blok/görsel
+dizilimini ("1,2,3,4,5 numaralı görevler", "görsel şurada olacak") serbestçe sürükleyip
+değiştirebileceği bir editör istedi - kendisi de bunun "hayal ürünü" olup olmadığını sormuştu.
+Üç paralel Explore ajanıyla yapılan araştırma net bir tablo çizdi: **PDF için gerçekten
+yapılabilir** (react-pdf zaten mutlak konumlandırmayı destekliyor - `styles.footer` gibi
+mevcut örnekler zaten bunu kanıtlıyor), **EPUB için temelde uyumsuz** (reflowable format,
+sabit X/Y sadece Fixed Layout modunda anlamlı - erişilebilirlik/reflow avantajından ödün
+verir), **DOCX için pratik olarak imkansız** (Word'ün sıralı akış modeli). Kullanıcıyla üç
+kararda hizalanıldı: (1) editör TAMAMLANMIŞ bir kitabı sonradan açıp düzenler (üretim akışına
+değil), (2) sürükleme `framer-motion` ile yapılır, (3) kapsam sadece PDF + uygulama içi
+önizleme - EPUB/DOCX/Common Cartridge normal okuma sırasıyla üretilmeye devam eder.
+
+### Veri modeli — migration YOK
+`generatedBooks.content` zaten `jsonb` - `src/lib/ai/schemas.ts`'e `contentBlockSchema.layout`
+ve `generatedPageSchema.imageLayout` (her ikisi de opsiyonel `{x,y,width,height}`, PDF point
+biriminde) eklendi, hiçbir DB migration'ı gerekmedi. Koordinatlar sayfa'nın TAM (padding'siz
+değil) sol-üst köşesine göre - bu, mevcut `styles.footer`'ın `left:44`/`right:44` ile sayfa
+kenar boşluğunu MANUEL olarak yeniden eklemesinden çıkarılan bir kanıt (aksi halde çift ofset
+olurdu). z-index yok - react-pdf'te stacking sırası salt array sırasına dayalı, "öne getir/
+arkaya gönder" blok dizisindeki konumu değiştiriyor.
+
+### Değişiklikler
+- `src/lib/pdf/page-geometry.ts` (yeni): `BookDocument.tsx`'in önceden hardcoded `padding: 44,
+  paddingBottom: 56` değerlerinin taşındığı tek doğruluk kaynağı - hem PDF render'ı hem editör
+  canvas'ı hem web önizlemesi buradan türüyor.
+- `src/lib/layout-merge.ts` (yeni) + `layout-merge.test.ts` (6 test): `mergePageLayout` - saf,
+  test edilmiş fonksiyon, belirtilen ünite/sayfa-dizisi/sayfa-indeksindeki blokları değiştirip
+  yeni bir `units` dizisi döndürür.
+- `src/app/api/projects/[id]/books/layout/route.ts` (yeni): GET (en son `done` run'ın
+  içeriğini döner) + PATCH (**kodun ilk `db.update(generatedBooks)` çağrısı** - bir run'ın TÜM
+  `generatedBooks` satırları aynı `units` kopyasını taşıdığı için hepsi birlikte güncelleniyor,
+  aksi halde birbirinden sapmış hale gelirlerdi).
+- `src/lib/pdf/BookDocument.tsx`: `block.layout`/`page.imageLayout` varsa `position:"absolute"`
+  ile sarılıyor, yoksa (mevcut tüm içerik) normal akış aynen devam ediyor.
+- `src/app/projects/[id]/read/[bookType]/BookReader.tsx`: aynı mantığın web önizlemesi -
+  sabit A4 boyutlu bir canvas'ta konumlandırılmış bloklar, konumsuz bloklar altında normal akış.
+- `src/app/projects/[id]/layout/page.tsx` + `LayoutEditor.tsx` (yeni): `AdvancedImagePanel.tsx`
+  deseniyle tutarlı bir editör - ünite/kitap tipi/sayfa seçici, `framer-motion` `drag` ile
+  sürüklenebilir/köşe tutamacıyla yeniden boyutlandırılabilir bloklar (`key`'e x/y/width/height
+  dahil edilerek her commit sonrası motion.div yeniden mount ediliyor - framer'ın iç drag
+  transform'unu sıfırlayıp state ile görsel konum arasında sapma birikmesini önlüyor), "Kaydet"
+  ve mevcut `rerun` route'unu (`{bookTypes:[...]}`, assemble-only mod, sıfır AI maliyeti)
+  yeniden kullanan "Yeniden oluştur (PDF)" butonu.
+- `content-html.ts`/`BookDocx.ts`'e `layout` alanının kasıtlı olarak yok sayıldığını açıklayan
+  birer yorum eklendi.
+- `RunStatusView.tsx`: "Üretilen kitaplar" başlığının yanına "Sayfa Düzenini Aç" linki.
+- `framer-motion` yeni bağımlılık olarak eklendi (projede önceden hiçbir sürükle-bırak
+  kütüphanesi yoktu).
+
+### Doğrulama
+- `tsc`/`eslint`/`vitest` (120 test, 114→120)/`next build` (35 workflow step, değişmedi -
+  `workflows/book-pipeline.tsx`'e hiç dokunulmadı) temiz.
+- **Chrome'da gerçek, uçtan uca doğrulandı** (bu oturumdaki AI-dokunan özelliklerin çoğundan
+  daha ileri gidildi): `Firudin WorkBook` projesine gerçekçi bir `GeneratedUnit[]` + tam
+  `BookOutline` şekilli sahte `extractedOutlines` + `status='done'` bir run enjekte edildi.
+  Editör açıldı, blokların otomatik varsayılan diziliminin doğru render edildiği görüldü,
+  "öne getir/arkaya gönder" ile blok sırası değiştirildi, "Kaydet" ile PATCH route'u çağrılıp
+  DB'de **her iki `generatedBooks` satırının** (student_book + workbook) aynı şekilde
+  güncellendiği doğrulandı. "Yeniden oluştur (PDF)" butonuna basılınca gerçek `rerun` route'u
+  tetiklendi, gerçek bir Vercel Workflow çalıştı, **gerçek `assembleAndSaveBooks` + react-pdf
+  render'ı** (yeni `layout` kodunu çalıştırarak) **hatasız tamamlandı**, 4 kitap tipi için
+  gerçek PDF'ler Vercel Blob'a yüklendi (bu oturumda AI Gateway billing bloke olsa da,
+  "assemble-only" modu sıfır AI çağrısı yaptığı için bu engele hiç takılmadı - Blob storage'ın
+  kendisinin bloke olmadığı da bu vesileyle doğrulandı). Üretilen gerçek PDF Chrome'da açılıp
+  kapak sayfasının (başlık, "A2" seviye etiketi, İngilizce alt başlık) doğru render edildiği
+  görüldü.
+- **Gerçek bir tarayıcı-otomasyonu sınırlaması bulundu (kod hatası değil):** framer-motion'ın
+  `drag` özelliği, CDP üzerinden simüle edilen sentetik `PointerEvent`/mouse-drag dizilerini
+  tanımıyor (muhtemelen gerçek pointer capture gerektiriyor) - bu yüzden asıl sürükleme
+  hareketinin kendisi bu oturumda görsel olarak doğrulanamadı. Bunun yerine AYNI state-güncelleme
+  fonksiyonunu (`commitBlocks`) çağıran "öne getir/arkaya gönder" düğmeleri (düz `onClick`)
+  üzerinden dolaylı olarak doğrulandı - bu, sürükleme sırasında kullanılacak mantığın doğru
+  çalıştığına dair makul bir güven sağlıyor, ama gerçek drag jestinin kendisi manuel/gerçek bir
+  tarayıcıda test edilmeli.
+- Test sonrası: enjekte edilen ikinci (gerçek PDF'li) run tamamen silindi, orijinal run
+  `status='failed'`'a geri döndürüldü, sahte `unitReviews`/`extractedOutlines` temizlendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** EPUB/DOCX/Common Cartridge `layout` alanını hiç
+okumuyor - her zaman normal okuma sırasıyla üretiliyorlar (erişilebilirlik/reflow ödünü
+gerekçesiyle). Otomatik taşma (overflow) tespiti yok - küçük bir kutu içeriğe sığmazsa gerçek
+PDF'te de görsel olarak kırpılır, editör bunu önceden uyarmıyor. Çoklu-seçim, hizalama
+kılavuzları, ızgaraya yapıştırma yok - tek seferde bir blok. Kitap tipleri arası düzen
+senkronizasyonu yok (zaten gerekmiyor - her kitap tipinin kendi ayrı sayfaları var). Sürükleme
+jestinin kendisi bu oturumda gerçek bir tarayıcıda (sadece CDP simülasyonuyla değil) manuel
+olarak doğrulanmadı - kullanıcının ilk kullanımda kontrol etmesi önerilir. Sıradaki, kullanıcının
+belirlediği son büyük alan: içerik derinliği/Cambridge-Oxford parity (CEFR zorunluluğu, kapak
+oranı düzeltmesi, sayfa şablonları, Teacher's Book/Test Booklet genişletme).

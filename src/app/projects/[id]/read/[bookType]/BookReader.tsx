@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { GeneratedUnit, GeneratedPage, ContentBlock, WordTimestamp, InteractiveExercise } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
+import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
 
 // Faz H2 Faz 3: deterministic shuffle (not Math.random) so a matching
 // exercise's right column doesn't render in the same order as the correct
@@ -304,6 +305,67 @@ function GlossarySection({ glossary }: { glossary: GeneratedPage["glossary"] }) 
   );
 }
 
+// Faz "Sayfa Dizilimi Editörü": if the user positioned anything on this page
+// via LayoutEditor.tsx, render it on a fixed-size A4-shaped canvas (same
+// point values as BookDocument.tsx's react-pdf render, used directly as CSS
+// px - no scale conversion, so what's positioned here matches the PDF
+// output 1:1) so the reader sees the same layout the printed book has.
+// Blocks without a `layout` (the common case) keep rendering in normal flow
+// underneath, exactly as before - this is additive, not a replacement.
+function PositionedPage({ page, showAnswerKey, imageUrl }: { page: GeneratedPage; showAnswerKey: boolean; imageUrl?: string }) {
+  const positionedBlocks = page.blocks.filter((b) => b.layout);
+  const flowBlocks = page.blocks.filter((b) => !b.layout);
+  return (
+    <div className="mb-6">
+      <div
+        className="relative mx-auto overflow-hidden rounded-lg border border-border bg-card"
+        style={{ width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT }}
+      >
+        {imageUrl && page.imageLayout && (
+          <div
+            className="absolute overflow-hidden rounded-md"
+            style={{
+              left: page.imageLayout.x,
+              top: page.imageLayout.y,
+              width: page.imageLayout.width,
+              height: page.imageLayout.height,
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image */}
+            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+          </div>
+        )}
+        {imageUrl && !page.imageLayout && (
+          <div
+            className="absolute overflow-hidden rounded-md"
+            style={{ left: PAGE_PADDING.left, top: PAGE_PADDING.top, right: PAGE_PADDING.right, height: 170 }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image */}
+            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+          </div>
+        )}
+        {positionedBlocks.map((block, i) => (
+          <div
+            key={i}
+            className="absolute overflow-hidden rounded-lg border-l-4 border-primary bg-card p-3 text-card-foreground"
+            style={{ left: block.layout!.x, top: block.layout!.y, width: block.layout!.width, height: block.layout!.height }}
+          >
+            <BlockView block={block} showAnswerKey={showAnswerKey} />
+          </div>
+        ))}
+      </div>
+      {!!flowBlocks.length && (
+        <div className="mt-4">
+          {flowBlocks.map((block, i) => (
+            <BlockView key={i} block={block} showAnswerKey={showAnswerKey} />
+          ))}
+        </div>
+      )}
+      <GlossarySection glossary={page.glossary} />
+    </div>
+  );
+}
+
 function PageView({
   page,
   showAnswerKey,
@@ -313,6 +375,10 @@ function PageView({
   showAnswerKey: boolean;
   imageUrl?: string;
 }) {
+  const hasLayout = page.blocks.some((b) => b.layout) || !!page.imageLayout;
+  if (hasLayout) {
+    return <PositionedPage page={page} showAnswerKey={showAnswerKey} imageUrl={imageUrl} />;
+  }
   return (
     <div className="mb-6">
       {imageUrl && (
