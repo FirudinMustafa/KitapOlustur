@@ -38,6 +38,7 @@
 | Gerçek Kelime-Frekans/CEFR Kalibrasyonu (İngilizce, `reviewReadingLevel`'a deterministik ek kanıt) | ✅ Tamamlandı, birim testleriyle doğrulandı (2026-09-21) | Aşağıda "Kelime-Frekans/CEFR Kalibrasyonu — Tamamlanma Notu" |
 | Aralıklı Tekrar (Spaced Repetition) Sayfaları (opt-in, her 4 ünitede bir "Tekrar" recap/practice sayfaları) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Aralıklı Tekrar Sayfaları — Tamamlanma Notu" |
 | Yapılandırılabilir Trim Size (Baskı Boyutu) (A4/6×9/7×10, proje oluştururken tek seferlik seçim) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Yapılandırılabilir Trim Size — Tamamlanma Notu"; kullanıcının 3 "ek fikir"inin sonuncusu |
+| Dizilim (sürükle-bırak ünite/sayfa sıralama + üniteler-arası sayfa taşıma + 3D sayfa-çevirme önizlemesi) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Dizilim — Tamamlanma Notu" |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1579,3 +1580,73 @@ baskı vendörüyle somutlaştırılması gereken, çok daha büyük bir iş" ol
 Bununla, kullanıcının seçtiği 3 "ek fikir"in ÜÇÜ DE tamamlandı (gerçek kelime-frekans/CEFR
 kalibrasyonu, aralıklı tekrar sayfaları, yapılandırılabilir trim size) - "İçerik derinliği"
 (Cambridge/Oxford parity) ana fazı ve tüm alt-dalları tamamlanmış oldu.
+
+## Dizilim — Tamamlanma Notu (2026-09-21)
+
+**Context:** Kullanıcı, "Sayfa Dizilimi Editörü"nden (Faz 3 - bir sayfanın İÇİNDEKİ blokları
+konumlandırır) tamamen farklı yeni bir istek yaptı: üniteleri ve sayfaları birbirine göre
+sürükle-bırakla SIRALAYABİLECEĞİ, gerçek bir dijital kitap gibi sayfa çevirerek önizleyebileceği
+yeni bir "Dizilim" paneli. Kullanıcı kararları: (1) üniteler-arası sayfa taşıma da dahil olsun,
+(2) üniteler yeniden sıralandığında rozet numaraları otomatik yeniden numaralandırılsın, (3) sayfa
+çevirme için gerçekçi bir 3D kütüphane kullanılsın (yeni bağımlılık kabul edilerek).
+
+**Araştırmada bulunan kritik risk ve çözümü:** `GeneratedUnit[]` dizisinin sırası tek belirleyici
+(hiçbir render yolu `unitNumber`'a göre sıralamıyor - Faz 4d zaten sıra-dışı sentinel numaralı
+üniteler ekliyor, dizi sırası/numara bağımsızlığının canlı kanıtı). Ancak `reviewBookCoherence` ve
+TOC üretimi (`buildContentsUnits`) ünitenin başlık/hedef bilgisini `outline.units.find(ou =>
+ou.number === u.unitNumber)` ile arıyor - üniteler yeniden numaralandırılınca `outline.units`'in
+KENDİSİ de aynı sırayla güncellenmezse bu arama yanlış ünitenin bilgisini bulurdu. **Çözüm:**
+kaydetme işlemi hem `generatedBooks.content`'i hem aynı run'ın `extractedOutlines.outline.units`'ini
+senkron günceller - bu sayede TOC hiçbir ek kod değişikliği gerekmeden otomatik doğru sırada
+üretiliyor (canlı doğrulamada teyit edildi, aşağıya bakınız).
+
+**Değişiklikler:**
+- Yeni bağımlılıklar: `react-pageflip` (3D sayfa-çevirme önizlemesi), `@dnd-kit/core` +
+  `@dnd-kit/sortable` + `@dnd-kit/utilities` (framer-motion'ın `Reorder`'ı tek-konteynerle sınırlı
+  olduğu için üniteler-arası sayfa taşıma - çoklu-konteyner sıralama - amaca uygun bu kütüphaneyle
+  yapıldı).
+- `src/lib/arrangement-merge.ts` (yeni, `layout-merge.ts` deseniyle saf/test edilebilir): 
+  `reorderUnits`, `movePage` (aynı ünite içi VEYA üniteler arası, taşınan sayfanın `unitNumber`
+  alanını hedefe göre güncelliyor), `renumberRealUnits` (sadece outline'da karşılığı olan gerçek
+  üniteleri 1..N yeniden numaralandırıyor, Faz 4d'nin sentinel - `>=90000` - sentetik ünitelerine
+  (Ara Sınav/Final) DOKUNMUYOR, `outlineUnits`'i senkron tutuyor).
+- `src/app/api/projects/[id]/books/arrangement/route.ts` (yeni): `books/layout/route.ts`'in
+  GET/PATCH desenini izliyor - PATCH hem `generatedBooks` (run'ın tüm satırları) hem
+  `extractedOutlines.outline.units`'i günceller.
+- `src/app/projects/[id]/dizilim/page.tsx` + `ArrangementEditor.tsx` (yeni): sürüklenebilir ünite
+  listesi + üniteler arasında gruplu, sürüklenebilir sayfa panosu (`@dnd-kit`) + sağda
+  `react-pageflip`'in `HTMLFlipBook`'uyla gerçek zamanlı, henüz kaydedilmemiş sırayı gösteren
+  dijital önizleme (hafif kart temsilleri - piksel-birebir PDF kopyası değil). "Kaydet" +
+  "Yeniden oluştur (PDF)" (mevcut assemble-only rerun) düğmeleri.
+- `src/app/projects/[id]/RunStatusView.tsx`: mevcut "Sayfa Düzenini Aç" düğmesinin yanına yeni
+  "Dizilim" düğmesi eklendi.
+- **Gerçek bir hata bulunup düzeltildi:** `react-pageflip`'in dayandığı `page-flip` paketi kendi
+  CSS'ini otomatik yüklemiyor VE o CSS dosyasının kendisinde bir yazım hatası var
+  (`.sft__wrapper` olması gereken yerde `.stf__wrapper` yazılı) - bu olmadan her sayfa 0×0
+  boyutunda kalıp önizleme tamamen boş görünüyordu. Düzeltilmiş bir yerel `flipbook.css`
+  eklenerek çözüldü.
+
+**Doğrulama:** `npx tsc --noEmit`/`npx eslint .` temiz, `npx vitest run` 144/144 geçti (129 mevcut
++ 15 yeni - `reorderUnits`/`movePage`/`renumberRealUnits` için), `npx next build` workflow step
+sayısının 39'da DEĞİŞMEDEN kaldığını doğruladı (bu özellik `bookPipelineWorkflow`'un tamamen
+dışında). Chrome'da: sayfa açılıp CSS düzeltmesinden sonra flip-book'un gerçekten sayfa çevirdiği
+görsel olarak doğrulandı. **Bilinen bir CDP kısıtı** (framer-motion drag için bu oturumda daha önce
+de gözlemlenen aynı sınır) nedeniyle gerçek sürükle-bırak hareketi tarayıcı otomasyonuyla
+tetiklenemedi (`left_click_drag` ve sentetik `PointerEvent` dizileri dnd-kit'in sensörünü tetiklemedi) -
+bunun yerine üç aşamalı bir doğrulama yapıldı: (1) sürükleme mantığının kendisi 15 birim testiyle
+kapsamlı doğrulandı, (2) `PATCH .../books/arrangement` uç noktası gerçek bir yeniden sıralanmış+
+taşınmış `units` dizisiyle doğrudan çağrılıp sunucunun doğru yeniden numaralandırdığı ve
+`outline.units`'i senkronladığı DB'den teyit edildi, (3) ardından mevcut "assemble-only rerun"
+tetiklenip gerçek üretilen PDF'in Contents/TOC sayfasının YENİ sırayı ve YENİ numaraları
+(1→"Unit 2: Daily Life", 2→"Unit 1: Getting Started", 3→"Unit 3: Food and Drink") doğru
+key-terms/objectives ile birlikte gösterdiği görsel olarak doğrulandı. Test sonrası enjekte
+edilen veri ve rerun'un oluşturduğu ekstra `generationRuns`/`extractedOutlines` satırları
+temizlendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Kitap tipleri arası ünite/sayfa taşıma (sadece aynı
+`pageArrayField` içinde taşıma destekleniyor). Ünite sırasının kitap tipine göre bağımsız olması -
+veri modeli gereği `units` dizisi tüm kitap tiplerinde ortak, bu bilinçli bir kısıt. `LayoutEditor.
+tsx`/`BookReader.tsx`'in flip-book/sıralama önizlemesiyle güncellenmesi. Sıralamanın insan
+içerik-onay döngüsüyle etkileşimi - "Dizilim" sadece tamamlanmış (`status: "done"`) bir run
+üzerinde çalışıyor. Eski `unitReviews`/`bookCoherenceReviews` gibi geçmiş QA kayıtlarının yeniden
+numaralandırılması - bunlar sadece geçmiş üretim sürecinin arşivi.

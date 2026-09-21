@@ -1,0 +1,141 @@
+import { describe, expect, it } from "vitest";
+import { isSyntheticUnit, movePage, reorderUnits, renumberRealUnits } from "./arrangement-merge";
+import type { GeneratedUnit, UnitOutline } from "./ai/schemas";
+
+function makeUnit(unitNumber: number, pageCount = 2): GeneratedUnit {
+  return {
+    unitNumber,
+    title: `Unit ${unitNumber}`,
+    studentBookPages: Array.from({ length: pageCount }, (_, i) => ({
+      sourcePageNumber: unitNumber * 100 + i,
+      pageType: "content" as const,
+      unitNumber,
+      blocks: [{ kind: "explanation" as const, heading: `Page ${i}`, body: `Body ${i}` }],
+    })),
+    workbookPages: [],
+    glossary: [],
+  };
+}
+
+function makeOutlineUnit(number: number): UnitOutline {
+  return {
+    number,
+    title: `Unit ${number}`,
+    level: "A2",
+    sourcePageRange: { start: number, end: number },
+    learningObjectives: [`Objective ${number}`],
+    keyTerms: [`term${number}`],
+  };
+}
+
+describe("isSyntheticUnit", () => {
+  it("flags sentinel unit numbers as synthetic", () => {
+    expect(isSyntheticUnit(makeUnit(90001))).toBe(true);
+    expect(isSyntheticUnit(makeUnit(90002))).toBe(true);
+  });
+
+  it("does not flag real unit numbers", () => {
+    expect(isSyntheticUnit(makeUnit(1))).toBe(false);
+    expect(isSyntheticUnit(makeUnit(12))).toBe(false);
+  });
+});
+
+describe("reorderUnits", () => {
+  it("moves a unit to a new position", () => {
+    const units = [makeUnit(1), makeUnit(2), makeUnit(3)];
+    const result = reorderUnits(units, 2, 0);
+    expect(result.map((u) => u.unitNumber)).toEqual([3, 1, 2]);
+  });
+
+  it("does not mutate the input array", () => {
+    const units = [makeUnit(1), makeUnit(2)];
+    reorderUnits(units, 0, 1);
+    expect(units.map((u) => u.unitNumber)).toEqual([1, 2]);
+  });
+
+  it("throws for an out-of-range index", () => {
+    const units = [makeUnit(1)];
+    expect(() => reorderUnits(units, 0, 5)).toThrow(/Geçersiz ünite indeksi/);
+  });
+});
+
+describe("movePage", () => {
+  it("reorders pages within the same unit", () => {
+    const units = [makeUnit(1, 3)];
+    const result = movePage(units, 1, "studentBookPages", 0, 1, 2);
+    expect(result[0].studentBookPages.map((p) => p.blocks[0].heading)).toEqual(["Page 1", "Page 2", "Page 0"]);
+  });
+
+  it("moves a page to a different unit and updates its unitNumber", () => {
+    const units = [makeUnit(1, 2), makeUnit(2, 1)];
+    const result = movePage(units, 1, "studentBookPages", 0, 2, 1);
+    const [unit1, unit2] = result;
+    expect(unit1.studentBookPages).toHaveLength(1);
+    expect(unit2.studentBookPages).toHaveLength(2);
+    const movedPage = unit2.studentBookPages[1];
+    expect(movedPage.blocks[0].heading).toBe("Page 0");
+    expect(movedPage.unitNumber).toBe(2);
+  });
+
+  it("leaves the source page's sourcePageNumber untouched when moved (safe as a lookup key)", () => {
+    const units = [makeUnit(1, 1), makeUnit(2, 0)];
+    const originalSourcePageNumber = units[0].studentBookPages[0].sourcePageNumber;
+    const result = movePage(units, 1, "studentBookPages", 0, 2, 0);
+    expect(result[1].studentBookPages[0].sourcePageNumber).toBe(originalSourcePageNumber);
+  });
+
+  it("throws for a nonexistent source or destination unit", () => {
+    const units = [makeUnit(1, 1)];
+    expect(() => movePage(units, 99, "studentBookPages", 0, 1, 0)).toThrow(/Ünite 99/);
+    expect(() => movePage(units, 1, "studentBookPages", 0, 99, 0)).toThrow(/Ünite 99/);
+  });
+
+  it("throws for an out-of-range page index", () => {
+    const units = [makeUnit(1, 1)];
+    expect(() => movePage(units, 1, "studentBookPages", 5, 1, 0)).toThrow(/sayfası bulunamadı/);
+  });
+});
+
+describe("renumberRealUnits", () => {
+  it("renumbers real units 1..N following the array's current order", () => {
+    const units = [makeUnit(3), makeUnit(1), makeUnit(2)];
+    const outlineUnits = [makeOutlineUnit(1), makeOutlineUnit(2), makeOutlineUnit(3)];
+    const { units: newUnits } = renumberRealUnits(units, outlineUnits);
+    expect(newUnits.map((u) => u.unitNumber)).toEqual([1, 2, 3]);
+    // the unit that was originally "3" (first in array) keeps its own title
+    expect(newUnits[0].title).toBe("Unit 3");
+  });
+
+  it("keeps synthetic units' unitNumber untouched and excludes them from the count", () => {
+    const units = [makeUnit(2), makeUnit(90001), makeUnit(1)];
+    const outlineUnits = [makeOutlineUnit(1), makeOutlineUnit(2)];
+    const { units: newUnits } = renumberRealUnits(units, outlineUnits);
+    expect(newUnits.map((u) => u.unitNumber)).toEqual([1, 90001, 2]);
+  });
+
+  it("keeps outlineUnits in sync with the new numbers, preserving each entry's own data", () => {
+    const units = [makeUnit(2), makeUnit(1)];
+    const outlineUnits = [makeOutlineUnit(1), makeOutlineUnit(2)];
+    const { outlineUnits: newOutlineUnits } = renumberRealUnits(units, outlineUnits);
+    expect(newOutlineUnits.map((ou) => ou.number)).toEqual([1, 2]);
+    // the outline entry that described the original "unit 2" (now renumbered to 1)
+    // keeps its own learningObjectives/keyTerms, just under the new number
+    expect(newOutlineUnits[0].learningObjectives).toEqual(["Objective 2"]);
+    expect(newOutlineUnits[1].learningObjectives).toEqual(["Objective 1"]);
+  });
+
+  it("renumbers a moved page's own unitNumber field along with its new owning unit", () => {
+    const units = [makeUnit(2, 1), makeUnit(1, 0)];
+    const outlineUnits = [makeOutlineUnit(1), makeOutlineUnit(2)];
+    const { units: newUnits } = renumberRealUnits(units, outlineUnits);
+    expect(newUnits[0].studentBookPages[0].unitNumber).toBe(1);
+  });
+
+  it("does not mutate the input arrays", () => {
+    const units = [makeUnit(2), makeUnit(1)];
+    const outlineUnits = [makeOutlineUnit(1), makeOutlineUnit(2)];
+    const unitsCopy = JSON.parse(JSON.stringify(units));
+    renumberRealUnits(units, outlineUnits);
+    expect(units).toEqual(unitsCopy);
+  });
+});
