@@ -58,7 +58,7 @@ export function checkPrintReadiness(input: {
     };
     if (!isPortrait) {
       issues.push(
-        `Kapak görseli yatay (${input.coverWidthPx}×${input.coverHeightPx}px) - gerçek kitap kapakları dikey olur, bu pipeline tüm görselleri 16:9 (yatay) oranında üretiyor.`,
+        `Kapak görseli yatay (${input.coverWidthPx}×${input.coverHeightPx}px) - gerçek kitap kapakları dikey olur. Bu kitap, kapak görsellerinin dikey (1024×1536) üretilmesinden önce oluşturulmuş olabilir - yeniden oluşturmak sorunu çözebilir.`,
       );
     }
     if (!meetsRecommendedResolution) {

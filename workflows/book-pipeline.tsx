@@ -56,6 +56,9 @@ import {
   resolveTextModel,
   resolveImageModel,
   resolveSpeechModel,
+  BOOK_PIPELINE_COVER_IMAGE_SIZE,
+  BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
+  type StudioImageSizeId,
 } from "@/lib/ai/model";
 import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { unitsToMarkdown } from "@/lib/markdown";
@@ -1000,6 +1003,7 @@ async function generateReviewedImage(
   initialPrompt: string,
   storagePath: string,
   qualityMode: "draft" | "final",
+  size: StudioImageSizeId,
 ): Promise<string> {
   let prompt = initialPrompt;
   let lastBlobUrl: string | null = null;
@@ -1009,7 +1013,7 @@ async function generateReviewedImage(
     const { image } = await generateImage({
       model: imageModel,
       prompt,
-      aspectRatio: "16:9",
+      size,
     });
     // Every attempt is a real, separate paid call - including retries after
     // a failed QA check - so each one is recorded, not just the final image
@@ -1064,6 +1068,7 @@ async function generateUnitImages(
       `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
       `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
       qualityMode,
+      BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
     );
   }
 
@@ -1167,6 +1172,7 @@ async function regenerateFlaggedImage(
     `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
     `generated/${runId}/unit-${unitNumber}-page-${pageNumber}.png`,
     qualityMode,
+    BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
   );
 }
 
@@ -1191,6 +1197,7 @@ async function generateCoverImage(
     `${scenePrompt} Style: welcoming, modern educational textbook cover art, no text or letters in the image.`,
     `generated/${runId}/cover.png`,
     qualityMode,
+    BOOK_PIPELINE_COVER_IMAGE_SIZE,
   );
 }
 

@@ -127,15 +127,25 @@ const styles = StyleSheet.create({
 
   // Cover
   coverPage: { padding: 0 },
-  coverBand: { height: "62%", justifyContent: "center", paddingHorizontal: 48, position: "relative", overflow: "hidden" },
+  // Faz "Kapak/Görsel Oranı Düzeltmesi" (2026-09-21, ROADMAP.md): shrunk from
+  // 62% now that the cover image is generated portrait (1024x1536, see
+  // BOOK_PIPELINE_COVER_IMAGE_SIZE) instead of landscape - the illustration
+  // needs real vertical room in coverFooter below, not a thin strip.
+  coverBand: { height: "38%", justifyContent: "center", paddingHorizontal: 48, position: "relative", overflow: "hidden" },
   coverDecoration: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   unitBadgeDecoration: { position: "absolute", top: -10, left: -10 },
   coverKicker: { fontFamily: "Helvetica-Bold", fontSize: 11, color: "#ffffff", opacity: 0.85, letterSpacing: 2, marginBottom: 14 },
   coverTitle: { fontFamily: "Helvetica-Bold", fontSize: 32, color: "#ffffff", lineHeight: 1.25, marginBottom: 14 },
   coverSubtitle: { fontFamily: "Helvetica-Bold", fontSize: 16, color: "#ffffff", opacity: 0.92 },
   coverFooter: { flex: 1, paddingHorizontal: 48, paddingTop: 28, flexDirection: "column", gap: 14 },
-  coverIllustrationWrap: { borderRadius: 10, overflow: "hidden", maxHeight: 220 },
-  coverIllustration: { width: "100%", objectFit: "cover" },
+  // flex:1 (was a fixed maxHeight:220 strip, sized for the old 16:9 landscape
+  // cover) - fills whatever vertical space coverFooter has left above
+  // coverPillRow, matching the now-portrait (1024x1536) cover image.
+  coverIllustrationWrap: { borderRadius: 10, overflow: "hidden", flex: 1 },
+  // height:"100%" needed alongside flex:1 on the wrap above - without an
+  // explicit height, react-pdf sizes the Image to its own aspect ratio at
+  // the given width rather than stretching to fill the flex box.
+  coverIllustration: { width: "100%", height: "100%", objectFit: "cover" },
   coverPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   pageIllustrationWrap: { borderRadius: 8, overflow: "hidden", marginBottom: 4, maxHeight: 170 },
   pageIllustration: { width: "100%", objectFit: "cover" },

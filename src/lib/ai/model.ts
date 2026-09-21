@@ -41,6 +41,19 @@ export function resolveImageModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? BOOK_PIPELINE_IMAGE_MODEL_DRAFT : BOOK_PIPELINE_IMAGE_MODEL_FINAL;
 }
 
+// Faz "Kapak/Görsel Oranı Düzeltmesi" (2026-09-21, ROADMAP.md): every image
+// call in the book pipeline (generateReviewedImage, workflows/book-pipeline.tsx)
+// used to pass `aspectRatio: "16:9"` to generateImage() - but GPT Image (the
+// only model family this pipeline uses, see BOOK_PIPELINE_IMAGE_MODEL_* above)
+// doesn't support a free aspectRatio string, only these three fixed `size`
+// values (confirmed via STUDIO_IMAGE_SIZES below, which already uses `size`
+// correctly for Hikaye Stüdyosu's advanced panel). Covers need a portrait
+// size to look like a real book cover; interior page illustrations keep the
+// existing landscape look since their PDF box (BookDocument.tsx's
+// pageIllustrationWrap) already crops-to-fill and doesn't need to change.
+export const BOOK_PIPELINE_COVER_IMAGE_SIZE: StudioImageSizeId = "1024x1536";
+export const BOOK_PIPELINE_INTERIOR_IMAGE_SIZE: StudioImageSizeId = "1536x1024";
+
 // Faz H6 extension (2026-09-19): ElevenLabs was investigated for "final"-tier
 // listening audio (genuinely higher production value for a language-learning
 // product, where the audio is the pronunciation model students hear) but is

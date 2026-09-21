@@ -31,6 +31,7 @@
 | Arayüz yenileme (ChatGPT/Claude tarzı sidebar + tüm sayfaların yeni tema token'larına geçirilmesi) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Arayüz Yenileme" notları (Faz 1 + Faz 2) |
 | Onay Zinciri Görünürlüğü ("Görünür AI Persona Zinciri" - tek kullanıcı, isimlendirilmiş editöryel persona rozetleri) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Stratejik Brainstorming + Onay Zinciri Görünürlüğü — Tamamlanma Notu"; gerçek çoklu-kullanıcı/RBAC bilinçli olarak kapsam dışı, sıradaki fazlar: sayfa dizilimi editörü + içerik derinliği/Cambridge-parity |
 | Sayfa Dizilimi Editörü (tam serbest kompozisyon - blok sürükle/boyutlandır, PDF + web önizleme) | ✅ Tamamlandı, gerçek uçtan uca doğrulandı (2026-09-21) | Aşağıda "Sayfa Dizilimi Editörü — Tamamlanma Notu"; EPUB/DOCX bilinçli olarak kapsam dışı |
+| Faz 4a — Kapak/Görsel Oranı Düzeltmesi (kapak görselleri artık dikey/1024×1536 üretiliyor) | ✅ Tamamlandı, gerçek uçtan uca doğrulandı (2026-09-21) | Aşağıda "Kapak/Görsel Oranı Düzeltmesi — Tamamlanma Notu"; Faz 4b/4c/4d (beceri dengesi, ünite iskeleti, Teacher/Test genişletme) sıradaki fazlar |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1131,3 +1132,65 @@ jestinin kendisi bu oturumda gerçek bir tarayıcıda (sadece CDP simülasyonuyl
 olarak doğrulanmadı - kullanıcının ilk kullanımda kontrol etmesi önerilir. Sıradaki, kullanıcının
 belirlediği son büyük alan: içerik derinliği/Cambridge-Oxford parity (CEFR zorunluluğu, kapak
 oranı düzeltmesi, sayfa şablonları, Teacher's Book/Test Booklet genişletme).
+
+## Kapak/Görsel Oranı Düzeltmesi — Tamamlanma Notu (2026-09-21)
+
+Kullanıcı, "İçerik derinliği/Cambridge-Oxford parity" başlığı altındaki beş alt alanın (kapak
+oranı, beceri dengesi denetçisi, sabit ünite iskeleti, Teacher's Book/Test Booklet genişletme,
++ ek fikirler) hepsini istedi; en düşük riskli/en izole olan bu ilk alt-fazla başlandı - önceki
+fazlarda (ISBN/Baskıya Hazırlık, Faz 3) bilinen, dokümante edilmiş ama bilinçli olarak
+ertelenmiş "kapak görselleri 16:9 yatay üretiliyor, gerçek kitap kapakları dikey olmalı"
+sorununu gerçekten çözdü.
+
+### Kök neden
+Sorun sadece yanlış bir oran değil, yanlış bir PARAMETREYDİ: `workflows/book-pipeline.tsx`'teki
+tek bir `generateReviewedImage` fonksiyonu (kapak DAHİL her görsel için kullanılıyor)
+`generateImage()`'a `aspectRatio: "16:9"` geçiriyordu - ama bu pipeline'ın kullandığı tek model
+ailesi olan GPT Image (`gpt-image-2`/`gpt-image-1-mini`) serbest bir `aspectRatio` string'i
+desteklemiyor, sadece 3 sabit boyut kabul ediyor (kare/dikey/yatay). Bu, Hikaye Stüdyosu'nun
+zaten doğru şekilde `size` parametresiyle çalışan `generateAdvancedStoryImage`'ı ile
+karşılaştırılarak doğrulandı.
+
+### Değişiklikler
+- `src/lib/ai/model.ts`: `BOOK_PIPELINE_COVER_IMAGE_SIZE = "1024x1536"` (dikey) ve
+  `BOOK_PIPELINE_INTERIOR_IMAGE_SIZE = "1536x1024"` (yatay, mevcut görünüm korunuyor) eklendi -
+  mevcut `StudioImageSizeId` tipi yeniden kullanıldı, model çözümleme mantığına dokunulmadı.
+- `workflows/book-pipeline.tsx`: `generateReviewedImage` artık bir `size` parametresi alıyor,
+  `aspectRatio: "16:9"` yerine `size` geçiriyor. Bu salt bir yardımcı fonksiyon (`"use step"`
+  değil) - imza değişikliği workflow adım sayısını etkilemiyor. `generateCoverImage` dikey
+  boyutu, `generateUnitImages`/`regenerateFlaggedImage` yatay boyutu geçiriyor.
+- `src/lib/pdf/BookDocument.tsx`: kapak sayfası düzeni dikey görseli barındıracak şekilde
+  yeniden oranlandı - `coverBand.height`: `"62%"` → `"38%"`, `coverIllustrationWrap`: sabit
+  `maxHeight: 220` yerine `flex: 1` (kalan tüm dikey alanı dolduruyor), `coverIllustration`'a
+  `height: "100%"` eklendi (flex:1 ile birlikte görselin gerçekten kutuyu doldurması için).
+  Interior sayfa görselleri (`pageIllustrationWrap`) dokunulmadı - zaten küçük, kırpılan bir
+  kutu, oran değişikliğine ihtiyacı yoktu.
+- `src/lib/print-readiness.ts`: "bu pipeline tüm görselleri 16:9 (yatay) oranında üretiyor"
+  iddiası kaldırıldı (artık evrensel doğru değil) - mevcut test sadece "yatay" alt-string'ini
+  kontrol ettiği için test değişikliği gerekmedi.
+
+### Doğrulama
+- `tsc`/`eslint`/`vitest` (120 test, değişmedi)/`next build` (35 workflow step, değişmedi -
+  sadece bir yardımcı fonksiyonun imzası değişti) temiz.
+- **Gerçek uçtan uca doğrulandı** (Sayfa Dizilimi Editörü fazında keşfedilen "assemble-only
+  rerun sıfır AI maliyetiyle gerçek PDF üretir" desenini tekrar kullanarak): `Firudin WorkBook`
+  projesine gerçek, herkese açık dikey (1024×1536 oranlı) bir test görseli `coverImageUrl`
+  olarak enjekte edildi, "Yeniden oluştur (PDF)" tetiklendi, gerçek bir Vercel Workflow çalışıp
+  4 kitap tipi için gerçek PDF'ler üretti. Üretilen PDF Chrome'da açılıp **kapak sayfasının artık
+  doğru şekilde render edildiği görsel olarak doğrulandı**: küçültülmüş üst bant (başlık/A2
+  etiketi/dekorasyon), altında görseli hiç bozulmadan/gerilmeden dolduran gerçek bir dikey kapak
+  görünümü - tam olarak gerçek bir kitap kapağı gibi.
+- Test sonrası enjekte edilen ikinci run tamamen silindi, orijinal run `status='failed'`'a geri
+  döndürüldü, sahte `unitReviews`/`extractedOutlines`/`generatedBooks` temizlendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Hikaye Stüdyosu'nun basit `generateStoryImage`
+yolu (`src/lib/ai/studio-generation.ts:40`) - "kapak" kavramı olmayan serbest bir görsel
+üretici, zaten yeni `generateAdvancedStoryImage` kullanıcıya `size` seçimi sunuyor. Kapak/spine/
+back-cover üç panelli gerçek bir "cover wrap" hâlâ yok - tek panelli kapak sayfası aynen kalıyor,
+sadece o panelin görseli artık doğru oranda. Trim size/bleed/CMYK/kullanıcının proje bazında
+baskı boyutu seçebilmesi - ayrı, gelecek bir faz olarak not edildi. Görsel çözünürlüğü (hâlâ
+`print-readiness.ts`'in referans aldığı 1800×2700'ün altında, 1024×1536) - bu bir ORAN
+düzeltmesiydi, çözünürlük düzeltmesi değil; ROADMAP'in Magnific araştırması notu bunun ayrı bir
+adım olduğunu zaten belirtiyor. Sıradaki fazlar (kullanıcının belirlediği sırayla): Faz 4b
+(beceri dengesi denetçisi), Faz 4c (sabit ünite iskeleti - en büyük/en riskli), Faz 4d
+(Teacher's Book/Test Booklet genişletme).
