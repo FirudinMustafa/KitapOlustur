@@ -35,6 +35,7 @@
 | Faz 4b — Beceri Dengesi Denetçisi (engelleyici, 5. otomatik denetim - reading/writing/listening/speaking) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Beceri Dengesi Denetçisi — Tamamlanma Notu"; Faz 4c/4d sıradaki fazlar |
 | Faz 4c — Sabit Ünite İskeleti (opt-in, kullanıcı tanımlı bölüm sırası - kaynak PDF'in sayfa yapısından bağımsız üretim) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Sabit Ünite İskeleti — Tamamlanma Notu"; Faz 4d sıradaki faz |
 | Faz 4d — Teacher's Book/Test Booklet Genişletme (ders akışı/materyal/farklılaştırma + kitap-geneli ara sınav/final + showAnswerKey hata düzeltmesi) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Teacher's Book/Test Booklet Genişletme — Tamamlanma Notu"; "İçerik derinliği" ana fazı tamamlandı |
+| Gerçek Kelime-Frekans/CEFR Kalibrasyonu (İngilizce, `reviewReadingLevel`'a deterministik ek kanıt) | ✅ Tamamlandı, birim testleriyle doğrulandı (2026-09-21) | Aşağıda "Kelime-Frekans/CEFR Kalibrasyonu — Tamamlanma Notu" |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1399,3 +1400,60 @@ eklenmesi - Faz 4c'deki gerekçeyle bilinçli olarak atlandı.
 
 Bu, kullanıcının belirlediği "İçerik derinliği" (Cambridge/Oxford parity) ana fazının son alt-fazı
 - Faz 4a/4b/4c/4d hepsi tamamlandı.
+
+## Kelime-Frekans/CEFR Kalibrasyonu — Tamamlanma Notu (2026-09-21)
+
+**Context:** "İçerik derinliği" fazının brainstorming oturumunda not edilen 3 ek fikirden
+kullanıcının seçtiği ilki. `reviewReadingLevel` (`workflows/book-pipeline.tsx`) hedef seviyeye
+göre kelime/dilbilgisi zorluğunu tamamen LLM'in öznel kararına dayanarak değerlendiriyordu -
+hiçbir deterministik/ölçülebilir veri kullanmıyordu. Kod tabanındaki bir yorum bunun bilinçli bir
+tercih olduğunu belgeliyordu: sabit bir kelime listesi/formül "İngilizce'ye özgü" olur ve sistem
+her konuda/dilde çalıştığı için ya yanlış tetiklenir ya da atlanması gerekir.
+
+**Tasarım kararları (kullanıcıyla netleştirildi):**
+- Kapsam sadece İngilizce ile sınırlandı - Oxford 3000/5000 gibi ünlü CEFR listeleri telifli
+  olduğu için özgün, elle derlenmiş bir sıklık/zorluk bandı sözlüğü eklendi
+  (`src/lib/cefr-en-wordlist.ts`, ~1500 kelime, A1-C1 bantlı). Diğer diller mevcut (sadece LLM'e
+  dayalı) davranışta kaldı, sessizce atlanıyor.
+- Entegrasyon, yeni bir engelleyici denetim DEĞİL - deterministik olarak hesaplanan kelime bant
+  dağılımı istatistiği, mevcut `reviewReadingLevel` LLM çağrısının prompt'una EK KANIT olarak
+  ekleniyor. Engelleme/retry mantığı değişmedi - LLM hâlâ `passed`/`issues` kararını veriyor.
+  `checkOriginality`'nin (deterministik n-gram → LLM değerlendirmesi) kurduğu emsalle aynı düşük
+  riskli desen.
+
+**Teknik risk ve çözümü:** Herhangi bir sabit kelime listesi kaçınılmaz olarak eksik olacak (özel
+isimler, konuya özgü terimler, çekimli/türetilmiş formlar - lemmatization yapılmadı). "Listede
+yok" = "seviye üstü" varsayımı çok fazla yanlış pozitif üretirdi. Çözüm: listede YER ALAN
+kelimelerin bant dağılımını (% A1/A2 temel, % B1/B2 orta, % C1 ileri) ölçüp, listede olmayan
+kelimeleri ayrı, "muhtemelen özel isim/konu terimi" bir orana koymak - hiçbir kelime tek başına
+"yanlış" olarak damgalanmıyor.
+
+**Değişiklikler:**
+- `src/lib/cefr-en-wordlist.ts` (yeni): `CEFR_EN_WORD_BANDS` - özgün olarak derlenmiş, A1-C1
+  bantlı ~1500 kelimelik İngilizce sözlük.
+- `src/lib/cefr-vocabulary.ts` (yeni, saf/deterministik): `bandOf`, `estimateVocabularyCoverage`,
+  `describeVocabularyCoverage` - `src/lib/originality.ts`'nin stiliyle tutarlı, yan etkisiz
+  fonksiyonlar.
+- `src/lib/originality.ts`: `tokenize` fonksiyonu `export` edildi (davranış değişmedi, sadece
+  görünürlük) - yeni modül tarafından yeniden kullanılıyor.
+- `workflows/book-pipeline.tsx`: `reviewReadingLevel`'a, `contentLanguage` İngilizce olduğunda
+  (`"en"`/`"en-*"`), ünitenin tüm sayfa metninden hesaplanan kelime kapsamı istatistiği prompt'a
+  ek bir kanıt satırı olarak ekleniyor. İngilizce olmayan içerikte adım tamamen atlanıyor -
+  fonksiyon mevcut haliyle çalışmaya devam ediyor. `unitReviewSchema`/DB şeması/migration YOK.
+
+**Doğrulama:** `npx tsc --noEmit`/`npx eslint .` temiz. Yeni `src/lib/cefr-vocabulary.test.ts`
+(9 test) - temel bir A2 cümlesinin ve kasıtlı olarak akademik/ileri bir cümlenin göreli B1+
+kelime payı karşılaştırıldı (mutlak eşik yerine göreli karşılaştırma kullanıldı - fonksiyonun
+lemmatization yapmaması nedeniyle kısa cümlelerde "the"/"of" gibi çok sık geçen temel kelimeler
+ham kelime sayısına hâkim olabiliyor, bu dokümante edilmiş bir sınırlama), özel isim/sayı içeren
+metnin sınıflandırılamama oranının yükseldiği (hata fırlatmadan), boş metnin sıfıra bölme hatası
+vermediği doğrulandı. `npx vitest run` - 129/129 geçti (120 mevcut + 9 yeni). `npx next build`
+workflow step sayısının **38'de değişmeden kaldığını** doğruladı (`reviewReadingLevel`'ın kendi
+`"use step"` imzası değişmedi, sadece iç prompt metnine bir satır eklendi). Chrome doğrulaması
+gerekmedi - bu saf/deterministik bir hesaplama katmanı, UI'da görünür bir değişiklik yok.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** İngilizce dışı diller için ayrı kelime listeleri -
+kullanıcı kararıyla ayrı, gelecek bir iş. Kelime kapsamının kendi başına bir engelleyici denetim
+haline getirilmesi - yanlış pozitif riski kalibre edilmeden erken. Çekim/zaman normalizasyonu
+(lemmatization) - basit tokenize yeterli görüldü, ileride iyileştirilebilir. CEFR bant listesinin
+genişletilmesi/bakımı için bir yönetim arayüzü - statik kod içi veri yeterli.

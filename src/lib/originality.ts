@@ -5,7 +5,9 @@
 // (which is expected and fine - mirroring page structure isn't the risk;
 // reusing actual wording is).
 
-function tokenize(text: string): string[] {
+// Exported for reuse by src/lib/cefr-vocabulary.ts - same Unicode-aware,
+// language-agnostic word split, just needed outside this file too.
+export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, " ")

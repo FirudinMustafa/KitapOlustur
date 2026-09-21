@@ -30,6 +30,7 @@ import {
   type RunStatus,
 } from "@/db/schema";
 import { ngramJaccardSimilarity } from "@/lib/originality";
+import { describeVocabularyCoverage, estimateVocabularyCoverage } from "@/lib/cefr-vocabulary";
 import {
   pageMapSchema,
   bookOutlineSchema,
@@ -929,6 +930,16 @@ async function reviewLanguageAccuracy(
 // need to be silently skipped for most of what this app actually produces.
 // Asking the same review model whether the text's difficulty matches the
 // book's stated level generalizes across languages/subjects for free.
+//
+// Faz "Gerçek Kelime-Frekans/CEFR Kalibrasyonu" (2026-09-21, ROADMAP.md): for
+// English content only, a deterministic vocabulary-band coverage stat (see
+// src/lib/cefr-vocabulary.ts) is computed and added to the prompt as
+// SUPPLEMENTARY evidence - the LLM still makes the actual passed/issues call,
+// this doesn't add a new gate or change the retry loop. Non-English content
+// (contentLanguage flows through free-text, see src/app/projects/new) gets
+// no such line and behaves exactly as before - the word list only exists for
+// English, and treating "not in the list" as a violation would be far too
+// noisy for any language, hand-compiled list included.
 async function reviewReadingLevel(
   runId: string,
   unitNumber: number,
@@ -937,6 +948,15 @@ async function reviewReadingLevel(
   generated: GeneratedUnit,
 ) {
   "use step";
+
+  let vocabularyEvidence = "";
+  if (contentLanguage === "en" || contentLanguage.startsWith("en-")) {
+    const unitText = [...generated.studentBookPages, ...generated.workbookPages]
+      .flatMap((page) => page.blocks.map((b) => [b.heading, b.body, ...(b.items ?? [])].join("\n")))
+      .join("\n\n");
+    const coverage = estimateVocabularyCoverage(unitText);
+    vocabularyEvidence = `Deterministic vocabulary coverage (English-only supplementary signal, not a verdict on its own): ${describeVocabularyCoverage(coverage)}`;
+  }
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
@@ -947,8 +967,11 @@ async function reviewReadingLevel(
       prompt: [
         `Target level: "${targetLevel}" (content language: ${contentLanguage})`,
         `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+        vocabularyEvidence,
         "Judge whether the reading/language difficulty of the explanations, examples, and practice items is appropriate for this level - not too advanced (assumes vocabulary/grammar a learner at this level wouldn't have yet) and not too simplistic (patronizing, or well below the stated level). List concrete issues (with the specific word/sentence/section) if the level doesn't match. Set passed=true only if the difficulty is genuinely appropriate throughout.",
-      ].join("\n\n"),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     }),
   );
 
