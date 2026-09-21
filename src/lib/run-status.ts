@@ -52,12 +52,21 @@ export function formatElapsedTurkish(from: Date, now: Date = new Date()): string
 // (PipelineStageTracker), not this top rail.
 export type PipelineStageKey = "extract" | "approval" | "generate" | "coherence" | "assemble" | "done";
 
-export const PIPELINE_STAGES: { key: PipelineStageKey; label: string }[] = [
-  { key: "extract", label: "Kaynak analizi" },
-  { key: "approval", label: "Dizelge onayı" },
-  { key: "generate", label: "Ünite üretimi" },
-  { key: "coherence", label: "Tutarlılık kontrolü" },
-  { key: "assemble", label: "Derleme" },
+// Faz "Onay Zinciri Görünürlüğü": bu etiketler, aşamada zaten çalışan otomatik
+// AI denetimlerini (dil/seviye/güvenlik/görsel/tutarlılık) isimlendirilmiş bir
+// editöryel "persona" anlatısı olarak görünür kılıyor - gerçek bir çoklu-
+// kullanıcı/rol sistemi kurmadan (bkz. src/lib/personas.ts). Salt görsel bir
+// alt-etiket; getPipelineNodeStates/getPipelineStageIndex mantığını etkilemez.
+export const PIPELINE_STAGES: { key: PipelineStageKey; label: string; persona?: string }[] = [
+  { key: "extract", label: "Kaynak analizi", persona: "Kaynak Analisti" },
+  { key: "approval", label: "Dizelge onayı", persona: "Baş Editör → Proje Sahibi" },
+  {
+    key: "generate",
+    label: "Ünite üretimi",
+    persona: "İçerik Üretici → Dil Denetçisi/Seviye Uzmanı/Güvenlik",
+  },
+  { key: "coherence", label: "Tutarlılık kontrolü", persona: "Baş Editör" },
+  { key: "assemble", label: "Derleme", persona: "Prodüksiyon" },
   { key: "done", label: "Tamamlandı" },
 ];
 

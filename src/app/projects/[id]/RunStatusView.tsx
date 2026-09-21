@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { checkPrintReadiness } from "@/lib/print-readiness";
+import { PERSONA_LABELS, type PersonaReviewSummary } from "@/lib/personas";
 
 type ListeningAudioEntry = { blockRef: string; script: string; audioUrl?: string };
 export type GeneratedUnitContent = { unitNumber: number; listeningAudio?: ListeningAudioEntry[] };
@@ -146,6 +147,10 @@ type ProjectData = {
   // Faz "ISBN/baskıya hazırlık": server-fetched (see page.tsx) so there's no
   // client-side cross-origin fetch to the Blob host.
   coverDimensions?: { width: number; height: number } | null;
+  // Faz "Onay Zinciri Görünürlüğü": zaten kalıcı olan unitReviews'dan türetilen
+  // persona rozetleri (bkz. src/lib/personas.ts) - içerik onayı ekranında
+  // her ünitenin altında "✓ Dil Denetçisi" gibi sign-off'lar göstermek için.
+  unitReviewSummary?: PersonaReviewSummary[];
 };
 
 const TERMINAL_STATUSES = new Set(["done", "failed", "changes_requested"]);
@@ -268,6 +273,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const pendingContentApproval = run?.pendingContentApproval?.units;
   const previousUnitVersions = run?.pendingContentApproval?.previousVersions;
   const pendingImageReview = run?.pendingImageReview;
+  const unitReviewSummary = data.unitReviewSummary ?? [];
 
   async function refresh() {
     const fresh = await fetch(`/api/projects/${projectId}`);
@@ -446,7 +452,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       {coherenceReview && (
         <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">Kitap Tutarlılık Raporu</h2>
+            <h2 className="text-sm font-semibold text-foreground">
+              Kitap Tutarlılık Raporu <span className="font-normal text-muted-foreground">(Baş Editör)</span>
+            </h2>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                 coherenceReview.passed
@@ -501,7 +509,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       {!!flaggedOriginalityChecks?.length && (
         <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">Orijinallik Raporu</h2>
+            <h2 className="text-sm font-semibold text-foreground">
+              Orijinallik Raporu <span className="font-normal text-muted-foreground">(Özgünlük Denetçisi)</span>
+            </h2>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
               {flaggedOriginalityChecks.length} sayfa işaretlendi (bilgilendirici)
             </span>
@@ -787,8 +797,35 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       <p className="mt-0.5 line-clamp-3">{firstBlock.body}</p>
                     </div>
                   )}
+                  {/* Faz "Onay Zinciri Görünürlüğü": zaten arka planda çalışan
+                      Dil Denetçisi/Seviye Uzmanı/Güvenlik/Baş Editör
+                      denetimlerini görünür bir editöryel sign-off olarak
+                      gösterir - bkz. src/lib/personas.ts. */}
+                  {unitReviewSummary.some((r) => r.unitNumber === unit.unitNumber) && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {unitReviewSummary
+                        .filter((r) => r.unitNumber === unit.unitNumber)
+                        .map((r) => (
+                          <span
+                            key={r.reviewType}
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              r.passed
+                                ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                                : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            }`}
+                          >
+                            {r.passed ? "✓" : "⚠"} {PERSONA_LABELS[r.persona]}
+                            {!r.passed && r.issueCount > 0 ? ` (${r.issueCount} not)` : ""}
+                          </span>
+                        ))}
+                    </div>
+                  )}
                   {previousUnitVersions?.[unit.unitNumber] && (
                     <div className="mt-2">
+                      <p className="text-[10px] text-muted-foreground">
+                        Bu ünite geri bildirimle yeniden üretildi ve Dil Denetçisi/Seviye Uzmanı/Güvenlik tarafından
+                        tekrar kontrol edildi.
+                      </p>
                       <button
                         onClick={() =>
                           setDiffOpenFor((prev) => ({ ...prev, [unit.unitNumber]: !prev[unit.unitNumber] }))
@@ -895,11 +932,16 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                     Ünite {img.unitNumber} · Sayfa {img.pageNumber}
                   </p>
                   {img.issues.length > 0 && (
-                    <ul className="list-disc pl-4 text-[11px] text-amber-800 dark:text-amber-300">
-                      {img.issues.slice(0, 3).map((issue, i) => (
-                        <li key={i}>{issue}</li>
-                      ))}
-                    </ul>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">
+                        Sanat Yönetmeni tarafından işaretlendi (otomatik 3 deneme sonrası)
+                      </p>
+                      <ul className="list-disc pl-4 text-[11px] text-amber-800 dark:text-amber-300">
+                        {img.issues.slice(0, 3).map((issue, i) => (
+                          <li key={i}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                   <div className="flex gap-2">
                     <button
@@ -950,6 +992,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             Tüm içerik, görsel ve tutarlılık kontrolleri tamamlandı. Onaylarsan kitaplar (PDF/EPUB/LMS) derlenip
             &quot;tamamlandı&quot; olarak işaretlenecek - reddedersen üretim durur, hiçbir dosya oluşmaz.
           </p>
+          <p className="mt-1 text-[10px] text-muted-foreground">Yayın Müdürü sıfatıyla nihai onay</p>
           <div className="mt-4 flex gap-3">
             <Button
               onClick={() => handleFinalApproval(true)}

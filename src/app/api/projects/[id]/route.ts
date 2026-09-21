@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { computeUnitProgress } from "@/lib/unit-progress";
+import { summarizeUnitReviewsForPersona } from "@/lib/personas";
 import type { OutlineDocument } from "@/app/projects/[id]/RunStatusView";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -92,6 +93,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   // imageReviews (see computeUnitProgress's doc comment for why - there's no
   // per-unit signal until generatedBooks rows exist at the very end).
   let unitProgress: ReturnType<typeof computeUnitProgress> = [];
+  // Faz "Onay Zinciri Görünürlüğü": aynı unitReviews sorgusundan, içerik onayı
+  // ekranında "Dil Denetçisi ✓ / Seviye Uzmanı ⚠" gibi persona rozetleri için
+  // kullanılan bir özet türetiliyor - ikinci bir DB gidiş-dönüşü açmadan.
+  let unitReviewSummary: ReturnType<typeof summarizeUnitReviewsForPersona> = [];
   if (run) {
     const outlineUnits = (outline?.outline as OutlineDocument["outline"] | undefined)?.outline?.units ?? [];
     const limitedUnits = run.unitLimit ? outlineUnits.slice(0, run.unitLimit) : outlineUnits;
@@ -101,6 +106,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         db.query.imageReviews.findMany({ where: eq(imageReviews.runId, run.id) }),
       ]);
       unitProgress = computeUnitProgress(limitedUnits, run.status, run.currentStage, allUnitReviews, allImageReviews);
+      unitReviewSummary = summarizeUnitReviewsForPersona(allUnitReviews);
     }
   }
 
@@ -116,5 +122,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     flaggedOriginalityChecks,
     feedback,
     unitProgress,
+    unitReviewSummary,
   });
 }

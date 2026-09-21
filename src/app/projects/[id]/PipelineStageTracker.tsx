@@ -22,23 +22,33 @@ const CHIP_STATUS_TEXT: Record<UnitChipStatus, string> = {
 function StageRail({ status }: { status: string }) {
   const states = getPipelineNodeStates(status);
   return (
-    <div className="flex items-center gap-1 overflow-x-auto pb-1">
+    <div className="flex items-start gap-1 overflow-x-auto pb-1">
       {PIPELINE_STAGES.map((stage, i) => (
-        <div key={stage.key} className="flex items-center gap-1">
-          <span
-            className={`flex h-7 items-center whitespace-nowrap rounded-full px-3 text-xs font-medium ${
-              states[i] === "done"
-                ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                : states[i] === "active"
-                  ? "bg-primary/15 text-primary ring-1 ring-primary/40"
-                  : "bg-secondary text-muted-foreground"
-            }`}
-          >
-            {stage.label}
-          </span>
+        <div key={stage.key} className="flex items-start gap-1">
+          <div className="flex flex-col items-start gap-0.5">
+            <span
+              className={`flex h-7 items-center whitespace-nowrap rounded-full px-3 text-xs font-medium ${
+                states[i] === "done"
+                  ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                  : states[i] === "active"
+                    ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                    : "bg-secondary text-muted-foreground"
+              }`}
+            >
+              {stage.label}
+            </span>
+            {/* Faz "Onay Zinciri Görünürlüğü": bu aşamada zaten çalışan
+                otomatik AI denetimlerini isimlendirilmiş bir editöryel
+                persona anlatısı olarak gösterir - bkz. src/lib/personas.ts. */}
+            {stage.persona && (
+              <span className="max-w-40 truncate px-3 text-[10px] text-muted-foreground" title={stage.persona}>
+                {stage.persona}
+              </span>
+            )}
+          </div>
           {i < PIPELINE_STAGES.length - 1 && (
             <span
-              className={`h-px w-4 shrink-0 ${
+              className={`mt-3 h-px w-4 shrink-0 ${
                 states[i] === "done" ? "bg-green-300 dark:bg-green-800" : "bg-border"
               }`}
             />
