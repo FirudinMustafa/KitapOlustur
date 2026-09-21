@@ -53,6 +53,9 @@ export default function NewProjectPage() {
   const [useSkeleton, setUseSkeleton] = useState(false);
   const [unitSkeleton, setUnitSkeleton] = useState<string[]>([]);
   const [newSectionName, setNewSectionName] = useState("");
+  // Aralıklı Tekrar (Spaced Repetition) Sayfaları: opt-in, varsayılan kapalı -
+  // mevcut davranış herkes için aynen kalıyor.
+  const [spacedRepetition, setSpacedRepetition] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   // Faz "Toplu/seri üretim": when more than one file is selected, the form
   // switches into batch mode - a single shared "Proje adı" doesn't make
@@ -179,6 +182,7 @@ export default function NewProjectPage() {
             variantCount: Number(variantCount) || 1,
             unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
             unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
+            spacedRepetition,
           }),
         });
         if (!res.ok) {
@@ -231,6 +235,7 @@ export default function NewProjectPage() {
           variantCount: Number(variantCount) || 1,
           unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
           unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
+          spacedRepetition,
           blobUrl: blob.url,
           filename: file.name,
         }),
@@ -593,6 +598,23 @@ export default function NewProjectPage() {
               </div>
             </div>
           )}
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <input
+              type="checkbox"
+              checked={spacedRepetition}
+              onChange={(e) => setSpacedRepetition(e.target.checked)}
+              className="accent-primary"
+            />
+            Aralıklı tekrar sayfaları ekle (deneysel)
+          </label>
+          <span className="text-xs text-muted-foreground">
+            Her 4 ünitede bir, önceki ünitelerin kelime/dilbilgisini pekiştiren ek &quot;Tekrar&quot;
+            sayfaları (öğrenci kitabında bir okuma, çalışma kitabında bir alıştırma) otomatik olarak
+            eklenir.
+          </span>
         </fieldset>
 
         {error && <p className="text-sm text-destructive">{error}</p>}

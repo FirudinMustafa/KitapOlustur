@@ -146,6 +146,13 @@ export const generationRuns = pgTable("generation_runs", {
   // empty (the default, unchanged behavior for every existing run) means
   // mirror-based generation exactly as before this existed.
   unitSkeleton: jsonb("unit_skeleton").$type<string[] | null>(),
+  // Aralıklı Tekrar (Spaced Repetition) Sayfaları (2026-09-21, ROADMAP.md):
+  // opt-in, default false (unchanged behavior for every existing run) -
+  // when true, every REVIEW_INTERVAL_UNITS-th real unit
+  // (workflows/book-pipeline.tsx) gets extra "Tekrar" recap/practice pages
+  // appended to its own studentBookPages/workbookPages, reinforcing key
+  // terms from the preceding units.
+  spacedRepetition: boolean("spaced_repetition").notNull().default(false),
   requestedBookTypes: jsonb("requested_book_types")
     .$type<string[]>()
     .notNull()

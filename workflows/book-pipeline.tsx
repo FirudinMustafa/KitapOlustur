@@ -87,6 +87,13 @@ const FINAL_UNIT_NUMBER = 90002;
 const MIDTERM_MIN_UNITS = 4;
 const FINAL_MIN_UNITS = 2;
 
+// Aralıklı Tekrar (Spaced Repetition) Sayfaları: every this-many-th real
+// unit gets extra recap/practice pages appended to its own
+// studentBookPages/workbookPages (see generateUnitReviewSide's call site) -
+// a fixed, non-configurable interval, consistent with the sentinel
+// thresholds above.
+const REVIEW_INTERVAL_UNITS = 4;
+
 // Wraps generateObject calls so a schema-validation failure (e.g. the model's
 // output got cut off before valid JSON closed) surfaces the raw finish reason
 // and a snippet of what the model actually returned, instead of just "response
@@ -670,6 +677,66 @@ async function generateCumulativeAssessment(
         `Shared style bible for this book - reuse this terminology consistently:\n${JSON.stringify(book.styleBible)}`,
         `Units covered by this ${label}, in order (JSON):\n${JSON.stringify(coveredUnits)}`,
         `Produce "pages" (2-4 pages is enough) forming a single ${label} that draws questions from EVERY unit listed above, proportionally sampling each unit's key terms and learning objectives - do not skip any listed unit. Use a balanced mix of question types (multiple choice, fill-in-the-blank, short open-ended) appropriate for the subject. End with a complete, clearly separated answer key. Do not set imagePrompt on any page - this is a text-only exam.`,
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "unitGeneration", usage);
+  return object;
+}
+
+// Aralıklı Tekrar (Spaced Repetition) Sayfaları (2026-09-21, ROADMAP.md): a
+// deliberate departure from generateCumulativeAssessment's synthetic-unit
+// pattern above. Every REVIEW_INTERVAL_UNITS-th real unit's OWN
+// studentBookPages/workbookPages get extra recap/practice pages appended
+// (never a new unitNumber) - a synthetic unit recurring every few units,
+// wedged between two real "UNIT N" badges the reader expects to be
+// sequential, would be a far more jarring numbering break than the
+// mid-term/final's one-off placements, and buildContentsUnits (the TOC)
+// only ever reads from outline.units, so a synthetic unit would also never
+// appear there. Appending to a real unit sidesteps both problems entirely -
+// sectionLabel: "Tekrar" (Faz 4c's existing field) is enough to make the
+// added pages visually distinct via the kicker BookDocument.tsx already
+// renders for any page carrying it, no rendering changes needed here.
+async function generateUnitReviewSide(
+  runId: string,
+  book: {
+    bookTitle: string;
+    subject: string;
+    contentLanguage: string;
+    level: string;
+    tone: string;
+    targetAudience: string;
+    styleBible: StyleBible;
+    textModel: string;
+  },
+  kind: "recap" | "practice",
+  coveredUnits: { number: number; title: string; keyTerms: string[]; learningObjectives: string[] }[],
+) {
+  "use step";
+
+  const instruction =
+    kind === "recap"
+      ? `Produce "pages" (1 page is enough) forming a short review passage for the student book that naturally REUSES the key terms and concepts from the units listed below in a fresh context (not a list or summary of the units themselves) - e.g. a short reading passage, dialogue, or worked example that happens to reinforce this vocabulary/grammar. Do not set imagePrompt.`
+      : `Produce "pages" (1 page is enough) forming short workbook practice exercises that drill the key terms and concepts from the units listed below - mixed exercise types appropriate for the subject, with a complete answer key. Do not set imagePrompt.`;
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: book.textModel,
+      schema: generatedComplementarySideSchema,
+      maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
+      system:
+        "You are an instructional materials writer producing a short spaced-repetition review passage that reinforces previously taught vocabulary and concepts, appended to the end of a regular coursebook unit.",
+      prompt: [
+        `Book title: ${book.bookTitle}`,
+        `Subject: ${book.subject}`,
+        `Write ALL content in this language (BCP-47): ${book.contentLanguage}`,
+        `Overall level: ${book.level}`,
+        `Tone: ${book.tone}`,
+        `Target audience: ${book.targetAudience}`,
+        `Shared style bible for this book - reuse this terminology consistently:\n${JSON.stringify(book.styleBible)}`,
+        `Units being reinforced, in order (JSON):\n${JSON.stringify(coveredUnits)}`,
+        instruction,
       ].join("\n\n"),
     }),
   );
@@ -1806,6 +1873,58 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         }
       }
       contentApprovalRound++;
+    }
+
+    // Aralıklı Tekrar (Spaced Repetition) Sayfaları (2026-09-21, ROADMAP.md):
+    // opt-in (ctx.run.spacedRepetition) - runs here, after the content-
+    // approval gate above closes (only final, human-approved unit content
+    // gets reinforced) and BEFORE Faz 4d's midterm/final splice below (so
+    // `units.length` here still reflects only real units, matching this
+    // loop's own indexing). Mutates each targeted real unit's page arrays
+    // IN PLACE (push, not splice/replace) - no new unitNumber, so none of
+    // unitBuilders/previousUnitVersions' index-by-unitNumber bookkeeping is
+    // affected.
+    if (ctx.run.spacedRepetition) {
+      const reviewBookContext = {
+        bookTitle: outline.bookTitle,
+        subject: outline.subject,
+        contentLanguage: outline.contentLanguage,
+        level: outline.level,
+        tone: outline.tone,
+        targetAudience: outline.targetAudience,
+        styleBible,
+        textModel: ctx.textModel,
+      };
+      const summarizeForReview = (real: GeneratedUnit[]) =>
+        real.map((u) => {
+          const outlineUnit = outline.units.find((ou) => ou.number === u.unitNumber);
+          return {
+            number: u.unitNumber,
+            title: u.title,
+            keyTerms: outlineUnit?.keyTerms ?? [],
+            learningObjectives: outlineUnit?.learningObjectives ?? [],
+          };
+        });
+
+      // Never the last unit - a review passage right as the book ends would
+      // be redundant with the final exam (if any) and has nothing left to
+      // lead into.
+      for (let i = REVIEW_INTERVAL_UNITS - 1; i < units.length - 1; i += REVIEW_INTERVAL_UNITS) {
+        const covered = summarizeForReview(units.slice(i - REVIEW_INTERVAL_UNITS + 1, i + 1));
+        const recap = await generateUnitReviewSide(runId, reviewBookContext, "recap", covered);
+        const practice = await generateUnitReviewSide(runId, reviewBookContext, "practice", covered);
+        const pageNumberBase = 800000 + units[i].unitNumber * 100;
+        units[i].studentBookPages.push(
+          ...recap.pages.map((page, j) => ({ ...page, sectionLabel: "Tekrar", sourcePageNumber: pageNumberBase + j })),
+        );
+        units[i].workbookPages.push(
+          ...practice.pages.map((page, j) => ({
+            ...page,
+            sectionLabel: "Tekrar",
+            sourcePageNumber: pageNumberBase + 50 + j,
+          })),
+        );
+      }
     }
 
     // Faz "Teacher's Book/Test Booklet Genişletme" (2026-09-21, ROADMAP.md):

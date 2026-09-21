@@ -36,6 +36,7 @@
 | Faz 4c — Sabit Ünite İskeleti (opt-in, kullanıcı tanımlı bölüm sırası - kaynak PDF'in sayfa yapısından bağımsız üretim) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Sabit Ünite İskeleti — Tamamlanma Notu"; Faz 4d sıradaki faz |
 | Faz 4d — Teacher's Book/Test Booklet Genişletme (ders akışı/materyal/farklılaştırma + kitap-geneli ara sınav/final + showAnswerKey hata düzeltmesi) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Teacher's Book/Test Booklet Genişletme — Tamamlanma Notu"; "İçerik derinliği" ana fazı tamamlandı |
 | Gerçek Kelime-Frekans/CEFR Kalibrasyonu (İngilizce, `reviewReadingLevel`'a deterministik ek kanıt) | ✅ Tamamlandı, birim testleriyle doğrulandı (2026-09-21) | Aşağıda "Kelime-Frekans/CEFR Kalibrasyonu — Tamamlanma Notu" |
+| Aralıklı Tekrar (Spaced Repetition) Sayfaları (opt-in, her 4 ünitede bir "Tekrar" recap/practice sayfaları) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Aralıklı Tekrar Sayfaları — Tamamlanma Notu" |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1457,3 +1458,61 @@ kullanıcı kararıyla ayrı, gelecek bir iş. Kelime kapsamının kendi başın
 haline getirilmesi - yanlış pozitif riski kalibre edilmeden erken. Çekim/zaman normalizasyonu
 (lemmatization) - basit tokenize yeterli görüldü, ileride iyileştirilebilir. CEFR bant listesinin
 genişletilmesi/bakımı için bir yönetim arayüzü - statik kod içi veri yeterli.
+
+## Aralıklı Tekrar Sayfaları — Tamamlanma Notu (2026-09-21)
+
+**Context:** Kullanıcının seçtiği 2. "ek fikir". `reviewBookCoherence` (Faz E) kelime tekrarını
+(`vocabularyRepetitionScore`) sadece raporluyordu - düşük bir skor hiçbir gerçek içerik
+üretmiyordu. Bu faz, bunu gerçek bir üretim mekanizmasına dönüştürdü: her 4 gerçek üniteden sonra,
+önceki ünitelerin kelime/dilbilgisini pekiştiren gerçek "Tekrar" sayfaları ekleniyor.
+
+**Kritik tasarım kararı (araştırmayla netleştirildi):** Faz 4d'nin ara sınav/final deseni
+(`units` dizisine sentinel `unitNumber`'lı YENİ bir `GeneratedUnit` eklemek) burada UYGULANMADI.
+Araştırma, `BookDocument.tsx`/EPUB/DOCX/TOC'un her yerde `unit.unitNumber`'ı hiçbir yeniden
+numaralandırma olmadan bastığını, ve bunun ara sınav/final için tek seferlik bir gariplik olsa da
+HER 4 ÜNİTEDE BİR tekrarlanan bir sentetik ünite için ciddi bir UX kopukluğu ("Unit 4"ün ardından
+"UNIT 90003" gibi bir rozet) yaratacağını ortaya çıkardı - ayrıca TOC hâlâ sadece `outline.units`'ten
+türüyor, sentetik üniteler orada hiç görünmüyor. **Çözüm:** yeni bir sentetik ünite yerine, her
+N. GERÇEK ünitenin kendi `studentBookPages`/`workbookPages` dizilerinin SONUNA, `sectionLabel:
+"Tekrar"` (Faz 4c'nin zaten var olan alanı) ile işaretlenmiş ek sayfalar eklendi - aynı
+`unitNumber`. Bu, tüm sentetik-ünite sorunlarını (numaralandırma, TOC, rozet, `unitBuilders`/
+`previousUnitVersions` index çakışması) ortadan kaldırdı ve **hiçbir render dosyasına dokunmayı
+gerektirmedi** - Faz 4c'nin kicker mekanizması herhangi bir `sectionLabel`'a sahip herhangi bir
+sayfada otomatik çalışıyor.
+
+**Değişiklikler:**
+- `src/db/schema.ts`: `generationRuns`'a opt-in `spacedRepetition: boolean` sütunu (varsayılan
+  `false`), migration `drizzle/0027_past_ozymandias.sql` ile canlı Neon DB'ye uygulandı.
+- `workflows/book-pipeline.tsx`: yeni `generateUnitReviewSide(runId, book, kind: "recap" |
+  "practice", coveredUnits)` fonksiyonu - Faz 4d'nin `generateCumulativeAssessment`'ıyla aynı
+  iskelet/şema (`generatedComplementarySideSchema`), "recap" öğrenci kitabı için bir okuma
+  pasajı, "practice" çalışma kitabı için pekiştirme alıştırmaları üretiyor. `REVIEW_INTERVAL_UNITS
+  = 4` sabiti. Çağrı noktası, içerik-onay kapısı kapandıktan hemen sonra (Faz 4d'nin ara sınav/
+  final bloğundan ÖNCE, `units.length`'in henüz sadece gerçek üniteleri yansıttığı noktada):
+  her 4. gerçek ünitenin (son ünite HARİÇ) `studentBookPages`/`workbookPages`'ine, önceki 4
+  ünitenin özet bilgisiyle üretilen sayfalar `push` ediliyor - yeni bir `unitNumber`/`splice` YOK.
+  `sourcePageNumber` benzersizliği `800000 + unitNumber*100 + i` ile sağlanıyor (Faz 4c'nin
+  `unitNumber*1000+i` ve Faz 4d'nin `900000+i`/`950000+i` aralıklarıyla çakışmayan, ünite bazlı
+  ayrı bir blok).
+- `src/app/api/projects/route.ts`/`batch/route.ts`: `spacedRepetition` body'den okunup
+  `generationRuns` insert'ine ekleniyor.
+- `src/app/projects/new/page.tsx`: "Aralıklı tekrar sayfaları ekle (deneysel)" checkbox'ı.
+
+**Doğrulama:** `npx tsc --noEmit`/`npx eslint .` temiz, `npx vitest run` 129/129 geçti, `npx next
+build` workflow step sayısının **39'a** çıktığını doğruladı (yeni `"use step"` fonksiyonu
+`generateUnitReviewSide`). Chrome'da: 8 gerçek üniteli sahte bir `generatedBooks.content`'e
+enjekte edilen (4. ünitenin sonuna eklenmiş) `sectionLabel: "Tekrar"` sayfalarıyla, mevcut
+"assemble-only rerun ile gerçek PDF üret" deseni kullanılarak gerçek üretilen PDF'te: (1) "TEKRAR"
+kicker'ının hem öğrenci kitabında (okuma pasajı) hem çalışma kitabında (cevap anahtarlı alıştırma)
+"UNIT 4 · UNIT 4: TRAVEL" başlığı altında doğru göründüğü, (2) bir sonraki sayfanın sorunsuzca
+"Unit 5: Work and Study" ile devam ettiği - yani rozet/numaralandırma/TOC'un HİÇ bozulmadığı -
+görsel olarak doğrulandı. Test sonrası enjekte edilen veri ve rerun'un oluşturduğu ekstra
+`generationRuns` satırı temizlendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Tekrar aralığının (N=4) kullanıcı tarafından
+yapılandırılabilir hale getirilmesi - sabit kod içi değer yeterli görüldü. Tekrar sayfalarının
+insan içerik-onay/yeniden-üretim döngüsüne dahil edilmesi - Faz 4d'nin kümülatif sınavlarıyla aynı
+gerekçeyle (onay kapısı kapandıktan sonra üretiliyorlar). Etkilenen ünitenin `glossary` alanının
+pekiştirilen terimlerle güncellenmesi - `reviewBookCoherence` zaten mevcut glossary'yi okuyor, bu
+yeterli görüldü. Bununla, kullanıcının seçtiği 3 "ek fikir"den 2'si tamamlandı (CEFR kalibrasyonu +
+aralıklı tekrar) - kalan tek ek fikir yapılandırılabilir trim size (baskı boyutu).

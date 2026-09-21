@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     qualityMode: qualityModeRaw,
     targetLanguage: targetLanguageRaw,
     unitSkeleton: unitSkeletonRaw,
+    spacedRepetition: spacedRepetitionRaw,
   } = body;
 
   if (!Array.isArray(itemsRaw) || itemsRaw.length < 2) {
@@ -97,6 +98,10 @@ export async function POST(request: Request) {
     if (filtered.length) unitSkeleton = filtered;
   }
 
+  // Aralıklı Tekrar (Spaced Repetition) Sayfaları: shared across the whole
+  // batch, same as every other setting on this form.
+  const spacedRepetition = spacedRepetitionRaw === true;
+
   const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
   const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";
   const targetLanguage =
@@ -133,6 +138,7 @@ export async function POST(request: Request) {
         requestedBookTypes,
         variantCount,
         unitSkeleton,
+        spacedRepetition,
       })
       .returning();
 
