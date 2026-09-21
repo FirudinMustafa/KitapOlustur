@@ -56,7 +56,11 @@ export type BookType = (typeof bookTypeEnum.enumValues)[number];
 // generated text itself for a children's-education product. Same enum, same
 // unitReviews table, same retry-with-feedback flow as the other three - not
 // a separate moderation system.
-export const reviewTypeEnum = pgEnum("review_type", ["structure", "language", "level", "moderation"]);
+// "skill_balance" (Faz "Beceri Dengesi Denetçisi", 2026-09-21): checks a unit
+// has at least two of reading/writing/listening/speaking concretely
+// represented - same unitReviews table, same retry-with-feedback flow as the
+// other four.
+export const reviewTypeEnum = pgEnum("review_type", ["structure", "language", "level", "moderation", "skill_balance"]);
 
 // Faz H6: "draft" trades content quality for cost/speed on bulk generation
 // steps only (see BOOK_PIPELINE_MODEL_DRAFT in src/lib/ai/model.ts); review/

@@ -63,7 +63,7 @@ export const PIPELINE_STAGES: { key: PipelineStageKey; label: string; persona?: 
   {
     key: "generate",
     label: "Ünite üretimi",
-    persona: "İçerik Üretici → Dil Denetçisi/Seviye Uzmanı/Güvenlik",
+    persona: "İçerik Üretici → Dil Denetçisi/Seviye Uzmanı/Güvenlik/Beceri Dengesi",
   },
   { key: "coherence", label: "Tutarlılık kontrolü", persona: "Baş Editör" },
   { key: "assemble", label: "Derleme", persona: "Prodüksiyon" },

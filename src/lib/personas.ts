@@ -13,7 +13,8 @@ export type PersonaKey =
   | "gorsel_tasarimci"
   | "sanat_yonetmeni"
   | "yayin_muduru"
-  | "produksiyon";
+  | "produksiyon"
+  | "beceri_dengesi_uzmani";
 
 export const PERSONA_LABELS: Record<PersonaKey, string> = {
   kaynak_analisti: "Kaynak Analisti",
@@ -26,16 +27,18 @@ export const PERSONA_LABELS: Record<PersonaKey, string> = {
   sanat_yonetmeni: "Sanat Yönetmeni",
   yayin_muduru: "Yayın Müdürü",
   produksiyon: "Prodüksiyon",
+  beceri_dengesi_uzmani: "Beceri Dengesi Uzmanı",
 };
 
 // src/db/schema.ts'teki reviewTypeEnum ile birebir eşleşiyor.
-export type ReviewType = "structure" | "language" | "level" | "moderation";
+export type ReviewType = "structure" | "language" | "level" | "moderation" | "skill_balance";
 
 export const REVIEW_TYPE_PERSONA: Record<ReviewType, PersonaKey> = {
   structure: "bas_editor",
   language: "dil_denetcisi",
   level: "seviye_uzmani",
   moderation: "icerik_guvenligi",
+  skill_balance: "beceri_dengesi_uzmani",
 };
 
 export type UnitReviewRow = {

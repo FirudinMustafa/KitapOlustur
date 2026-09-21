@@ -32,6 +32,7 @@
 | Onay Zinciri Görünürlüğü ("Görünür AI Persona Zinciri" - tek kullanıcı, isimlendirilmiş editöryel persona rozetleri) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Stratejik Brainstorming + Onay Zinciri Görünürlüğü — Tamamlanma Notu"; gerçek çoklu-kullanıcı/RBAC bilinçli olarak kapsam dışı, sıradaki fazlar: sayfa dizilimi editörü + içerik derinliği/Cambridge-parity |
 | Sayfa Dizilimi Editörü (tam serbest kompozisyon - blok sürükle/boyutlandır, PDF + web önizleme) | ✅ Tamamlandı, gerçek uçtan uca doğrulandı (2026-09-21) | Aşağıda "Sayfa Dizilimi Editörü — Tamamlanma Notu"; EPUB/DOCX bilinçli olarak kapsam dışı |
 | Faz 4a — Kapak/Görsel Oranı Düzeltmesi (kapak görselleri artık dikey/1024×1536 üretiliyor) | ✅ Tamamlandı, gerçek uçtan uca doğrulandı (2026-09-21) | Aşağıda "Kapak/Görsel Oranı Düzeltmesi — Tamamlanma Notu"; Faz 4b/4c/4d (beceri dengesi, ünite iskeleti, Teacher/Test genişletme) sıradaki fazlar |
+| Faz 4b — Beceri Dengesi Denetçisi (engelleyici, 5. otomatik denetim - reading/writing/listening/speaking) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Beceri Dengesi Denetçisi — Tamamlanma Notu"; Faz 4c/4d sıradaki fazlar |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1194,3 +1195,67 @@ düzeltmesiydi, çözünürlük düzeltmesi değil; ROADMAP'in Magnific araştı
 adım olduğunu zaten belirtiyor. Sıradaki fazlar (kullanıcının belirlediği sırayla): Faz 4b
 (beceri dengesi denetçisi), Faz 4c (sabit ünite iskeleti - en büyük/en riskli), Faz 4d
 (Teacher's Book/Test Booklet genişletme).
+
+## Beceri Dengesi Denetçisi — Tamamlanma Notu (2026-09-21)
+
+Faz 4'ün ikinci alt fazı. Araştırma, "dört beceri dengesi"nin (okuma/yazma/dinleme/konuşma) şu
+ana kadar SADECE `niceToHaveItems`'ta opsiyonel, tavsiye niteliğinde bir metin olduğunu, hiçbir
+yerde üretilen içeriğin gerçekten dengeli olup olmadığının doğrulanmadığını doğruladı. Bu faz,
+`reviewUnit`/`reviewLanguageAccuracy`/`reviewReadingLevel`/`reviewContentSafety` ile birebir aynı
+mimariyi kullanan, gerçekten ENGELLEYİCİ beşinci bir otomatik denetim ekledi.
+
+### Tasarım kararları
+- **Şema minimal tutuldu**: `reviewBookCoherence`'ın zengin skor şeması yerine mevcut
+  `unitReviewSchema` (`{unitNumber, passed, issues}`) diğer dördüyle birebir aynı şekilde
+  yeniden kullanıldı - LLM'in ürettiği doğal dil `issues` metni zaten somut ("Bu ünite hiç
+  dinleme veya konuşma içeriği barındırmıyor") geri bildirim taşıyor, ayrı bir skor tablosuna
+  gerek yok.
+- **Denetim kriteri kasıtlı olarak LENIENT**: ünite başına 4 becerinin HEPSİ değil, EN AZ İKİSİ
+  yeterli sayıldı - gerçek bir ders kitabında üniteler arası beceri ROTASYONU (bir ünite
+  dilbilgisi+okuma ağırlıklı, diğeri dinleme+konuşma ağırlıklı) pedagojik olarak geçerli bir
+  tasarım; amaç nagging bir engelleyici değil, gerçekten tek bir beceriye sıkışmış üniteleri
+  yakalayan bir defekt filtresi olmak.
+- **Retry mimarisi değiştirilmedi**: metin-tarafı QA'nın (görsel QA'nın `MAX_IMAGE_ATTEMPTS=3`
+  gerçek re-check loop'unun aksine) tek seferlik, doğrulanmamış "geri bildirimle yeniden üret,
+  sonucu kontrol etmeden kabul et" deseni bilinçli olarak korundu - 5 denetimi de tekrar
+  çalıştırıp gerçekten geçene kadar döngüye sokmak, sadece bu denetçi için değil mevcut 4
+  denetçi için de aynı anda değiştirilmesi gereken, çok daha büyük bir mimari değişiklik olurdu.
+
+### Değişiklikler
+- `src/db/schema.ts`: `reviewTypeEnum`'a `"skill_balance"` eklendi. Migration
+  `drizzle/0025_complex_hiroim.sql` (tek satır, `ALTER TYPE ... ADD VALUE`) `npm run db:generate`
+  ile üretilip `npm run db:migrate` ile canlı Neon DB'ye uygulandı.
+- `workflows/book-pipeline.tsx`: yeni `reviewSkillBalance(runId, unitNumber, generated)` -
+  `reviewContentSafety`/`reviewReadingLevel` ile birebir aynı iskelet. Prompt, `listeningAudio`/
+  `dialogueLines` dahil ünitenin tüm içeriğini LLM'e verip hangi becerilerin (okuma/yazma/
+  dinleme/konuşma) somut olarak temsil edildiğini soruyor, en fazla BİR beceriye sıkışmışsa
+  `passed=false` döndürüyor. Hem tek-varyant hem çoklu-varyant `Promise.all` bloklarına ve
+  `passed`/`issues` birleştirme ifadelerine eklendi - başarısız olursa diğer dördüyle birlikte
+  `buildUnit(issues)` ile tek seferlik yeniden üretimi tetikliyor.
+- `src/lib/personas.ts` (Faz 1'den): `ReviewType`/`REVIEW_TYPE_PERSONA`/`PersonaKey`/
+  `PERSONA_LABELS`'a "Beceri Dengesi Uzmanı" persona'sı eklendi.
+- `src/lib/run-status.ts`: pipeline rail'inin "Ünite üretimi" aşamasının persona alt-etiketi
+  güncellendi (kozmetik).
+- **`RunStatusView.tsx`'te HİÇBİR değişiklik yapılmadı** - Faz 1'in jenerik persona-rozeti
+  render mantığı `unitReviewSummary`'deki her `reviewType`'ı otomatik işliyor.
+
+### Doğrulama
+- `tsc`/`eslint`/`vitest` (120 test, değişmedi - yeni bir saf/test edilebilir yardımcı fonksiyon
+  yok, diğer 4 review fonksiyonu gibi `reviewSkillBalance` de birim testi olmayan bir `"use
+  step"` fonksiyonu, tutarlı)/`next build` temiz.
+- **Workflow step sayısı 35'ten 36'ya çıktı** - beklenen ve doğru davranış, bu fazda GERÇEKTEN
+  yeni bir `"use step"` fonksiyonu eklendi (Faz 1/3/4a'nın aksine, onlar sadece mevcut
+  fonksiyonların imzalarını değiştirmişti).
+- **Chrome'da canlı doğrulandı**: `Firudin WorkBook` projesine enjekte edilen sahte
+  `unitReviews` satırına `reviewType: "skill_balance", passed: false` eklenip, içerik onayı
+  ekranında **"⚠ Beceri Dengesi Uzmanı (1 not)" rozetinin diğer 4 denetçininkiyle birlikte,
+  hiçbir yeni UI kodu yazılmadan otomatik olarak doğru göründüğü** doğrulandı - Faz 1'in jenerik
+  mimarisinin gerçekten çalıştığının somut kanıtı. Pipeline rail'indeki güncellenmiş persona
+  alt-etiketi de doğru render edildi. Konsol hatasız. Test sonrası enjekte edilen veri temizlendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Kitap-geneli beceri ROTASYON dengesi
+(`reviewBookCoherence`'ın genişletilmesi) - ayrı, gelecek bir iş. 5 denetçinin hepsi için gerçek
+bir re-verification retry loop'u - ayrı, daha büyük bir mimari sağlamlaştırma fazı.
+`niceToHaveItems`'taki `skill_balance` checklist öğesine dokunulmadı - yeni denetçiyle BİRLİKTE
+çalışıyor (planlama-zamanı tavsiye + üretim-sonrası doğrulama). Sıradaki fazlar: Faz 4c (sabit
+ünite iskeleti - en büyük/en riskli), Faz 4d (Teacher's Book/Test Booklet genişletme).

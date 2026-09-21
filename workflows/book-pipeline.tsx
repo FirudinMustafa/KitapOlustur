@@ -866,6 +866,40 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
   return object;
 }
 
+// Faz "Beceri Dengesi Denetçisi" (2026-09-21, ROADMAP.md): the "dört beceri
+// dengesi" (four-skills balance) niceToHaveItems checklist entry was only
+// ever advisory prose fed into analyzeImprovements' output, which the writer
+// prompt may or may not actually follow - nothing verified the OUTPUT was
+// balanced. This is that missing verification, same unitReviews table/
+// retry-with-feedback flow as the four reviews above. Deliberately LENIENT
+// (at least two of the four skills, not all four) - a real coursebook can
+// legitimately rotate skill focus across units (e.g. one grammar+reading-
+// heavy unit, another listening+speaking-heavy), so this only catches units
+// that are genuinely lopsided (stuck on a single skill), not every unit that
+// isn't a perfect four-skill mix.
+async function reviewSkillBalance(runId: string, unitNumber: number, generated: GeneratedUnit) {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: unitReviewSchema,
+      system:
+        "You are a curriculum specialist who checks whether a coursebook unit exercises a reasonable mix of the four language skills - reading, writing, listening, speaking. You are not grading quality or level here, only which skills are concretely present.",
+      prompt: [
+        `Generated unit content (JSON, including any listeningAudio/dialogueLines - the clearest signal of listening/speaking content):\n${JSON.stringify(generated)}`,
+        "Classify which of reading, writing, listening, speaking are concretely exercised in this unit (a reading passage or comprehension exercise = reading; a written-response prompt or writing exercise = writing; listeningAudio/an audio script = listening; dialogueLines or a roleplay/conversation prompt meant to be spoken aloud = speaking). It is normal and acceptable for a real coursebook unit to focus on only two or three skills - do NOT fail a unit just for not covering all four. Set passed=false ONLY if the unit is genuinely lopsided: at most ONE skill is represented (e.g. it's all reading/explanation with nothing approaching writing, listening, or speaking). List which skill(s) are missing in issues, phrased concretely (e.g. \"Bu ünite hiç dinleme veya konuşma içeriği barındırmıyor\").",
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "review", usage);
+  await db
+    .insert(unitReviews)
+    .values({ runId, unitNumber, reviewType: "skill_balance", passed: object.passed, issues: object.issues });
+  return object;
+}
+
 // Faz E: one book-wide pedagogical review, run once after every unit has
 // been generated - catches cross-unit problems (difficulty progression,
 // vocabulary repetition/spacing, grammar sequencing, thematic consistency)
@@ -1478,16 +1512,27 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         generated = await buildUnit();
 
         await setRunStatus(runId, "reviewing", `Ünite ${n}/${totalUnits}: kalite ve dil kontrolü yapılıyor`);
-        const [structureReview, languageReview, levelReview, safetyReview] = await Promise.all([
+        const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
           reviewUnit(runId, n, outlineUnit, generated),
           reviewLanguageAccuracy(runId, n, outline.contentLanguage, generated),
           reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, generated),
           reviewContentSafety(runId, n, generated),
+          reviewSkillBalance(runId, n, generated),
         ]);
 
-        const issues = [...structureReview.issues, ...languageReview.issues, ...levelReview.issues, ...safetyReview.issues];
+        const issues = [
+          ...structureReview.issues,
+          ...languageReview.issues,
+          ...levelReview.issues,
+          ...safetyReview.issues,
+          ...skillBalanceReview.issues,
+        ];
         if (
-          (!structureReview.passed || !languageReview.passed || !levelReview.passed || !safetyReview.passed) &&
+          (!structureReview.passed ||
+            !languageReview.passed ||
+            !levelReview.passed ||
+            !safetyReview.passed ||
+            !skillBalanceReview.passed) &&
           issues.length
         ) {
           await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: geri bildirimle yeniden üretiliyor`);
@@ -1502,17 +1547,29 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               undefined,
               `This is candidate variant ${i + 1} of ${variantCount} for this unit. Take a distinctly different creative angle (different examples, scenarios, or exercise styles) from the other variants while still meeting every requirement above.`,
             );
-            const [structureReview, languageReview, levelReview, safetyReview] = await Promise.all([
+            const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
               reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),
               reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, unit),
               reviewContentSafety(runId, n, unit),
+              reviewSkillBalance(runId, n, unit),
             ]);
             return {
               index: i,
               unit,
-              issues: [...structureReview.issues, ...languageReview.issues, ...levelReview.issues, ...safetyReview.issues],
-              passed: structureReview.passed && languageReview.passed && levelReview.passed && safetyReview.passed,
+              issues: [
+                ...structureReview.issues,
+                ...languageReview.issues,
+                ...levelReview.issues,
+                ...safetyReview.issues,
+                ...skillBalanceReview.issues,
+              ],
+              passed:
+                structureReview.passed &&
+                languageReview.passed &&
+                levelReview.passed &&
+                safetyReview.passed &&
+                skillBalanceReview.passed,
             };
           }),
         );
