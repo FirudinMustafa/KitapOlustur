@@ -1,0 +1,1 @@
+ALTER TABLE "generation_runs" ADD COLUMN "unit_skeleton" jsonb;

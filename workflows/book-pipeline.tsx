@@ -408,6 +408,64 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
   return object;
 }
 
+// Faz "Sabit Ünite İskeleti" (2026-09-21, ROADMAP.md): opt-in alternative to
+// generateMirroredSide above - instead of one generated page per source PDF
+// page, produces exactly one page per user-defined section name (e.g.
+// "Dilbilgisi", "Kelime", "Okuma", "Dinleme", "Konuşma", "Tekrar"),
+// independent of the source book's own page structure. Deliberately kept
+// SAME input/output shape as generateMirroredSide (same
+// UnitGenerationContext in, same generatedMirroredSideSchema/
+// {pages, glossary, listeningAudio} out) so the caller (buildUnit) can swap
+// between the two with a single branch - everything downstream
+// (generateComplementarySide, teacher/test booklet sides, the five review
+// gates, image/audio generation, PDF/EPUB/DOCX rendering) is completely
+// unaware of which path produced the "mirrored" side.
+//
+// sourcePageNumber is NOT trusted from the model's own output here (unlike
+// generateMirroredSide, where it's copied verbatim from real source pages
+// and is therefore already globally unique across the book) - it's
+// reassigned deterministically after generation (see call site) to
+// `unitNumber * 1000 + sectionIndex`, since generateUnitImages persists
+// page images into ONE flat Record<number,string> for the whole book
+// (generationRuns.pageImageUrls) and a collision there would silently
+// overwrite one unit's images with another's.
+async function generateSkeletonSide(runId: string, input: UnitGenerationContext, sections: string[]) {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: input.textModel,
+      schema: generatedMirroredSideSchema,
+      maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
+      system:
+        "You are an expert instructional materials writer and editor for the given subject. You write complete, publication-quality content for a single unit, organized into a fixed sequence of named sections the user has defined - not mirroring any source book's page layout.",
+      prompt: [
+        ...unitGenerationPromptHeader(input),
+        `This unit's content must be organized into exactly these sections, in this exact order:\n${sections.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+        `Produce "pages" with exactly one generated page per section listed above, in the same order. Set each page's sectionLabel to that section's exact name. Set pageType to "content" for every page (the section name itself, not pageType, is what distinguishes them). Write entirely original content appropriate to each named section (e.g. a "Dinleme" section should be a listening passage/script, a "Konuşma" section a speaking/roleplay prompt, a "Okuma" section a reading passage) - do not just repeat the same explanation-style content across every section.`,
+        `For background/inspiration only (do NOT mirror these page-for-page or copy them - this unit's structure is the fixed sections above, not the source's own page layout), here is a summary of what this unit covered in the uploaded source book:\n${JSON.stringify(input.unitSourcePages.map((p) => ({ pageType: p.pageType, summary: p.summary })))}`,
+        "For any section that should carry a photo or illustration, set imagePrompt to a vivid description of a NEW, original image - never a copy of any source image.",
+        "If a section includes a dialogue, story, or a listening/read-aloud passage (most naturally the \"Dinleme\"/\"Konuşma\"-style sections), also add a matching entry to listeningAudio with the exact text to be read aloud. If it's a dialogue between two or more named speakers, also fill dialogueLines with each turn broken out by speaker, in order. Leave dialogueLines empty for a single-narrator passage.",
+        "Provide a unit-level glossary of key terms with definitions and examples.",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "unitGeneration", usage);
+  return {
+    ...object,
+    // Deterministic, book-wide-unique reassignment - see the function's own
+    // doc comment above for why the model's own sourcePageNumber choice
+    // can't be trusted here.
+    pages: object.pages.map((page, i) => ({
+      ...page,
+      sourcePageNumber: input.outlineUnit.number * 1000 + i,
+    })),
+  };
+}
+
 // Produces the complementary side (workbook if the source was the student
 // book, or vice versa) as a separate, smaller call, referencing the already
 // generated mirrored pages so it stays complementary rather than duplicate.
@@ -1468,8 +1526,20 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           textModel: ctx.textModel,
         };
 
-        const mirrored = await generateMirroredSide(runId, genContext);
-        await checkOriginality(runId, outlineUnit.number, mirrored.pages, unitSourcePages);
+        // Faz "Sabit Ünite İskeleti": opt-in per run (ctx.run.unitSkeleton) -
+        // everything after this branch (generateComplementarySide, teacher/
+        // test booklet sides, the five review gates, image/audio generation)
+        // is unaware of which path produced `mirrored`. checkOriginality
+        // (F1 n-gram overlap vs. the real source pages) only makes sense for
+        // the literal page-for-page mirror - skipped here for the same
+        // reason the complementary side is already exempt from it (it's
+        // independently-written new material, not a page-for-page mirror).
+        const mirrored = ctx.run.unitSkeleton?.length
+          ? await generateSkeletonSide(runId, genContext, ctx.run.unitSkeleton)
+          : await generateMirroredSide(runId, genContext);
+        if (!ctx.run.unitSkeleton?.length) {
+          await checkOriginality(runId, outlineUnit.number, mirrored.pages, unitSourcePages);
+        }
         const complementary = await generateComplementarySide(runId, {
           ...genContext,
           complementaryType,

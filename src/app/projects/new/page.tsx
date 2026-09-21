@@ -47,6 +47,12 @@ export default function NewProjectPage() {
   const [targetLanguage, setTargetLanguage] = useState("");
   const [customNotes, setCustomNotes] = useState("");
   const [unitLimit, setUnitLimit] = useState("");
+  // Faz "Sabit Ünite İskeleti": opt-in, kullanıcı tanımlı bölüm sırası -
+  // varsayılan kapalı, mevcut kaynak-PDF-mirror davranışı herkes için aynen
+  // kalıyor.
+  const [useSkeleton, setUseSkeleton] = useState(false);
+  const [unitSkeleton, setUnitSkeleton] = useState<string[]>([]);
+  const [newSectionName, setNewSectionName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   // Faz "Toplu/seri üretim": when more than one file is selected, the form
   // switches into batch mode - a single shared "Proje adı" doesn't make
@@ -90,6 +96,27 @@ export default function NewProjectPage() {
       })
       .catch(() => setError("Stil profili listesi yüklenemedi."));
   }, []);
+
+  function addSkeletonSection() {
+    const name = newSectionName.trim();
+    if (!name) return;
+    setUnitSkeleton((prev) => [...prev, name]);
+    setNewSectionName("");
+  }
+
+  function removeSkeletonSection(index: number) {
+    setUnitSkeleton((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function moveSkeletonSection(index: number, direction: "up" | "down") {
+    setUnitSkeleton((prev) => {
+      const next = [...prev];
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
 
   function toggleItem(id: string) {
     setSelected((prev) => {
@@ -151,6 +178,7 @@ export default function NewProjectPage() {
             requestedBookTypes: Array.from(outputTypes),
             variantCount: Number(variantCount) || 1,
             unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
+            unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
           }),
         });
         if (!res.ok) {
@@ -202,6 +230,7 @@ export default function NewProjectPage() {
           requestedBookTypes: Array.from(outputTypes),
           variantCount: Number(variantCount) || 1,
           unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
+          unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
           blobUrl: blob.url,
           filename: file.name,
         }),
@@ -488,6 +517,78 @@ export default function NewProjectPage() {
             </span>
           </div>
         </div>
+
+        <fieldset className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <input
+              type="checkbox"
+              checked={useSkeleton}
+              onChange={(e) => setUseSkeleton(e.target.checked)}
+              className="accent-primary"
+            />
+            Sabit ünite iskeleti kullan (deneysel)
+          </label>
+          <span className="text-xs text-muted-foreground">
+            Varsayılan olarak her ünitenin sayfa yapısı kaynak PDF&apos;in kendi sayfa düzeninden türetilir. Bunun
+            yerine, her ünitenin kaynak PDF&apos;ten bağımsız, aşağıda tanımladığın sabit bir bölüm sırasıyla
+            üretilmesini istersen bunu işaretle - örn. &quot;Dilbilgisi&quot;, &quot;Kelime&quot;, &quot;Okuma&quot;,
+            &quot;Dinleme&quot;, &quot;Konuşma&quot;, &quot;Tekrar&quot;. Herhangi bir konu için kendi bölümlerini
+            tanımlayabilirsin, dil öğrenimine özgü değildir.
+          </span>
+          {useSkeleton && (
+            <div className="mt-1 flex flex-col gap-2 rounded-lg border border-border p-3">
+              {unitSkeleton.length === 0 && (
+                <p className="text-sm text-muted-foreground">Henüz bölüm eklenmedi.</p>
+              )}
+              {unitSkeleton.map((section, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-6 text-xs text-muted-foreground">{i + 1}.</span>
+                  <span className="flex-1 text-sm text-foreground">{section}</span>
+                  <button
+                    type="button"
+                    onClick={() => moveSkeletonSection(i, "up")}
+                    disabled={i === 0}
+                    className="rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground disabled:opacity-40"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveSkeletonSection(i, "down")}
+                    disabled={i === unitSkeleton.length - 1}
+                    className="rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground disabled:opacity-40"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeSkeletonSection(i)}
+                    className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive"
+                  >
+                    Sil
+                  </button>
+                </div>
+              ))}
+              <div className="mt-1 flex gap-2">
+                <Input
+                  value={newSectionName}
+                  onChange={(e) => setNewSectionName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addSkeletonSection();
+                    }
+                  }}
+                  placeholder="Örn. Dinleme"
+                  className="h-9 flex-1"
+                />
+                <Button type="button" variant="outline" size="sm" onClick={addSkeletonSection}>
+                  Ekle
+                </Button>
+              </div>
+            </div>
+          )}
+        </fieldset>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 

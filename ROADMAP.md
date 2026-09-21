@@ -33,6 +33,7 @@
 | Sayfa Dizilimi Editörü (tam serbest kompozisyon - blok sürükle/boyutlandır, PDF + web önizleme) | ✅ Tamamlandı, gerçek uçtan uca doğrulandı (2026-09-21) | Aşağıda "Sayfa Dizilimi Editörü — Tamamlanma Notu"; EPUB/DOCX bilinçli olarak kapsam dışı |
 | Faz 4a — Kapak/Görsel Oranı Düzeltmesi (kapak görselleri artık dikey/1024×1536 üretiliyor) | ✅ Tamamlandı, gerçek uçtan uca doğrulandı (2026-09-21) | Aşağıda "Kapak/Görsel Oranı Düzeltmesi — Tamamlanma Notu"; Faz 4b/4c/4d (beceri dengesi, ünite iskeleti, Teacher/Test genişletme) sıradaki fazlar |
 | Faz 4b — Beceri Dengesi Denetçisi (engelleyici, 5. otomatik denetim - reading/writing/listening/speaking) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Beceri Dengesi Denetçisi — Tamamlanma Notu"; Faz 4c/4d sıradaki fazlar |
+| Faz 4c — Sabit Ünite İskeleti (opt-in, kullanıcı tanımlı bölüm sırası - kaynak PDF'in sayfa yapısından bağımsız üretim) | ✅ Tamamlandı, canlı doğrulandı (2026-09-21) | Aşağıda "Sabit Ünite İskeleti — Tamamlanma Notu"; Faz 4d sıradaki faz |
 
 **✅ Migration + seed durumu (2026-09-19 güncellendi):** Tüm 5 migration (`0007`-`0011`) `npm run db:migrate` ile canlı veritabanına uygulandı; `npm run db:seed` ile 10 nice-to-have item + 3 stil profili yüklendi. Artık bekleyen migration yok.
 
@@ -1259,3 +1260,69 @@ bir re-verification retry loop'u - ayrı, daha büyük bir mimari sağlamlaştı
 `niceToHaveItems`'taki `skill_balance` checklist öğesine dokunulmadı - yeni denetçiyle BİRLİKTE
 çalışıyor (planlama-zamanı tavsiye + üretim-sonrası doğrulama). Sıradaki fazlar: Faz 4c (sabit
 ünite iskeleti - en büyük/en riskli), Faz 4d (Teacher's Book/Test Booklet genişletme).
+
+## Sabit Ünite İskeleti — Tamamlanma Notu (2026-09-21)
+
+**Context:** Faz 4a/4b tamamlandı. Bu, "İçerik derinliği" araştırmasının en büyük/en riskli
+parçası: varsayılan olarak her ünitenin sayfa yapısı KAYNAK PDF'İN kendi sayfa düzeninden birebir
+türetiliyordu (`extractOutline`'ın belirlediği `sourcePageRange` + `generateMirroredSide`'ın
+"her kaynak sayfası için tam olarak bir üretilmiş sayfa" kuralı). Kullanıcı, kaynak PDF'in
+yapısından BAĞIMSIZ, kendi tanımladığı sabit bir bölüm sırasıyla (örn. "Dinleme → Dilbilgisi →
+Okuma") her ünitenin üretilebilmesini istedi.
+
+**Tasarım kararları (kullanıcıyla netleştirildi):**
+- **Opt-in, varsayılan kapalı** - mevcut mirror-tabanlı davranış HERKES için aynen kalıyor,
+  hiçbir mevcut/yeni projeyi etkilemiyor, kullanıcı açıkça işaretlemedikçe.
+- **Bölüm listesi kullanıcı tarafından serbestçe tanımlanıyor** - kod içine sabit bir ELT
+  şablonu gömülmedi. Bu, sistemin "subject-agnostic" (herhangi bir konuda kitap üretebilme)
+  tasarım ilkesini korudu: bir matematik öğretmeni de kendi bölümlerini ("Kavram Anlatımı →
+  Örnekler → Alıştırmalar → Test") tanımlayabilir.
+
+**Araştırmada bulunan kritik gerçek:** Mirror-varsayımı sadece İKİ fonksiyonda yoğunlaşmıştı -
+`extractOutline` ve `generateMirroredSide`. Rendering/export katmanına hiç sızmamıştı - hepsi
+`sourcePageNumber`'ı sadece opak bir anahtar olarak kullanıyor. Bu, entegrasyonu çok küçük kıldı:
+`generateMirroredSide`'a birebir aynı girdi/çıktı şeklini taşıyan yeni bir `generateSkeletonSide`
+fonksiyonu yazılıp, `buildUnit` closure'ının içinde tek bir `if` ile hangisinin çağrılacağına
+karar verildi - `generateComplementarySide`, `generateTeacherBookSide`,
+`generateTestBookletSide`, 5 review fonksiyonu, görsel/ses üretimi, PDF/EPUB/DOCX render, web
+reader - hiçbirine dokunulmadı.
+
+**Değişiklikler:**
+- `src/db/schema.ts`: `generationRuns`'a nullable `unitSkeleton: jsonb<string[] | null>` sütunu
+  eklendi (migration `drizzle/0026_big_old_lace.sql`, canlı Neon DB'ye uygulandı).
+- `src/lib/ai/schemas.ts`: `generatedPageSchema`'ya opsiyonel `sectionLabel: z.string().optional()`
+  alanı eklendi - sadece iskelet üretiminde doldurulur, mirror-tabanlı üretimde hep `undefined`.
+- `workflows/book-pipeline.tsx`: yeni `generateSkeletonSide(runId, input, sections)` fonksiyonu -
+  `generateMirroredSide` ile aynı dönüş şekli. Kullanıcının verdiği bölüm listesini sırayla işleyip
+  her bölüm için tam olarak bir sayfa üretiyor, `sectionLabel`'ı bölüm adıyla dolduruyor. Üretim
+  sonrası `sourcePageNumber` deterministik olarak `unitNumber * 1000 + bölümİndeksi` ile yeniden
+  atanıyor (kitap-geneli benzersizlik garantisi - `generateUnitImages`'ın tek bir düz
+  `Record<number,string>` sözlüğe TÜM KİTABIN sayfa görsellerini yazdığı, dolayısıyla
+  `sourcePageNumber`'ın kitap genelinde benzersiz kalması gerektiği araştırmada bulundu).
+  `buildUnit`'te `ctx.run.unitSkeleton?.length` dallanması ile hangisinin çağrılacağına karar
+  veriliyor; iskelet modunda `checkOriginality` (F1 n-gram kontrolü) atlanıyor - kaynak sayfa
+  karşılaştırması artık anlamlı değil.
+- `src/app/api/projects/route.ts` ve `src/app/api/projects/batch/route.ts`: `unitSkeleton` body'den
+  okunup doğrulanıp `generationRuns` insert'ine ekleniyor.
+- `src/app/projects/new/page.tsx`: "Sabit ünite iskeleti kullan (deneysel)" checkbox'ı + bölüm
+  listesi editörü (ekle/sil/yukarı-aşağı taşı) eklendi.
+- `src/lib/pdf/BookDocument.tsx`: `page.sectionLabel` varsa, sayfanın üzerinde küçük, büyük harfli
+  bir kicker etiketi olarak gösteriliyor - sadece iskelet modunda üretilen sayfalarda, mirror-
+  tabanlı sayfalarda hiçbir görsel değişiklik yok.
+
+**Doğrulama:** `npx tsc --noEmit`/`npx eslint .` temiz, `npx vitest run` 120/120 geçti, `npx next
+build` workflow step sayısının 37'ye çıktığını doğruladı (yeni `"use step"` fonksiyonu
+`generateSkeletonSide`). Chrome'da `/projects/new` formunda checkbox işaretlenip bölüm listesi
+girilerek (ekle/sil/yukarı-aşağı taşı) UI doğrulandı. Ayrıca bir projeye enjekte edilen sahte
+`generatedBooks.content`'te `sectionLabel: "Dinleme"`/`"Dilbilgisi"` dolu sayfalarla, mevcut
+"assemble-only rerun ile gerçek PDF üret" deseni (Faz 3/4a'da kurulan) kullanılarak **gerçek
+üretilen PDF'te "DİNLEME" ve "DİLBİLGİSİ" kicker etiketlerinin doğru sırada ve doğru renkte
+göründüğü görsel olarak doğrulandı**. Test sonrası enjekte edilen veri ve rerun'un oluşturduğu
+ekstra `generationRuns` satırı temizlendi.
+
+**Yapılmadı / bilinçli olarak kapsam dışı:** Kaynak-PDF-yükleme adımının tamamen isteğe bağlı hale
+getirilmesi (iskelet modunda bile hâlâ bir kaynak PDF gerekiyor - konu/seviye/dil tespiti ve ünite
+sınırları için). Bölüm başına hedef sayfa sayısı/uzunluk kontrolü. `pageTypeEnum`'a yeni değerler
+eklenmesi - `sectionLabel` bilinçli olarak ayrı, orthogonal bir alan olarak eklendi.
+EPUB/DOCX'te `sectionLabel`'ın görünür kılınması - bu fazda sadece PDF'e eklendi, ayrı, düşük
+riskli bir takip işi. Sıradaki faz: Faz 4d (Teacher's Book/Test Booklet genişletme).

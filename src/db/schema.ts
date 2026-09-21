@@ -138,6 +138,14 @@ export const generationRuns = pgTable("generation_runs", {
   targetLanguage: text("target_language"),
   customNotes: text("custom_notes"),
   unitLimit: integer("unit_limit"),
+  // Faz "Sabit Ünite İskeleti" (2026-09-21, ROADMAP.md): when set (non-empty),
+  // opts a run OUT of the default "mirror the source PDF's own page
+  // structure" generation (generateMirroredSide) and into a user-defined,
+  // fixed section order per unit (generateSkeletonSide) - e.g.
+  // ["Dilbilgisi", "Kelime", "Okuma", "Dinleme", "Konuşma", "Tekrar"]. Null/
+  // empty (the default, unchanged behavior for every existing run) means
+  // mirror-based generation exactly as before this existed.
+  unitSkeleton: jsonb("unit_skeleton").$type<string[] | null>(),
   requestedBookTypes: jsonb("requested_book_types")
     .$type<string[]>()
     .notNull()

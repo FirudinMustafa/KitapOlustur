@@ -58,6 +58,7 @@ export async function POST(request: Request) {
     styleProfileId: styleProfileIdRaw,
     qualityMode: qualityModeRaw,
     targetLanguage: targetLanguageRaw,
+    unitSkeleton: unitSkeletonRaw,
     blobUrl,
     filename,
     isbn: isbnRaw,
@@ -103,6 +104,17 @@ export async function POST(request: Request) {
     variantCount = variantCountRaw;
   }
 
+  // Faz "Sabit Ünite İskeleti": opt-in, user-defined section order - omitted
+  // entirely (null) means the existing mirror-based generation, unchanged
+  // default for every project unless the user explicitly fills this in.
+  let unitSkeleton: string[] | null = null;
+  if (Array.isArray(unitSkeletonRaw)) {
+    const filtered = unitSkeletonRaw
+      .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      .map((x) => x.trim());
+    if (filtered.length) unitSkeleton = filtered;
+  }
+
   const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
   const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";
   const targetLanguage =
@@ -138,6 +150,7 @@ export async function POST(request: Request) {
       unitLimit,
       requestedBookTypes,
       variantCount,
+      unitSkeleton,
     })
     .returning();
 

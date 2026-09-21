@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     styleProfileId: styleProfileIdRaw,
     qualityMode: qualityModeRaw,
     targetLanguage: targetLanguageRaw,
+    unitSkeleton: unitSkeletonRaw,
   } = body;
 
   if (!Array.isArray(itemsRaw) || itemsRaw.length < 2) {
@@ -86,6 +87,16 @@ export async function POST(request: Request) {
     variantCount = variantCountRaw;
   }
 
+  // Faz "Sabit Ünite İskeleti": shared across the whole batch, same as every
+  // other setting on this form.
+  let unitSkeleton: string[] | null = null;
+  if (Array.isArray(unitSkeletonRaw)) {
+    const filtered = unitSkeletonRaw
+      .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      .map((x) => x.trim());
+    if (filtered.length) unitSkeleton = filtered;
+  }
+
   const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
   const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";
   const targetLanguage =
@@ -121,6 +132,7 @@ export async function POST(request: Request) {
         unitLimit,
         requestedBookTypes,
         variantCount,
+        unitSkeleton,
       })
       .returning();
 
