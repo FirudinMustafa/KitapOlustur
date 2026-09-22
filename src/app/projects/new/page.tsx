@@ -60,6 +60,13 @@ export default function NewProjectPage() {
   // Yapılandırılabilir Trim Size: varsayılan "a4" - mevcut davranış aynen
   // kalıyor, proje oluşturulduktan sonra değiştirilemez (ISBN gibi).
   const [trimSize, setTrimSize] = useState<TrimSizeId>("a4");
+  // "Sıfırdan Kitap" modu (2026-09-22): a toggle alongside the existing
+  // isBatch-driven conditional rendering below - "scratch" hides the file
+  // upload block entirely and skips the @vercel/blob/client upload() call,
+  // showing a unit-count + optional brief instead (see handleSubmit's
+  // branch and POST /api/projects's `mode: "scratch"` handling).
+  const [mode, setMode] = useState<"source" | "scratch">("source");
+  const [brief, setBrief] = useState("");
   const [file, setFile] = useState<File | null>(null);
   // Faz "Toplu/seri üretim": when more than one file is selected, the form
   // switches into batch mode - a single shared "Proje adı" doesn't make
@@ -149,6 +156,54 @@ export default function NewProjectPage() {
 
     if (!outputTypes.size) {
       setError("Lütfen en az bir çıktı kitap tipi seçin.");
+      return;
+    }
+
+    if (mode === "scratch") {
+      if (!name.trim()) {
+        setError("Lütfen bir kitap adı/konusu girin.");
+        return;
+      }
+      const unitCount = Number(unitLimit.trim());
+      if (!unitLimit.trim() || !Number.isInteger(unitCount) || unitCount <= 0) {
+        setError("Lütfen kaç ünite üretileceğini girin.");
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "scratch",
+            name,
+            level,
+            bookType,
+            customNotes,
+            brief: brief.trim() || null,
+            niceToHaveIds: Array.from(selected),
+            styleProfileId: styleProfileId || null,
+            qualityMode,
+            targetLanguage: targetLanguage.trim() || null,
+            requestedBookTypes: Array.from(outputTypes),
+            variantCount: Number(variantCount) || 1,
+            unitLimit: unitCount,
+            unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
+            spacedRepetition,
+            trimSize,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Bir hata oluştu.");
+        }
+        const data = await res.json();
+        router.push(`/projects/${data.projectId}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Bir hata oluştu.");
+        setSubmitting(false);
+      }
       return;
     }
 
@@ -260,20 +315,44 @@ export default function NewProjectPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-12">
-      <h1 className="text-2xl font-semibold text-foreground">Yeni kitap yükle</h1>
+      <h1 className="text-2xl font-semibold text-foreground">Yeni kitap oluştur</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Herhangi bir konudaki ders kitabının PDF&apos;ini yükle; konusu ve dili otomatik tespit
-        edilip aynı yapıdan yola çıkan özgün bir versiyonu üretilecek.
+        {mode === "source"
+          ? "Herhangi bir konudaki ders kitabının PDF'ini yükle; konusu ve dili otomatik tespit edilip aynı yapıdan yola çıkan özgün bir versiyonu üretilecek."
+          : "Kaynak bir PDF olmadan, sadece konu/seviye/ünite sayısı vererek AI'ın sıfırdan tasarladığı özgün bir ders kitabı üret."}
       </p>
+
+      <div className="mt-6 flex gap-2 rounded-full border border-border bg-muted p-1">
+        <button
+          type="button"
+          onClick={() => setMode("source")}
+          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+            mode === "source" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+          }`}
+        >
+          Kaynak PDF&apos;ten üret
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("scratch")}
+          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+            mode === "scratch" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+          }`}
+        >
+          Sıfırdan üret
+        </button>
+      </div>
 
       <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-6">
         {!isBatch && (
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-foreground">Proje adı</label>
+            <label className="text-sm font-medium text-foreground">
+              {mode === "scratch" ? "Kitap adı / konusu" : "Proje adı"}
+            </label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Örn. New Horizons A2"
+              placeholder={mode === "scratch" ? "Örn. Fotosentez ve Hücre Solunumu" : "Örn. New Horizons A2"}
               className="h-10"
             />
           </div>
@@ -290,7 +369,9 @@ export default function NewProjectPage() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-foreground">Yüklenen kitap tipi</label>
+            <label className="text-sm font-medium text-foreground">
+              {mode === "scratch" ? "Ana kitap tipi" : "Yüklenen kitap tipi"}
+            </label>
             <select
               value={bookType}
               onChange={(e) => setBookType(e.target.value as "student_book" | "workbook")}
@@ -337,20 +418,36 @@ export default function NewProjectPage() {
           </span>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-foreground">Kaynak PDF</label>
-          <input
-            type="file"
-            accept="application/pdf"
-            multiple
-            onChange={(e) => handleFilesSelected(e.target.files)}
-            className="text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:text-primary-foreground"
-          />
-          <span className="text-xs text-muted-foreground">
-            Birden fazla PDF seçersen, hepsi aynı ayarlarla (aşağıdaki tüm seçenekler) tek seferde, ayrı ayrı
-            projeler olarak üretime başlatılır — bir serinin birden fazla kitabını aynı stille üretmek için.
-          </span>
-        </div>
+        {mode === "source" ? (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-foreground">Kaynak PDF</label>
+            <input
+              type="file"
+              accept="application/pdf"
+              multiple
+              onChange={(e) => handleFilesSelected(e.target.files)}
+              className="text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:text-primary-foreground"
+            />
+            <span className="text-xs text-muted-foreground">
+              Birden fazla PDF seçersen, hepsi aynı ayarlarla (aşağıdaki tüm seçenekler) tek seferde, ayrı ayrı
+              projeler olarak üretime başlatılır — bir serinin birden fazla kitabını aynı stille üretmek için.
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-foreground">Kısa brief (opsiyonel)</label>
+            <textarea
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              rows={3}
+              placeholder="Örn. günlük konuşma diline ağırlık ver, dilbilgisi alıştırmalarını azalt"
+              className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+            />
+            <span className="text-xs text-muted-foreground">
+              Boş bırakılırsa AI, konu ve seviyeye göre kendi takdiriyle bir kapsam/sıralama belirler.
+            </span>
+          </div>
+        )}
 
         {isBatch && (
           <fieldset className="flex flex-col gap-2">
@@ -505,14 +602,18 @@ export default function NewProjectPage() {
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-foreground">
-              Ünite sınırı (opsiyonel)
+              {mode === "scratch" ? "Ünite sayısı" : "Ünite sınırı (opsiyonel)"}
             </label>
             <Input
               type="number"
               min={1}
               value={unitLimit}
               onChange={(e) => setUnitLimit(e.target.value)}
-              placeholder="Örn. 4 - hızlı test için sadece ilk N üniteyi üretir"
+              placeholder={
+                mode === "scratch"
+                  ? "Örn. 6 - kaç ünite üretilsin"
+                  : "Örn. 4 - hızlı test için sadece ilk N üniteyi üretir"
+              }
               className="h-10 w-40"
             />
           </div>

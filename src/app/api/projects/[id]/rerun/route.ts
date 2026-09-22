@@ -27,7 +27,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   });
 
   const body = await request.json().catch(() => ({}));
-  const unitLimit = Number.isInteger(body?.unitLimit) && body.unitLimit > 0 ? body.unitLimit : null;
+  // "Sıfırdan Kitap" modu: unitLimit doubles as "how many units" for a
+  // from-scratch run - falling back to the previous run's value (instead of
+  // always null when the caller doesn't pass one explicitly) so rerunning a
+  // scratch project doesn't silently regenerate with DEFAULT_SCRATCH_UNIT_COUNT
+  // units instead of the count the user originally chose.
+  const unitLimit =
+    Number.isInteger(body?.unitLimit) && body.unitLimit > 0 ? body.unitLimit : (previousRun?.unitLimit ?? null);
 
   const bookTypes: string[] | null =
     Array.isArray(body?.bookTypes) && body.bookTypes.every((t: unknown) => typeof t === "string")
@@ -79,6 +85,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       unitLimit,
       requestedBookTypes: previousRun?.requestedBookTypes ?? ["student_book", "workbook"],
       variantCount: previousRun?.variantCount ?? 2,
+      isFromScratch: previousRun?.isFromScratch ?? false,
+      scratchBrief: previousRun?.scratchBrief ?? null,
     })
     .returning();
 

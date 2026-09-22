@@ -65,13 +65,26 @@ export async function POST(request: Request) {
     blobUrl,
     filename,
     isbn: isbnRaw,
+    mode: modeRaw,
+    brief: briefRaw,
   } = body;
+
+  // "Sıfırdan Kitap" modu (2026-09-22): the same request shape as normal
+  // (PDF-upload) project creation, just without blobUrl/filename - the
+  // pipeline invents an outline instead of extracting one (see
+  // generateOutlineFromBrief in workflows/book-pipeline.tsx). unitLimit
+  // doubles as "how many units to generate" in this mode, so it's required
+  // here instead of optional.
+  const isFromScratch = modeRaw === "scratch";
 
   if (typeof name !== "string" || !name.trim()) {
     return NextResponse.json({ error: "Proje adı gerekli" }, { status: 400 });
   }
-  if (typeof blobUrl !== "string" || !blobUrl || typeof filename !== "string" || !filename) {
+  if (!isFromScratch && (typeof blobUrl !== "string" || !blobUrl || typeof filename !== "string" || !filename)) {
     return NextResponse.json({ error: "PDF dosyası gerekli" }, { status: 400 });
+  }
+  if (isFromScratch && (!Number.isInteger(unitLimitRaw) || unitLimitRaw <= 0)) {
+    return NextResponse.json({ error: "Ünite sayısı gerekli" }, { status: 400 });
   }
   if (bookType !== "student_book" && bookType !== "workbook") {
     return NextResponse.json({ error: "Geçersiz kitap tipi" }, { status: 400 });
@@ -144,10 +157,15 @@ export async function POST(request: Request) {
     })
     .returning();
 
+  // Sıfırdan modda gerçek bir yüklenen dosya yok, ama sourceUploads satırı
+  // yine de sentezlenip ekleniyor - böylece fetchRunContext ve diğer üç
+  // call site (api/projects/[id], rerun, projects/[id]/page.tsx) hiç
+  // değişmeden, bir satırın her zaman var olduğu varsayımıyla çalışmaya
+  // devam edebiliyor (bkz. schema.ts'in isFromScratch dokümantasyonu).
   await db.insert(sourceUploads).values({
     projectId: project.id,
-    blobUrl,
-    filename,
+    blobUrl: isFromScratch ? `scratch://${project.id}` : blobUrl,
+    filename: isFromScratch ? "(kaynak yok - sıfırdan oluşturuldu)" : filename,
     bookType,
   });
 
@@ -166,6 +184,8 @@ export async function POST(request: Request) {
       variantCount,
       unitSkeleton,
       spacedRepetition,
+      isFromScratch,
+      scratchBrief: isFromScratch && typeof briefRaw === "string" && briefRaw.trim() ? briefRaw.trim() : null,
     })
     .returning();
 

@@ -157,6 +157,22 @@ export const generationRuns = pgTable("generation_runs", {
   // empty (the default, unchanged behavior for every existing run) means
   // mirror-based generation exactly as before this existed.
   unitSkeleton: jsonb("unit_skeleton").$type<string[] | null>(),
+  // "Sıfırdan Kitap" modu (2026-09-22): when true, this run has NO real
+  // source PDF - fetchRunContext still finds a sourceUploads row (a
+  // synthesized placeholder inserted by POST /api/projects, see that
+  // route), but the pipeline replaces extractPageMap+extractOutline with
+  // generateOutlineFromBrief (workflows/book-pipeline.tsx), forces the
+  // unitSkeleton-style per-unit generation path (there are no real source
+  // pages to mirror), and skips checkOriginality (nothing to compare
+  // against). Kept as its own boolean rather than overloading unitSkeleton,
+  // since unitSkeleton means "custom section order while still mirroring a
+  // real PDF" - a different axis (unit structure) from this (outline
+  // origin). unitLimit doubles as "how many units to generate" in this mode.
+  isFromScratch: boolean("is_from_scratch").notNull().default(false),
+  // Only meaningful when isFromScratch is true - a short optional brief the
+  // user typed to steer generateOutlineFromBrief (e.g. "focus on everyday
+  // conversation, not grammar drills"). Null means "no brief, use judgment".
+  scratchBrief: text("scratch_brief"),
   // Aralıklı Tekrar (Spaced Repetition) Sayfaları (2026-09-21, ROADMAP.md):
   // opt-in, default false (unchanged behavior for every existing run) -
   // when true, every REVIEW_INTERVAL_UNITS-th real unit

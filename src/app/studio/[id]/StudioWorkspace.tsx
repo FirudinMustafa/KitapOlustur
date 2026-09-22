@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { storyProjects, storyMessages, storyArtifacts } from "@/db/schema";
 import { AdvancedImagePanel } from "./AdvancedImagePanel";
+import { ChatMessage, PendingAssistantMessage } from "./ChatMessage";
+import { ArtifactCard } from "./ArtifactCard";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 type StoryProject = typeof storyProjects.$inferSelect;
 type StoryMessage = typeof storyMessages.$inferSelect;
@@ -32,6 +37,8 @@ export function StudioWorkspace({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoProvider, setVideoProvider] = useState<"veo" | "higgsfield">("veo");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
   // Faz "Gelişmiş Görsel Üretim Paneli": computed from the already-loaded
   // `artifacts` state rather than a separate server-side sum - every
@@ -48,6 +55,22 @@ export function StudioWorkspace({
     ].filter(Boolean);
     return tags.length ? `[${tags.join(", ")}] ${raw}` : raw;
   }
+
+  // Chat redesign: auto-resizing composer (Claude/ChatGPT convention) - no
+  // new dependency, just measuring/resetting scrollHeight on each change.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input]);
+
+  // Auto-scroll to the latest message/pending indicator, same expectation
+  // any chat UI sets (a purely visual redesign that left this out would
+  // feel broken the moment a conversation grows past one screen).
+  useEffect(() => {
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, sending]);
 
   // Video generation is async (Higgsfield submit -> poll) - any "pending"
   // video artifact needs its status checked periodically until it reaches a
@@ -120,6 +143,13 @@ export function StudioWorkspace({
     }
   }
 
+  function handleComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!sending && input.trim()) sendMessage();
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 lg:flex-row">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -140,11 +170,11 @@ export function StudioWorkspace({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <select
             value={genre}
             onChange={(e) => setGenre(e.target.value)}
-            className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground"
+            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           >
             {GENRE_OPTIONS.map((g) => (
               <option key={g} value={g}>
@@ -155,7 +185,7 @@ export function StudioWorkspace({
           <select
             value={ageGroup}
             onChange={(e) => setAgeGroup(e.target.value)}
-            className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground"
+            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           >
             {AGE_OPTIONS.map((a) => (
               <option key={a} value={a}>
@@ -166,7 +196,7 @@ export function StudioWorkspace({
           <select
             value={tone}
             onChange={(e) => setTone(e.target.value)}
-            className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground"
+            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           >
             {TONE_OPTIONS.map((t) => (
               <option key={t} value={t}>
@@ -174,61 +204,40 @@ export function StudioWorkspace({
               </option>
             ))}
           </select>
-          <input
+          <Input
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
             placeholder="Dil (örn. Türkçe)"
-            className="w-32 rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground"
+            className="h-8 w-32 text-xs"
           />
         </div>
 
-        <div className="mt-4 flex flex-1 flex-col gap-3 overflow-y-auto rounded-xl border border-border p-4">
-          {messages.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Ne tür bir hikaye/içerik istediğini yaz. İstersen doğrudan bir görsel ya da ses de isteyebilirsin.
-            </p>
-          )}
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                m.role === "user"
-                  ? "self-end bg-primary text-primary-foreground"
-                  : "self-start bg-card text-card-foreground ring-1 ring-foreground/10"
-              }`}
-            >
-              {m.content}
-              {artifacts
-                .filter((a) => a.messageId === m.id)
-                .map((a) => (
-                  <div key={a.id} className="mt-2">
-                    {a.status === "failed" ? (
-                      <p className="text-xs text-destructive">Üretim başarısız: {a.errorMessage}</p>
-                    ) : a.status === "pending" ? (
-                      <p className="text-xs text-muted-foreground">Video üretiliyor…</p>
-                    ) : a.type === "image" ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={a.url ?? ""} alt={a.prompt} className="max-w-full rounded-md" />
-                    ) : a.type === "audio" ? (
-                      <audio controls src={a.url ?? ""} className="w-full" />
-                    ) : a.type === "video" ? (
-                      <video controls src={a.url ?? ""} className="max-w-full rounded-md" />
-                    ) : null}
-                  </div>
-                ))}
-            </div>
-          ))}
-        </div>
+        <ScrollArea className="mt-4 h-[28rem] flex-1 rounded-xl border border-border">
+          <div className="flex flex-col gap-4 p-4">
+            {messages.length === 0 && !sending && (
+              <p className="text-sm text-muted-foreground">
+                Ne tür bir hikaye/içerik istediğini yaz. İstersen doğrudan bir görsel ya da ses de isteyebilirsin.
+              </p>
+            )}
+            {messages.map((m) => (
+              <ChatMessage key={m.id} message={m} artifacts={artifacts.filter((a) => a.messageId === m.id)} />
+            ))}
+            {sending && <PendingAssistantMessage />}
+            <div ref={scrollAnchorRef} />
+          </div>
+        </ScrollArea>
 
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
 
         <div className="mt-3 flex flex-col gap-2">
-          <textarea
+          <Textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleComposerKeyDown}
             rows={3}
-            placeholder="Hikayeni anlat, bir sahneyi betimle ya da doğrudan bir görsel/ses iste…"
-            className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+            placeholder="Hikayeni anlat, bir sahneyi betimle ya da doğrudan bir görsel/ses iste… (Enter: gönder, Shift+Enter: yeni satır)"
+            className="max-h-[200px] resize-none"
           />
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => sendMessage()} disabled={sending || !input.trim()} className="h-9 rounded-full px-4">
@@ -263,7 +272,7 @@ export function StudioWorkspace({
               value={videoProvider}
               onChange={(e) => setVideoProvider(e.target.value as "veo" | "higgsfield")}
               title="Video sağlayıcısı"
-              className="rounded-full border border-input bg-background px-2 text-xs text-foreground"
+              className="h-9 rounded-full border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             >
               <option value="veo">Veo</option>
               <option value="higgsfield">Higgsfield</option>
@@ -282,26 +291,7 @@ export function StudioWorkspace({
         <div className="mt-3 flex flex-col gap-3">
           {artifacts.length === 0 && <p className="text-xs text-muted-foreground">Henüz görsel/ses üretilmedi.</p>}
           {artifacts.map((a) => (
-            <div key={a.id} className="rounded-xl bg-card p-2 text-card-foreground ring-1 ring-foreground/10">
-              {a.status === "failed" ? (
-                <p className="text-xs text-destructive">Başarısız: {a.errorMessage}</p>
-              ) : a.status === "pending" ? (
-                <p className="text-xs text-muted-foreground">Video üretiliyor…</p>
-              ) : a.type === "image" ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={a.url ?? ""} alt={a.prompt} className="w-full rounded-md" />
-              ) : a.type === "audio" ? (
-                <audio controls src={a.url ?? ""} className="w-full" />
-              ) : a.type === "video" ? (
-                <video controls src={a.url ?? ""} className="w-full rounded-md" />
-              ) : null}
-              <p className="mt-1 truncate text-xs text-muted-foreground" title={a.prompt}>
-                {a.prompt}
-              </p>
-              {a.costUsd != null && (
-                <p className="mt-0.5 text-[10px] font-medium text-muted-foreground/70">~${a.costUsd.toFixed(3)}</p>
-              )}
-            </div>
+            <ArtifactCard key={a.id} artifact={a} variant="gallery" />
           ))}
         </div>
       </div>

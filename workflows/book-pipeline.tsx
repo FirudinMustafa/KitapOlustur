@@ -295,6 +295,66 @@ async function extractOutline(
   return object;
 }
 
+// "Sıfırdan Kitap" modu (2026-09-22): replaces extractPageMap+extractOutline
+// when generationRuns.isFromScratch is true - no PDF exists, so this invents
+// a plausible BookOutline from just a topic/level/unit-count/brief instead
+// of extracting one from real pages. Deliberately reuses bookOutlineSchema
+// unchanged (same shape extractOutline produces) so every downstream step
+// (analyzeImprovements, buildStyleBible, the outline-approval hook, the
+// per-unit loop) works without knowing which path produced the outline.
+// sourcePageRange has no real meaning here (there's no source to point at) -
+// synthetic, evenly-spaced placeholders are assigned purely so the field is
+// populated consistently with the schema; nothing reads them as real pages
+// in this mode (unitSourcePages ends up empty, which generateSkeletonSide
+// already treats as "no background info" - see its own doc comment).
+const SCRATCH_UNIT_PAGE_SPAN = 10;
+// Falls back to this when a from-scratch run's unitLimit is somehow unset
+// (the form requires it, but old/rerun rows could predate that requirement).
+const DEFAULT_SCRATCH_UNIT_COUNT = 6;
+// Falls back to this fixed section list for a from-scratch run whose user
+// didn't also supply a custom unitSkeleton - generateSkeletonSide always
+// needs a section list, real source pages or not.
+const DEFAULT_SCRATCH_UNIT_SKELETON = ["Giriş", "Ana İçerik", "Alıştırmalar", "Özet"];
+
+async function generateOutlineFromBrief(
+  runId: string,
+  topic: string,
+  level: string | null,
+  unitCount: number,
+  brief: string | null,
+  targetLanguage?: string | null,
+): Promise<BookOutline> {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: BOOK_PIPELINE_MODEL,
+      schema: bookOutlineSchema,
+      maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
+      system:
+        "You are an expert curriculum designer. Given only a topic, a target level, and how many units are wanted, you invent a complete, pedagogically sound unit-by-unit structure for an original coursebook from your own subject-matter expertise - there is no source material to extract from.",
+      prompt: [
+        `Design a ${unitCount}-unit coursebook on the topic "${topic}"${level ? ` for level "${level}"` : ""}.`,
+        brief
+          ? `Additional brief from the user: ${brief}`
+          : "The user gave no additional brief - use your own judgment for scope and sequencing.",
+        "Give the book a title, academic subject, overall level, tone, and target audience.",
+        `For every one of the ${unitCount} units, give its title, level, learning objectives, and key terms (vocabulary, formulas, or concepts introduced). Sequence units so difficulty progresses sensibly from the first unit to the last.`,
+        `There is no source document, so set each unit's sourcePageRange to a synthetic placeholder, evenly spaced: unit N (1-indexed) gets { start: (N-1)*${SCRATCH_UNIT_PAGE_SPAN}+1, end: N*${SCRATCH_UNIT_PAGE_SPAN} }. This is bookkeeping only, not a real page reference.`,
+        targetLanguage
+          ? `Write the whole book in "${targetLanguage}". Set contentLanguage to the correct BCP-47 code (e.g. "de" for German), and write bookTitle, tone, targetAudience, and every unit's title/learningObjectives/keyTerms in that language.`
+          : "Set contentLanguage to the BCP-47 code matching the language you write the book in (default to Turkish, 'tr', unless the topic clearly implies another language).",
+        "Leave declaredLevelAlignment unset - there is no source material to compare the declared level against.",
+      ].join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "outline", usage);
+  await db.insert(extractedOutlines).values({ runId, outline: { outline: object } });
+
+  return object;
+}
+
 async function analyzeImprovements(
   runId: string,
   outline: BookOutline,
@@ -1607,11 +1667,26 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       return { runId, status: "done" as const };
     }
 
-    await setRunStatus(runId, "mapping_pages", "Kaynak PDF sayfa sayfa haritalanıyor");
-    const pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
+    let pageMap: PageMap;
+    let outline: BookOutline;
+    if (ctx.run.isFromScratch) {
+      await setRunStatus(runId, "extracting", "Kitabın yapısı (dizelge) sıfırdan oluşturuluyor");
+      pageMap = { totalPages: 0, pages: [] };
+      outline = await generateOutlineFromBrief(
+        runId,
+        ctx.project.name,
+        ctx.project.level,
+        ctx.run.unitLimit ?? DEFAULT_SCRATCH_UNIT_COUNT,
+        ctx.run.scratchBrief,
+        ctx.run.targetLanguage,
+      );
+    } else {
+      await setRunStatus(runId, "mapping_pages", "Kaynak PDF sayfa sayfa haritalanıyor");
+      pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
 
-    await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) çıkarılıyor");
-    const outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap, ctx.run.targetLanguage, ctx.project.level);
+      await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) çıkarılıyor");
+      outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap, ctx.run.targetLanguage, ctx.project.level);
+    }
 
     await setRunStatus(runId, "analyzing", "Nice-to-have listesine göre iyileştirme planı hazırlanıyor");
     const improvementPlan: ImprovementPlan = await analyzeImprovements(
@@ -1684,18 +1759,25 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           textModel: ctx.textModel,
         };
 
-        // Faz "Sabit Ünite İskeleti": opt-in per run (ctx.run.unitSkeleton) -
-        // everything after this branch (generateComplementarySide, teacher/
-        // test booklet sides, the five review gates, image/audio generation)
-        // is unaware of which path produced `mirrored`. checkOriginality
+        // Faz "Sabit Ünite İskeleti" + "Sıfırdan Kitap": opt-in per run
+        // (ctx.run.unitSkeleton), or forced whenever ctx.run.isFromScratch
+        // (there are no real source pages to mirror at all) - everything
+        // after this branch (generateComplementarySide, teacher/test
+        // booklet sides, the five review gates, image/audio generation) is
+        // unaware of which path produced `mirrored`. checkOriginality
         // (F1 n-gram overlap vs. the real source pages) only makes sense for
         // the literal page-for-page mirror - skipped here for the same
         // reason the complementary side is already exempt from it (it's
         // independently-written new material, not a page-for-page mirror).
-        const mirrored = ctx.run.unitSkeleton?.length
-          ? await generateSkeletonSide(runId, genContext, ctx.run.unitSkeleton)
+        const effectiveSkeleton = ctx.run.unitSkeleton?.length
+          ? ctx.run.unitSkeleton
+          : ctx.run.isFromScratch
+            ? DEFAULT_SCRATCH_UNIT_SKELETON
+            : null;
+        const mirrored = effectiveSkeleton
+          ? await generateSkeletonSide(runId, genContext, effectiveSkeleton)
           : await generateMirroredSide(runId, genContext);
-        if (!ctx.run.unitSkeleton?.length) {
+        if (!effectiveSkeleton) {
           await checkOriginality(runId, outlineUnit.number, mirrored.pages, unitSourcePages);
         }
         const complementary = await generateComplementarySide(runId, {
