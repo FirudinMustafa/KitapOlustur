@@ -1,4 +1,4 @@
-import type { GeneratedUnit, UnitOutline } from "./ai/schemas";
+import type { BlockLayout, ContentBlock, GeneratedUnit, UnitOutline } from "./ai/schemas";
 import type { PageArrayField } from "./layout-merge";
 
 // "Dizilim" (2026-09-21, ROADMAP.md): the pure, testable core of the
@@ -70,6 +70,130 @@ export function movePage(
     if (i === toUnitIndex) return { ...u, [pageArrayField]: destPages };
     return u;
   });
+}
+
+export interface BlockLocation {
+  unitNumber: number;
+  pageArrayField: PageArrayField;
+  pageIndex: number;
+  blockIndex: number;
+}
+
+export interface MoveBlockResult {
+  units: GeneratedUnit[];
+  // True when the moved block had a matching listeningAudio entry (matched
+  // by ListeningAudio.blockRef === block.heading, see schemas.ts) that had
+  // to be migrated to the destination unit along with it - the caller can
+  // use this to tell the user their listening audio moved too, since it
+  // isn't visually obvious the way a page/block move is.
+  audioMoved: boolean;
+}
+
+// Moves (or reorders within the same page) a single content block - the
+// block-level sibling of movePage above. Unlike movePage, `to.blockIndex` is
+// optional (append-at-end when omitted - e.g. a drop straight onto a page
+// card rather than onto a specific block slot). A moved block's absolute
+// `.layout` (if any) is dropped by default so it doesn't overlap unrelated
+// content already positioned on the destination page and falls back to
+// normal flow instead; pass layoutOverride to place it precisely (e.g. a
+// drop coordinate on the destination canvas).
+export function moveBlock(
+  units: GeneratedUnit[],
+  from: BlockLocation,
+  to: { unitNumber: number; pageArrayField: PageArrayField; pageIndex: number; blockIndex?: number },
+  layoutOverride?: BlockLayout,
+): MoveBlockResult {
+  const fromUnitIndex = units.findIndex((u) => u.unitNumber === from.unitNumber);
+  if (fromUnitIndex === -1) throw new Error(`Ünite ${from.unitNumber} bulunamadı.`);
+  const toUnitIndex = units.findIndex((u) => u.unitNumber === to.unitNumber);
+  if (toUnitIndex === -1) throw new Error(`Ünite ${to.unitNumber} bulunamadı.`);
+
+  const fromPages = units[fromUnitIndex][from.pageArrayField] ?? [];
+  if (from.pageIndex < 0 || from.pageIndex >= fromPages.length) {
+    throw new Error(`Ünite ${from.unitNumber} için ${from.pageArrayField}[${from.pageIndex}] sayfası bulunamadı.`);
+  }
+  const fromBlocks = fromPages[from.pageIndex].blocks;
+  if (from.blockIndex < 0 || from.blockIndex >= fromBlocks.length) {
+    throw new Error(`Sayfada blok ${from.blockIndex} bulunamadı.`);
+  }
+  const block = fromBlocks[from.blockIndex];
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-omit is the idiom for "drop this key"
+  const { layout: _droppedLayout, ...blockWithoutLayout } = block;
+  const movedBlock: ContentBlock = layoutOverride ? { ...blockWithoutLayout, layout: layoutOverride } : blockWithoutLayout;
+
+  const samePage =
+    from.unitNumber === to.unitNumber && from.pageArrayField === to.pageArrayField && from.pageIndex === to.pageIndex;
+
+  if (samePage) {
+    const blocks = fromBlocks.slice();
+    blocks.splice(from.blockIndex, 1);
+    const clampedIndex = Math.max(0, Math.min(to.blockIndex ?? blocks.length, blocks.length));
+    blocks.splice(clampedIndex, 0, movedBlock);
+    const updatedPages = fromPages.map((p, i) => (i === from.pageIndex ? { ...p, blocks } : p));
+    const newUnits = units.map((u, i) => (i === fromUnitIndex ? { ...u, [from.pageArrayField]: updatedPages } : u));
+    return { units: newUnits, audioMoved: false };
+  }
+
+  if (fromUnitIndex === toUnitIndex) {
+    const pages = fromPages.slice();
+    if (to.pageIndex < 0 || to.pageIndex >= pages.length) {
+      throw new Error(`Ünite ${to.unitNumber} için ${to.pageArrayField}[${to.pageIndex}] sayfası bulunamadı.`);
+    }
+    const sourceBlocks = pages[from.pageIndex].blocks.slice();
+    sourceBlocks.splice(from.blockIndex, 1);
+    pages[from.pageIndex] = { ...pages[from.pageIndex], blocks: sourceBlocks };
+
+    const destBlocks = pages[to.pageIndex].blocks.slice();
+    const clampedIndex = Math.max(0, Math.min(to.blockIndex ?? destBlocks.length, destBlocks.length));
+    destBlocks.splice(clampedIndex, 0, movedBlock);
+    pages[to.pageIndex] = { ...pages[to.pageIndex], blocks: destBlocks };
+
+    const newUnits = units.map((u, i) => (i === fromUnitIndex ? { ...u, [from.pageArrayField]: pages } : u));
+    return { units: newUnits, audioMoved: false };
+  }
+
+  // Farklı ünite - taşınan bloğun heading'ine bağlı bir listeningAudio
+  // girdisi varsa (ünite bazlı, bkz. schemas.ts'teki ListeningAudio.blockRef
+  // dokümantasyonu) kaynak üniteden hedef üniteye birlikte taşınır, aksi
+  // halde ses sessizce koparılmış (orphan) olurdu.
+  const destPagesBefore = units[toUnitIndex][to.pageArrayField] ?? [];
+  if (to.pageIndex < 0 || to.pageIndex >= destPagesBefore.length) {
+    throw new Error(`Ünite ${to.unitNumber} için ${to.pageArrayField}[${to.pageIndex}] sayfası bulunamadı.`);
+  }
+
+  const remainingSourceBlocks = fromBlocks.slice();
+  remainingSourceBlocks.splice(from.blockIndex, 1);
+  const updatedSourcePages = fromPages.map((p, i) => (i === from.pageIndex ? { ...p, blocks: remainingSourceBlocks } : p));
+
+  const destBlocks = destPagesBefore[to.pageIndex].blocks.slice();
+  const clampedIndex = Math.max(0, Math.min(to.blockIndex ?? destBlocks.length, destBlocks.length));
+  destBlocks.splice(clampedIndex, 0, movedBlock);
+  const updatedDestPages = destPagesBefore.map((p, i) => (i === to.pageIndex ? { ...p, blocks: destBlocks } : p));
+
+  const sourceUnit = units[fromUnitIndex];
+  const audioEntry = sourceUnit.listeningAudio?.find((a) => a.blockRef === block.heading);
+  const audioMoved = !!audioEntry;
+
+  const newUnits = units.map((u, i) => {
+    if (i === fromUnitIndex) {
+      return {
+        ...u,
+        [from.pageArrayField]: updatedSourcePages,
+        listeningAudio: audioEntry ? u.listeningAudio!.filter((a) => a !== audioEntry) : u.listeningAudio,
+      };
+    }
+    if (i === toUnitIndex) {
+      return {
+        ...u,
+        [to.pageArrayField]: updatedDestPages,
+        listeningAudio: audioEntry ? [...(u.listeningAudio ?? []), audioEntry] : u.listeningAudio,
+      };
+    }
+    return u;
+  });
+
+  return { units: newUnits, audioMoved };
 }
 
 export interface RenumberResult {

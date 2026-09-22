@@ -1171,27 +1171,12 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
 
       {books.length > 0 && (
         <div className="mt-6 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-foreground">Üretilen kitaplar</h2>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full px-3 text-xs"
-                render={<Link href={`/projects/${projectId}/layout`} />}
-              >
-                Sayfa Düzenini Aç
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full px-3 text-xs"
-                render={<Link href={`/projects/${projectId}/dizilim`} />}
-              >
-                Dizilim
-              </Button>
-            </div>
-          </div>
+          {/* Dizilim/Sayfa Düzeni'ne giriş artık kalıcı proje sidebar'ından
+              (AppSidebar.tsx'in "Bu proje" grubu) yapılıyor - eski iki
+              bağlamsal buton kaldırıldı. Sayfa Düzeni ayrıca Dizilim'e
+              taşındı (bkz. ArrangementEditor.tsx'in sayfa konumlandırma
+              modu), ayrı bir editör olarak kalmadı. */}
+          <h2 className="text-lg font-medium text-foreground">Üretilen kitaplar</h2>
           {books.map((book) => {
             const audioTracks = audioTracksFor(book);
             return (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSyntheticUnit, movePage, reorderUnits, renumberRealUnits } from "./arrangement-merge";
+import { isSyntheticUnit, moveBlock, movePage, reorderUnits, renumberRealUnits } from "./arrangement-merge";
 import type { GeneratedUnit, UnitOutline } from "./ai/schemas";
 
 function makeUnit(unitNumber: number, pageCount = 2): GeneratedUnit {
@@ -93,6 +93,107 @@ describe("movePage", () => {
   it("throws for an out-of-range page index", () => {
     const units = [makeUnit(1, 1)];
     expect(() => movePage(units, 1, "studentBookPages", 5, 1, 0)).toThrow(/sayfası bulunamadı/);
+  });
+});
+
+describe("moveBlock", () => {
+  it("reorders blocks within the same page", () => {
+    const units = [makeUnit(1, 1)];
+    units[0].studentBookPages[0].blocks.push({ kind: "practice", heading: "Second", body: "Body" });
+    const { units: result, audioMoved } = moveBlock(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 1 },
+    );
+    expect(result[0].studentBookPages[0].blocks.map((b) => b.heading)).toEqual(["Second", "Page 0"]);
+    expect(audioMoved).toBe(false);
+  });
+
+  it("moves a block to a different page in the same unit", () => {
+    const units = [makeUnit(1, 2)];
+    const { units: result } = moveBlock(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+    );
+    expect(result[0].studentBookPages[0].blocks).toHaveLength(0);
+    expect(result[0].studentBookPages[1].blocks.map((b) => b.heading)).toEqual(["Page 1", "Page 0"]);
+  });
+
+  it("drops the moved block's layout unless a layoutOverride is given", () => {
+    const units = [makeUnit(1, 2)];
+    units[0].studentBookPages[0].blocks[0].layout = { x: 1, y: 2, width: 3, height: 4 };
+    const { units: withoutOverride } = moveBlock(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+    );
+    expect(withoutOverride[0].studentBookPages[1].blocks[1].layout).toBeUndefined();
+
+    const layout = { x: 10, y: 20, width: 30, height: 40 };
+    const { units: withOverride } = moveBlock(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+      layout,
+    );
+    expect(withOverride[0].studentBookPages[1].blocks[1].layout).toEqual(layout);
+  });
+
+  it("moves a block across units and migrates its matching listeningAudio entry", () => {
+    const units = [makeUnit(1, 1), makeUnit(2, 1)];
+    units[0].listeningAudio = [{ blockRef: "Page 0", script: "Hello" }];
+    const { units: result, audioMoved } = moveBlock(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
+      { unitNumber: 2, pageArrayField: "studentBookPages", pageIndex: 0 },
+    );
+    expect(audioMoved).toBe(true);
+    expect(result[0].listeningAudio).toEqual([]);
+    expect(result[1].listeningAudio).toEqual([{ blockRef: "Page 0", script: "Hello" }]);
+  });
+
+  it("does not migrate audio for a cross-unit move when no entry matches", () => {
+    const units = [makeUnit(1, 1), makeUnit(2, 1)];
+    const { audioMoved } = moveBlock(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
+      { unitNumber: 2, pageArrayField: "studentBookPages", pageIndex: 0 },
+    );
+    expect(audioMoved).toBe(false);
+  });
+
+  it("throws for an out-of-range source block index", () => {
+    const units = [makeUnit(1, 1)];
+    expect(() =>
+      moveBlock(
+        units,
+        { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 5 },
+        { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0 },
+      ),
+    ).toThrow(/blok 5 bulunamadı/);
+  });
+
+  it("throws for a nonexistent destination page", () => {
+    const units = [makeUnit(1, 1), makeUnit(2, 1)];
+    expect(() =>
+      moveBlock(
+        units,
+        { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
+        { unitNumber: 2, pageArrayField: "studentBookPages", pageIndex: 9 },
+      ),
+    ).toThrow(/sayfası bulunamadı/);
+  });
+
+  it("does not mutate the input array", () => {
+    const units = [makeUnit(1, 2)];
+    const original = JSON.parse(JSON.stringify(units));
+    moveBlock(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+    );
+    expect(units).toEqual(original);
   });
 });
 

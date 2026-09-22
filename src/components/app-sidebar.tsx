@@ -43,21 +43,39 @@ const NAV_ITEMS = [
 type RecentProject = { id: string; name: string; latestRun: { status: string } | null };
 type RecentStory = { id: string; title: string };
 
+// "Dizilim → Gerçek Kitap" (proje sidebar'ı): /projects/[id] altındaki alt
+// sayfalara (Dizilim, Oku, ...) önceden kalıcı bir giriş noktası yoktu -
+// sadece RunStatusView.tsx'teki iki bağlamsal buton vardı. Ayrı bir ikinci
+// sidebar kurmak yerine (bu uygulamanın zaten "Arayüz yenileme" fazında
+// kurulmuş tek, ChatGPT/Claude-tarzı AppSidebar'ı var), bu mevcut sidebar'a
+// proje rotasındayken görünen bağlamsal bir grup eklendi. Hedef sayfaların
+// kendisi (dizilim/page.tsx, read/[bookType]/page.tsx) zaten run
+// tamamlanmamışsa kendi uyarısını gösteriyor - bu yüzden linkler burada
+// devre dışı bırakılmıyor, mevcut "direkt URL ile erişilebilir, sayfa kendi
+// korumasını yapar" deseni korunuyor.
+const PROJECT_ID_PATTERN = /^\/projects\/([^/]+)/;
+
 export function AppSidebar() {
   const pathname = usePathname();
-  const [recentProjects, setRecentProjects] = useState<RecentProject[] | null>(null);
+  const [allProjects, setAllProjects] = useState<RecentProject[] | null>(null);
   const [recentStories, setRecentStories] = useState<RecentStory[] | null>(null);
 
   useEffect(() => {
     fetch("/api/projects")
       .then((res) => res.json())
-      .then((data) => setRecentProjects((data.projects ?? []).slice(0, 6)))
-      .catch(() => setRecentProjects([]));
+      .then((data) => setAllProjects(data.projects ?? []))
+      .catch(() => setAllProjects([]));
     fetch("/api/studio/projects")
       .then((res) => res.json())
       .then((data) => setRecentStories((data.storyProjects ?? []).slice(0, 6)))
       .catch(() => setRecentStories([]));
   }, [pathname]);
+
+  const recentProjects = allProjects?.slice(0, 6) ?? null;
+
+  const projectIdMatch = pathname?.match(PROJECT_ID_PATTERN);
+  const currentProjectId = projectIdMatch && projectIdMatch[1] !== "new" ? projectIdMatch[1] : null;
+  const currentProject = currentProjectId ? (allProjects?.find((p) => p.id === currentProjectId) ?? null) : null;
 
   return (
     <Sidebar collapsible="icon">
@@ -99,6 +117,43 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {currentProjectId && (
+          <>
+            <SidebarSeparator />
+            <SidebarGroup>
+              <SidebarGroupLabel className="truncate">{currentProject?.name ?? "Bu proje"}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname === `/projects/${currentProjectId}`}
+                      render={<Link href={`/projects/${currentProjectId}`} />}
+                    >
+                      Genel Bakış
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname === `/projects/${currentProjectId}/dizilim`}
+                      render={<Link href={`/projects/${currentProjectId}/dizilim`} />}
+                    >
+                      Dizilim
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname?.startsWith(`/projects/${currentProjectId}/read/`) ?? false}
+                      render={<Link href={`/projects/${currentProjectId}/read/student_book`} />}
+                    >
+                      Oku
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
 
         <SidebarSeparator />
 
