@@ -1,6 +1,9 @@
 import { Document, Page, Text, View, StyleSheet, Svg, Circle, Path } from "@react-pdf/renderer";
 import { PALETTE, type Variant } from "./BookDocument";
 import { TRIM_SIZES, type TrimSizeId } from "./page-geometry";
+import { registerBookFonts, NOTO_SANS, NOTO_SERIF } from "./fonts";
+
+registerBookFonts();
 
 export type CourseUnitSummary = {
   number: number;
@@ -12,14 +15,14 @@ export type CourseUnitSummary = {
 };
 
 const styles = StyleSheet.create({
-  page: { padding: 44, fontSize: 10, fontFamily: "Times-Roman", color: "#1f2937" },
+  page: { padding: 44, fontSize: 10, fontFamily: NOTO_SERIF, color: "#1f2937" },
   headerBand: { paddingVertical: 22, paddingHorizontal: 26, borderRadius: 10, marginBottom: 22, position: "relative", overflow: "hidden" },
   headerDecoration: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
-  headerKicker: { fontFamily: "Helvetica-Bold", fontSize: 10, color: "#ffffff", opacity: 0.85, letterSpacing: 2, marginBottom: 6 },
-  headerTitle: { fontFamily: "Helvetica-Bold", fontSize: 22, color: "#ffffff" },
+  headerKicker: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 10, color: "#ffffff", opacity: 0.85, letterSpacing: 2, marginBottom: 6 },
+  headerTitle: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 22, color: "#ffffff" },
 
   tableHeaderRow: { flexDirection: "row", borderRadius: 6, paddingVertical: 7, paddingHorizontal: 8, marginBottom: 4 },
-  tableHeaderCell: { fontFamily: "Helvetica-Bold", fontSize: 8, color: "#ffffff", letterSpacing: 0.5 },
+  tableHeaderCell: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 8, color: "#ffffff", letterSpacing: 0.5 },
 
   row: { flexDirection: "row", paddingVertical: 9, paddingHorizontal: 8, borderRadius: 6, marginBottom: 5, alignItems: "flex-start" },
 
@@ -30,10 +33,10 @@ const styles = StyleSheet.create({
   colLevel: { width: "21%" },
 
   unitBadge: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  unitBadgeText: { fontFamily: "Helvetica-Bold", fontSize: 9.5, color: "#ffffff" },
+  unitBadgeText: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9.5, color: "#ffffff" },
 
-  cellTitle: { fontFamily: "Helvetica-Bold", fontSize: 9.5, marginBottom: 2 },
-  cellTopic: { fontSize: 8.5, fontFamily: "Times-Italic", color: "#4b5563", lineHeight: 1.3 },
+  cellTitle: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9.5, marginBottom: 2 },
+  cellTopic: { fontSize: 8.5, fontFamily: NOTO_SERIF, fontStyle: "italic", color: "#4b5563", lineHeight: 1.3 },
   cellText: { fontSize: 8.5, lineHeight: 1.35 },
 
   footer: {
@@ -48,7 +51,7 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     fontSize: 8,
     color: "#9ca3af",
-    fontFamily: "Helvetica",
+    fontFamily: NOTO_SANS,
   },
 });
 
