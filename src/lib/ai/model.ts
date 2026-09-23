@@ -15,7 +15,21 @@ export const BOOK_PIPELINE_SPEECH_MODEL = "openai/tts-1-hd";
 // reviewImage, reviewBookCoherence) also always stay on BOOK_PIPELINE_MODEL,
 // so QA fidelity doesn't degrade along with draft content. See ROADMAP.md
 // Faz H6.
-export const BOOK_PIPELINE_MODEL_DRAFT = "anthropic/claude-haiku-4-5";
+//
+// "Gateway kredisini idareli kullanma" (2026-09-23): switched from
+// anthropic/claude-haiku-4-5 to openai/gpt-5-nano - confirmed live against
+// the Gateway's own catalog (https://ai-gateway.vercel.sh/v1/models, fetched
+// directly, not memorized) at $0.05/$0.40 per million input/output tokens,
+// ~20x cheaper than Haiku 4.5, while still carrying `tool-use` and
+// `structured-output` tags (needed for this pipeline's generateObject
+// calls). Since draft mode is explicitly "cheap preview, not final quality"
+// by design, swapping its backing model doesn't change what draft mode
+// promises - it's now genuinely closer to the cheap end of what the
+// Gateway offers. If output quality/instruction-following in Turkish proves
+// too weak in practice, google/gemini-2.5-flash-lite ($0.10/$0.40 per M,
+// same tag profile, also confirmed in the catalog) is the next cheapest
+// fallback to try.
+export const BOOK_PIPELINE_MODEL_DRAFT = "openai/gpt-5-nano";
 
 export function resolveTextModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? BOOK_PIPELINE_MODEL_DRAFT : BOOK_PIPELINE_MODEL;
@@ -68,11 +82,17 @@ export const BOOK_PIPELINE_INTERIOR_IMAGE_SIZE: StudioImageSizeId = "1536x1024";
 // requires upgrading `ai` (and `@ai-sdk/gateway`) to the v7 line first,
 // which touches every generateObject/generateImage/generateSpeech call site
 // in workflows/book-pipeline.tsx - a separate, bigger migration than this
-// model-tiering feature. Both quality tiers use BOOK_PIPELINE_SPEECH_MODEL
-// (OpenAI tts-1-hd) until that upgrade happens. See ROADMAP.md Faz H6.
+// model-tiering feature. See ROADMAP.md Faz H6.
+//
+// "Gateway kredisini idareli kullanma" (2026-09-23): now actually tiered -
+// draft uses openai/tts-1 ($15/M chars, confirmed in the live Gateway
+// catalog), half the price of tts-1-hd, same OpenAI API shape (no
+// integration risk). final keeps tts-1-hd for the higher-fidelity
+// pronunciation model a real listening exercise needs.
+export const BOOK_PIPELINE_SPEECH_MODEL_DRAFT = "openai/tts-1";
+
 export function resolveSpeechModel(qualityMode: "draft" | "final"): string {
-  void qualityMode; // no tiering yet - see comment above
-  return BOOK_PIPELINE_SPEECH_MODEL;
+  return qualityMode === "draft" ? BOOK_PIPELINE_SPEECH_MODEL_DRAFT : BOOK_PIPELINE_SPEECH_MODEL;
 }
 
 // Hikaye Stüdyosu video: Google Veo, confirmed available directly through

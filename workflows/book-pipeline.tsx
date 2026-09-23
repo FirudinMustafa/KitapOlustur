@@ -62,6 +62,7 @@ import {
   type StudioImageSizeId,
 } from "@/lib/ai/model";
 import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
+import { translateAiError } from "@/lib/ai/error-messages";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
 import type { TrimSizeId } from "@/lib/pdf/page-geometry";
@@ -112,7 +113,14 @@ async function withObjectDiagnostics<T>(
         `AI did not return a schema-valid object (finishReason: ${err.finishReason ?? "unknown"}). Raw output snippet: ${snippet}`,
       );
     }
-    throw err;
+    // "Gateway kredisini idareli kullanma": every other failure (rate limit,
+    // insufficient credit, bad key) gets translated to a readable message
+    // here too, not just at the workflow's own top-level catch - some
+    // generateObject calls run inside Promise.all alongside other steps, so
+    // translating close to the source keeps the message attached to the
+    // right error even if Promise.all's rejection reordering obscures which
+    // call actually failed.
+    throw new Error(translateAiError(err));
   }
 }
 
@@ -2172,7 +2180,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
 
     return { runId, status: "done" as const };
   } catch (err) {
-    await setRunStatus(runId, "failed", undefined, err instanceof Error ? err.message : String(err));
+    await setRunStatus(runId, "failed", undefined, translateAiError(err));
     throw err;
   }
 }

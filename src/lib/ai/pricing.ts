@@ -26,9 +26,13 @@ export const IMAGE_PRICE_USD_ESTIMATE: Record<string, number> = {
 // OpenAI tts-1-hd: $30.00 per 1,000,000 characters - official, exact rate
 // (platform.openai.com/docs/pricing). Actual cost is computed from the real
 // character count of the synthesized text, so this one is exact, not an
-// estimate.
+// estimate. tts-1 (now the draft-tier model, see model.ts's
+// resolveSpeechModel) is $15.00 per 1,000,000 - confirmed live against the
+// Vercel AI Gateway catalog (https://ai-gateway.vercel.sh/v1/models,
+// 2026-09-23), also exact.
 export const SPEECH_PRICE_USD_PER_MILLION_CHARS: Record<string, number> = {
   "openai/tts-1-hd": 30,
+  "openai/tts-1": 15,
 };
 
 export function estimateImageCostUsd(model: string): number | null {
