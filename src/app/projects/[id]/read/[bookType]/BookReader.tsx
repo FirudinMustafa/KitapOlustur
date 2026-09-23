@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { GeneratedUnit, GeneratedPage } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { KaraokeAudio, PageView } from "@/components/book/PageContent";
+import { resolvePageImageUrl } from "@/lib/page-image";
 
 const VARIANT_LABELS: Record<Variant, string> = {
   student_book: "Student Book",
@@ -125,7 +126,7 @@ export function BookReader({
                 key={i}
                 page={page}
                 showAnswerKey={showAnswerKey}
-                imageUrl={pageImages[page.sourcePageNumber]}
+                imageUrl={resolvePageImageUrl(page, pageImages)}
                 listeningAudio={current.listeningAudio}
               />
             ))}

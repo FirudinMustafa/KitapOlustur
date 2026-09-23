@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isSyntheticUnit, moveBlock, movePage, reorderUnits, renumberRealUnits } from "./arrangement-merge";
+import {
+  isSyntheticUnit,
+  moveAudio,
+  moveBlock,
+  moveImage,
+  movePage,
+  reorderUnits,
+  renumberRealUnits,
+} from "./arrangement-merge";
 import type { GeneratedUnit, UnitOutline } from "./ai/schemas";
 
 function makeUnit(unitNumber: number, pageCount = 2): GeneratedUnit {
@@ -193,6 +201,131 @@ describe("moveBlock", () => {
       { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0, blockIndex: 0 },
       { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
     );
+    expect(units).toEqual(original);
+  });
+});
+
+describe("moveImage", () => {
+  it("moves an image from one page to another in the same unit", () => {
+    const units = [makeUnit(1, 2)];
+    const result = moveImage(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+    );
+    expect(result[0].studentBookPages[0].imageOverrideSourcePageNumber).toBeNull();
+    expect(result[0].studentBookPages[1].imageOverrideSourcePageNumber).toBe(100); // unit 1's page 0 sourcePageNumber
+  });
+
+  it("moves an image across units", () => {
+    const units = [makeUnit(1, 1), makeUnit(2, 1)];
+    const result = moveImage(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0 },
+      { unitNumber: 2, pageArrayField: "studentBookPages", pageIndex: 0 },
+    );
+    expect(result[0].studentBookPages[0].imageOverrideSourcePageNumber).toBeNull();
+    expect(result[1].studentBookPages[0].imageOverrideSourcePageNumber).toBe(100);
+  });
+
+  it("follows an existing override to its real image key when moved again", () => {
+    const units = [makeUnit(1, 3)];
+    units[0].studentBookPages[1].imageOverrideSourcePageNumber = 100; // page 1 already shows page 0's image
+    const result = moveImage(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 2 },
+    );
+    expect(result[0].studentBookPages[1].imageOverrideSourcePageNumber).toBeNull();
+    expect(result[0].studentBookPages[2].imageOverrideSourcePageNumber).toBe(100);
+  });
+
+  it("throws when the source page has no image to move", () => {
+    const units = [makeUnit(1, 2)];
+    units[0].studentBookPages[0].imageOverrideSourcePageNumber = null;
+    expect(() =>
+      moveImage(
+        units,
+        { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0 },
+        { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+      ),
+    ).toThrow(/taşınacak bir görsel yok/);
+  });
+
+  it("throws for a nonexistent destination page", () => {
+    const units = [makeUnit(1, 1), makeUnit(2, 1)];
+    expect(() =>
+      moveImage(
+        units,
+        { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0 },
+        { unitNumber: 2, pageArrayField: "studentBookPages", pageIndex: 9 },
+      ),
+    ).toThrow(/sayfası bulunamadı/);
+  });
+
+  it("does not mutate the input array", () => {
+    const units = [makeUnit(1, 2)];
+    const original = JSON.parse(JSON.stringify(units));
+    moveImage(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+    );
+    expect(units).toEqual(original);
+  });
+});
+
+describe("moveAudio", () => {
+  function makeUnitWithAudio(unitNumber: number, audio: { blockRef: string; script: string }[]): GeneratedUnit {
+    return { ...makeUnit(unitNumber, 1), listeningAudio: audio };
+  }
+
+  it("moves an audio entry from one unit to another", () => {
+    const units = [
+      makeUnitWithAudio(1, [{ blockRef: "Page 0", script: "Hello" }]),
+      makeUnitWithAudio(2, []),
+    ];
+    const result = moveAudio(units, 1, 0, 2);
+    expect(result[0].listeningAudio).toEqual([]);
+    expect(result[1].listeningAudio).toEqual([{ blockRef: "Page 0", script: "Hello" }]);
+  });
+
+  it("appends to an existing listeningAudio array rather than replacing it", () => {
+    const units = [
+      makeUnitWithAudio(1, [{ blockRef: "Page 0", script: "Hello" }]),
+      makeUnitWithAudio(2, [{ blockRef: "Other", script: "Existing" }]),
+    ];
+    const result = moveAudio(units, 1, 0, 2);
+    expect(result[1].listeningAudio).toEqual([
+      { blockRef: "Other", script: "Existing" },
+      { blockRef: "Page 0", script: "Hello" },
+    ]);
+  });
+
+  it("is a no-op when source and destination unit are the same", () => {
+    const units = [makeUnitWithAudio(1, [{ blockRef: "Page 0", script: "Hello" }])];
+    const result = moveAudio(units, 1, 0, 1);
+    expect(result).toBe(units);
+  });
+
+  it("throws for a nonexistent source or destination unit", () => {
+    const units = [makeUnitWithAudio(1, [{ blockRef: "Page 0", script: "Hello" }])];
+    expect(() => moveAudio(units, 99, 0, 1)).toThrow(/Ünite 99/);
+    expect(() => moveAudio(units, 1, 0, 99)).toThrow(/Ünite 99/);
+  });
+
+  it("throws for an out-of-range audio index", () => {
+    const units = [makeUnitWithAudio(1, []), makeUnitWithAudio(2, [])];
+    expect(() => moveAudio(units, 1, 0, 2)).toThrow(/ses 0 bulunamadı/);
+  });
+
+  it("does not mutate the input array", () => {
+    const units = [
+      makeUnitWithAudio(1, [{ blockRef: "Page 0", script: "Hello" }]),
+      makeUnitWithAudio(2, []),
+    ];
+    const original = JSON.parse(JSON.stringify(units));
+    moveAudio(units, 1, 0, 2);
     expect(units).toEqual(original);
   });
 });

@@ -10,6 +10,12 @@ import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
 import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
 
 const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
+// Denetim sonrası düzeltme (2026-09-23): variantCount'un 1-4 kelepçelemesiyle
+// aynı gerekçe - "Sıfırdan Kitap" modunda gerçek bir kaynak PDF (dolayısıyla
+// doğal bir üst sınır) yok, bir yazım hatası onlarca gerçek AI üretim
+// çağrısını tetikleyebilir. Normal (PDF) modda da aynı sınır uygulanıyor,
+// tutarlılık için.
+const MAX_UNIT_LIMIT = 30;
 
 export async function GET() {
   const { userId } = await auth();
@@ -85,6 +91,9 @@ export async function POST(request: Request) {
   }
   if (isFromScratch && (!Number.isInteger(unitLimitRaw) || unitLimitRaw <= 0)) {
     return NextResponse.json({ error: "Ünite sayısı gerekli" }, { status: 400 });
+  }
+  if (Number.isInteger(unitLimitRaw) && unitLimitRaw > MAX_UNIT_LIMIT) {
+    return NextResponse.json({ error: `Ünite sayısı en fazla ${MAX_UNIT_LIMIT} olabilir` }, { status: 400 });
   }
   if (bookType !== "student_book" && bookType !== "workbook") {
     return NextResponse.json({ error: "Geçersiz kitap tipi" }, { status: 400 });

@@ -196,6 +196,103 @@ export function moveBlock(
   return { units: newUnits, audioMoved };
 }
 
+export interface PageLocation {
+  unitNumber: number;
+  pageArrayField: PageArrayField;
+  pageIndex: number;
+}
+
+// "Dizilim → Gerçek Kitap" (2026-09-23): moves a page's illustration to a
+// DIFFERENT page (possibly a different unit) - the image-level sibling of
+// moveBlock. Unlike a block, an image isn't stored as its own array element;
+// it's a lookup (see src/lib/page-image.ts's resolvePageImageUrl) keyed by
+// sourcePageNumber into the run-wide `pageImages` map. So "moving" it means:
+// point the destination page's imageOverrideSourcePageNumber at whichever
+// sourcePageNumber the source page was ACTUALLY displaying (its own override
+// if it had one, else its own sourcePageNumber), then clear the source page's
+// override to `null` (explicitly "no image here now", even though
+// pageImages still has an entry under its own sourcePageNumber).
+export function moveImage(units: GeneratedUnit[], from: PageLocation, to: PageLocation): GeneratedUnit[] {
+  const fromUnitIndex = units.findIndex((u) => u.unitNumber === from.unitNumber);
+  if (fromUnitIndex === -1) throw new Error(`Ünite ${from.unitNumber} bulunamadı.`);
+  const toUnitIndex = units.findIndex((u) => u.unitNumber === to.unitNumber);
+  if (toUnitIndex === -1) throw new Error(`Ünite ${to.unitNumber} bulunamadı.`);
+
+  const fromPages = units[fromUnitIndex][from.pageArrayField] ?? [];
+  if (from.pageIndex < 0 || from.pageIndex >= fromPages.length) {
+    throw new Error(`Ünite ${from.unitNumber} için ${from.pageArrayField}[${from.pageIndex}] sayfası bulunamadı.`);
+  }
+  const sourcePage = fromPages[from.pageIndex];
+  if (sourcePage.imageOverrideSourcePageNumber === null) {
+    throw new Error("Bu sayfada taşınacak bir görsel yok.");
+  }
+  const imageKey = sourcePage.imageOverrideSourcePageNumber ?? sourcePage.sourcePageNumber;
+
+  const samePage =
+    from.unitNumber === to.unitNumber && from.pageArrayField === to.pageArrayField && from.pageIndex === to.pageIndex;
+  if (samePage) return units;
+
+  if (fromUnitIndex === toUnitIndex && from.pageArrayField === to.pageArrayField) {
+    const pages = fromPages.slice();
+    if (to.pageIndex < 0 || to.pageIndex >= pages.length) {
+      throw new Error(`Ünite ${to.unitNumber} için ${to.pageArrayField}[${to.pageIndex}] sayfası bulunamadı.`);
+    }
+    pages[from.pageIndex] = { ...pages[from.pageIndex], imageOverrideSourcePageNumber: null };
+    pages[to.pageIndex] = { ...pages[to.pageIndex], imageOverrideSourcePageNumber: imageKey };
+    return units.map((u, i) => (i === fromUnitIndex ? { ...u, [from.pageArrayField]: pages } : u));
+  }
+
+  const destPagesBefore = units[toUnitIndex][to.pageArrayField] ?? [];
+  if (to.pageIndex < 0 || to.pageIndex >= destPagesBefore.length) {
+    throw new Error(`Ünite ${to.unitNumber} için ${to.pageArrayField}[${to.pageIndex}] sayfası bulunamadı.`);
+  }
+  const updatedSourcePages = fromPages.map((p, i) =>
+    i === from.pageIndex ? { ...p, imageOverrideSourcePageNumber: null } : p,
+  );
+  const updatedDestPages = destPagesBefore.map((p, i) =>
+    i === to.pageIndex ? { ...p, imageOverrideSourcePageNumber: imageKey } : p,
+  );
+
+  return units.map((u, i) => {
+    if (i === fromUnitIndex && i === toUnitIndex) {
+      // Same unit, different pageArrayField (e.g. studentBookPages -> workbookPages).
+      return { ...u, [from.pageArrayField]: updatedSourcePages, [to.pageArrayField]: updatedDestPages };
+    }
+    if (i === fromUnitIndex) return { ...u, [from.pageArrayField]: updatedSourcePages };
+    if (i === toUnitIndex) return { ...u, [to.pageArrayField]: updatedDestPages };
+    return u;
+  });
+}
+
+// "Dizilim → Gerçek Kitap" (2026-09-23): moves a ListeningAudio entry from
+// one unit to another - the audio-level sibling of moveBlock/moveImage.
+// Audio has no page of its own (it's unit-scoped, matched to a block by
+// heading via blockRef - see ListeningAudio in schemas.ts), so unlike
+// moveImage/moveBlock this only ever has a destination UNIT, not a page.
+export function moveAudio(units: GeneratedUnit[], fromUnitNumber: number, audioIndex: number, toUnitNumber: number): GeneratedUnit[] {
+  const fromUnitIndex = units.findIndex((u) => u.unitNumber === fromUnitNumber);
+  if (fromUnitIndex === -1) throw new Error(`Ünite ${fromUnitNumber} bulunamadı.`);
+  const toUnitIndex = units.findIndex((u) => u.unitNumber === toUnitNumber);
+  if (toUnitIndex === -1) throw new Error(`Ünite ${toUnitNumber} bulunamadı.`);
+  if (fromUnitIndex === toUnitIndex) return units;
+
+  const sourceAudio = units[fromUnitIndex].listeningAudio ?? [];
+  if (audioIndex < 0 || audioIndex >= sourceAudio.length) {
+    throw new Error(`Ünite ${fromUnitNumber} için ses ${audioIndex} bulunamadı.`);
+  }
+  const entry = sourceAudio[audioIndex];
+
+  return units.map((u, i) => {
+    if (i === fromUnitIndex) {
+      return { ...u, listeningAudio: sourceAudio.filter((_, idx) => idx !== audioIndex) };
+    }
+    if (i === toUnitIndex) {
+      return { ...u, listeningAudio: [...(u.listeningAudio ?? []), entry] };
+    }
+    return u;
+  });
+}
+
 export interface RenumberResult {
   units: GeneratedUnit[];
   outlineUnits: UnitOutline[];

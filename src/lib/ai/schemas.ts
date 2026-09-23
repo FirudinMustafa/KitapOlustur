@@ -263,6 +263,18 @@ export const generatedPageSchema = z.object({
   // sourcePageNumber) instead of its default "full-width, above all blocks"
   // placement.
   imageLayout: blockLayoutSchema.optional(),
+  // "Dizilim → Gerçek Kitap" (2026-09-23): only ever set by moveImage
+  // (src/lib/arrangement-merge.ts), never by the writer model. A page's
+  // image is normally looked up as pageImages[page.sourcePageNumber] (see
+  // src/lib/page-image.ts's resolvePageImageUrl, the single place every
+  // renderer - PDF, EPUB, DOCX, reader, editor - reads a page's image from).
+  // This field overrides that lookup key: a number means "show the image
+  // from THAT sourcePageNumber instead" (the image was dragged in from
+  // another page); explicit null means "no image here even though
+  // pageImages has an entry for this page's own sourcePageNumber" (the
+  // image was dragged AWAY to another page). Absent (undefined, the common
+  // case) means unchanged default behavior.
+  imageOverrideSourcePageNumber: z.number().nullable().optional(),
 });
 export type GeneratedPage = z.infer<typeof generatedPageSchema>;
 

@@ -6,6 +6,13 @@ import { STUDIO_IMAGE_MODELS, STUDIO_IMAGE_SIZES, type StudioImageModelId, type 
 import type { savedReferenceImages, storyArtifacts } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+
+// Denetim sonrası düzeltme (2026-09-23): StudioWorkspace.tsx'in redesign'ıyla
+// aynı select stili - ham <select>'lerin composer'ın hemen altında görsel
+// bir "dikiş" oluşturmasını önlemek için (bkz. denetim raporu, bulgu 4).
+const SELECT_CLASS =
+  "h-8 rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 type ReferenceImage = typeof savedReferenceImages.$inferSelect;
 type StoryArtifact = typeof storyArtifacts.$inferSelect;
@@ -202,13 +209,14 @@ export function AdvancedImagePanel({
 
   return (
     <div className="mt-4 rounded-xl border border-border">
-      <button
+      <Button
+        variant="ghost"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-foreground"
+        className="h-auto w-full justify-between rounded-xl px-4 py-3 text-left text-sm font-medium text-foreground"
       >
         Gelişmiş Görsel Üretimi
         <span className="text-xs text-muted-foreground">{open ? "Gizle" : "Göster"}</span>
-      </button>
+      </Button>
 
       {open && (
         <div className="flex flex-col gap-4 border-t border-border p-4">
@@ -218,7 +226,7 @@ export function AdvancedImagePanel({
               <select
                 value={model}
                 onChange={(e) => setModel(e.target.value as StudioImageModelId)}
-                className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground"
+                className={SELECT_CLASS}
               >
                 {STUDIO_IMAGE_MODELS.map((m) => (
                   <option key={m.id} value={m.id} title={m.description}>
@@ -232,7 +240,7 @@ export function AdvancedImagePanel({
               <select
                 value={size}
                 onChange={(e) => setSize(e.target.value as StudioImageSizeId)}
-                className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground"
+                className={SELECT_CLASS}
               >
                 {STUDIO_IMAGE_SIZES.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -340,13 +348,12 @@ export function AdvancedImagePanel({
           </div>
 
           <div className="relative">
-            <textarea
+            <Textarea
               ref={textareaRef}
               value={prompt}
               onChange={(e) => handlePromptChange(e.target.value)}
               rows={3}
               placeholder="Görsel için prompt yaz - @etiket ile kayıtlı bir referansa atıfta bulunabilirsin"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
             />
             {mentionQuery !== null && matchingMentionTags.length > 0 && (
               <div className="absolute z-10 mt-1 w-48 rounded-lg border border-border bg-popover shadow-lg">

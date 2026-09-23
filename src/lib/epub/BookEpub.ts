@@ -12,6 +12,7 @@ import {
   extensionForMediaType,
 } from "@/lib/content-html";
 import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
+import { resolvePageImageUrl } from "@/lib/page-image";
 
 // EPUB export - the digital/accessible sibling to BookDocument.tsx's PDF.
 // Deliberately hand-rolled with jszip rather than an epub-generation
@@ -132,7 +133,7 @@ th, td { border: 1px solid #d1d5db; padding: 0.4em; text-align: left; font-size:
     const pageSections: string[] = [];
     for (const page of pages) {
       let imageHtml = "";
-      const imageUrl = pageImages?.[page.sourcePageNumber];
+      const imageUrl = resolvePageImageUrl(page, pageImages);
       if (imageUrl) {
         const { buffer, mediaType } = await fetchAsset(imageUrl, "image/png");
         const ext = extensionForMediaType(mediaType);

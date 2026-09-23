@@ -87,6 +87,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       variantCount: previousRun?.variantCount ?? 2,
       isFromScratch: previousRun?.isFromScratch ?? false,
       scratchBrief: previousRun?.scratchBrief ?? null,
+      // Denetim sonrası düzeltme (2026-09-23): bu ikisi hiç kopyalanmıyordu,
+      // her rerun'da sessizce sütun varsayılanına (null/false) düşüyordu -
+      // bir "Sıfırdan Kitap" kullanıcısının özel ünite iskeletini rerun'da
+      // kaybetmesine yol açıyordu.
+      unitSkeleton: previousRun?.unitSkeleton ?? null,
+      spacedRepetition: previousRun?.spacedRepetition ?? false,
     })
     .returning();
 

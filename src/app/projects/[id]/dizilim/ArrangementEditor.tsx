@@ -23,9 +23,10 @@ import { CSS } from "@dnd-kit/utilities";
 import type { BlockLayout, ContentBlock, GeneratedUnit } from "@/lib/ai/schemas";
 import type { PageArrayField } from "@/lib/layout-merge";
 import { withDefaultImageLayout, withDefaultLayouts } from "@/lib/layout-merge";
-import { moveBlock, movePage, reorderUnits } from "@/lib/arrangement-merge";
+import { moveAudio, moveBlock, moveImage, movePage, reorderUnits } from "@/lib/arrangement-merge";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
+import { resolvePageImageUrl } from "@/lib/page-image";
 import { PageView } from "@/components/book/PageContent";
 import { DraggableBox } from "@/components/book/DraggableBox";
 import { Button } from "@/components/ui/button";
@@ -52,12 +53,19 @@ const PAGE_ARRAY_TO_VARIANT: Record<PageArrayField, Variant> = {
 };
 
 const FLIP_PAGE_WIDTH = 300;
-const FLIP_PAGE_HEIGHT = 420;
+// Denetim sonrası düzeltme (2026-09-23): eskiden sabit bir sayıydı (420),
+// gerçek sayfa en-boy oranıyla (PAGE_HEIGHT_PT/PAGE_WIDTH_PT) uyuşmuyordu -
+// FLIP_SCALE ölçeklemesi bu ikisi tutarsızsa içeriği sessizce kırpıyordu.
+// Şimdi doğrudan gerçek orandan türetiliyor, uyuşmazlık yapısal olarak
+// imkansız.
+const FLIP_PAGE_HEIGHT = Math.round(FLIP_PAGE_WIDTH * (PAGE_HEIGHT_PT / PAGE_WIDTH_PT));
 const FLIP_SCALE = FLIP_PAGE_WIDTH / PAGE_WIDTH_PT;
 
 type PageDragData =
   | { kind: "page"; unitNumber: number; index: number }
-  | { kind: "block"; unitNumber: number; pageIndex: number; blockIndex: number; heading: string };
+  | { kind: "block"; unitNumber: number; pageIndex: number; blockIndex: number; heading: string }
+  | { kind: "image"; unitNumber: number; pageIndex: number }
+  | { kind: "audio"; unitNumber: number; audioIndex: number; blockRef: string };
 
 // "Dizilim → Gerçek Kitap" (2026-09-22): merges what used to be two separate
 // post-hoc editors - this one (whole unit/page reordering + a flip-book
@@ -114,7 +122,7 @@ export function ArrangementEditor({
   const editingUnit = editingPage ? units.find((u) => u.unitNumber === editingPage.unitNumber) : undefined;
   const editingPageData = editingUnit ? (editingUnit[pageArrayField] ?? [])[editingPage!.pageIndex] : undefined;
   const editingBlocks = editingPageData ? withDefaultLayouts(editingPageData) : [];
-  const editingImageUrl = editingPageData ? pageImages[editingPageData.sourcePageNumber] : undefined;
+  const editingImageUrl = editingPageData ? resolvePageImageUrl(editingPageData, pageImages) : undefined;
   const editingImageLayout = editingPageData ? withDefaultImageLayout(editingPageData) : undefined;
 
   function handleUnitDragEnd(event: DragEndEvent) {
@@ -158,6 +166,60 @@ export function ArrangementEditor({
             : `"${activeData.heading}" bloğu taşındı.`,
         );
         return next;
+      });
+      return;
+    }
+
+    if (activeData.kind === "image") {
+      const overId = String(over.id);
+      // Aynı gerekçe: bir görseli belirli bir sayfa yerine bir ünite
+      // sütununa bırakmak anlamsız kalır.
+      if (overId.startsWith("column-")) return;
+      const overData = over.data.current as PageDragData | undefined;
+      if (!overData || overData.kind !== "page") return;
+      if (overData.unitNumber === activeData.unitNumber && overData.index === activeData.pageIndex) return;
+
+      setUnits((prev) => {
+        try {
+          const next = moveImage(
+            prev,
+            { unitNumber: activeData.unitNumber, pageArrayField, pageIndex: activeData.pageIndex },
+            { unitNumber: overData.unitNumber, pageArrayField, pageIndex: overData.index },
+          );
+          setMessage(`Görsel Ünite ${overData.unitNumber}'e taşındı.`);
+          return next;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Görsel taşınamadı.");
+          return prev;
+        }
+      });
+      return;
+    }
+
+    if (activeData.kind === "audio") {
+      // Ses ünite bazlı olduğu için (bkz. ListeningAudio.blockRef) hedef
+      // her zaman bir ÜNİTE - hem bir sayfa kartına hem doğrudan sütuna
+      // bırakmak aynı anlama gelir, ikisi de o ünitenin numarasını verir.
+      const overId = String(over.id);
+      let toUnitNumber: number;
+      if (overId.startsWith("column-")) {
+        toUnitNumber = Number(overId.replace("column-", ""));
+      } else {
+        const overData = over.data.current as PageDragData | undefined;
+        if (!overData || (overData.kind !== "page" && overData.kind !== "audio")) return;
+        toUnitNumber = overData.unitNumber;
+      }
+      if (toUnitNumber === activeData.unitNumber) return;
+
+      setUnits((prev) => {
+        try {
+          const next = moveAudio(prev, activeData.unitNumber, activeData.audioIndex, toUnitNumber);
+          setMessage(`"${activeData.blockRef}" dinleme sesi Ünite ${toUnitNumber}'e taşındı.`);
+          return next;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Ses taşınamadı.");
+          return prev;
+        }
       });
       return;
     }
@@ -278,12 +340,24 @@ export function ArrangementEditor({
 
       <p className="mt-4 max-w-3xl text-xs text-muted-foreground">
         Üniteleri sürükleyerek birbirine göre sıralayabilir, bir sayfayı aynı ünite içinde ya da BAŞKA bir üniteye
-        sürükleyip taşıyabilirsiniz. Her sayfa kartının altındaki küçük etiketler o sayfanın metin bloklarıdır - bir
-        etiketi başka bir sayfa kartının üzerine sürükleyerek o bloğu oraya taşıyabilirsiniz. Bir sayfanın içindeki
-        blokları serbestçe konumlandırmak için &quot;Konumlandır&quot;a tıklayın. Ünite sırası TÜM kitap tiplerinde
-        ortaktır; sayfa/blok düzenlemeleri sadece aşağıda seçili kitap tipi içindir. Sağdaki dijital önizleme artık
-        sayfadaki tüm içeriği ve varsa dinleme sesini gösterir.
+        sürükleyip taşıyabilirsiniz. Bir sayfanın içindeki blokları serbestçe konumlandırmak için
+        &quot;Konumlandır&quot;a tıklayın. Ünite sırası TÜM kitap tiplerinde ortaktır; sayfa/blok/görsel/ses
+        düzenlemeleri sadece aşağıda seçili kitap tipi içindir. Sağdaki dijital önizleme artık sayfadaki tüm içeriği
+        ve varsa dinleme sesini gösterir.
       </p>
+      <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">Sürükle-bırak:</span>
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden>⠿</span> metin bloğu
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden>🖼</span> görsel
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden>🔊</span> dinleme sesi
+        </span>
+        <span>— her birini başka bir sayfa kartının üzerine sürükleyerek oraya taşıyabilirsiniz.</span>
+      </div>
 
       <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex flex-col gap-8">
@@ -327,6 +401,7 @@ export function ArrangementEditor({
                     unitTitle={u.title}
                     pages={u[pageArrayField] ?? []}
                     pageImages={pageImages}
+                    listeningAudio={u.listeningAudio ?? []}
                     onEditPage={(pageIndex) => setEditingPage({ unitNumber: u.unitNumber, pageIndex })}
                   />
                 ))}
@@ -383,7 +458,7 @@ export function ArrangementEditor({
                           <PageView
                             page={page}
                             showAnswerKey={showAnswerKey}
-                            imageUrl={pageImages[page.sourcePageNumber]}
+                            imageUrl={resolvePageImageUrl(page, pageImages)}
                             listeningAudio={unit?.listeningAudio}
                           />
                         </div>
@@ -525,20 +600,31 @@ function PageColumn({
   unitTitle,
   pages,
   pageImages,
+  listeningAudio,
   onEditPage,
 }: {
   unitNumber: number;
   unitTitle: string;
   pages: GeneratedUnit["studentBookPages"];
   pageImages: Record<number, string>;
+  listeningAudio: NonNullable<GeneratedUnit["listeningAudio"]>;
   onEditPage: (pageIndex: number) => void;
 }) {
   const { setNodeRef } = useDroppable({ id: `column-${unitNumber}` });
   return (
     <div ref={setNodeRef} className="rounded-lg border border-border p-3">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">
-        Ünite {unitNumber} · {unitTitle}
-      </p>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          Ünite {unitNumber} · {unitTitle}
+        </p>
+        {!!listeningAudio.length && (
+          <div className="flex flex-wrap gap-1">
+            {listeningAudio.map((audio, i) => (
+              <DraggableAudioChip key={i} unitNumber={unitNumber} audioIndex={i} blockRef={audio.blockRef} />
+            ))}
+          </div>
+        )}
+      </div>
       <SortableContext
         items={pages.map((p) => `page-${unitNumber}-${p.sourcePageNumber}`)}
         strategy={horizontalListSortingStrategy}
@@ -553,7 +639,7 @@ function PageColumn({
               index={index}
               heading={page.blocks[0]?.heading ?? "(başlıksız)"}
               sectionLabel={page.sectionLabel}
-              imageUrl={pageImages[page.sourcePageNumber]}
+              imageUrl={resolvePageImageUrl(page, pageImages)}
               blocks={page.blocks}
               onEdit={() => onEditPage(index)}
             />
@@ -601,8 +687,13 @@ function SortablePageCard({
         {sectionLabel && <span className="text-[9px] font-semibold uppercase text-primary">{sectionLabel}</span>}
         <span className="truncate text-[11px]">{heading}</span>
       </div>
+      {imageUrl && (
+        <div className="border-t border-border/60 pt-1">
+          <DraggableImageChip unitNumber={unitNumber} pageIndex={index} />
+        </div>
+      )}
       {!!blocks.length && (
-        <div className="mt-1 flex flex-col gap-0.5 border-t border-border/60 pt-1">
+        <div className="flex flex-col gap-0.5 border-t border-border/60 pt-1">
           {blocks.map((b, i) => (
             <DraggableBlockChip key={i} unitNumber={unitNumber} pageIndex={index} blockIndex={i} heading={b.heading} />
           ))}
@@ -618,6 +709,14 @@ function SortablePageCard({
     </div>
   );
 }
+
+// Denetim sonrası düzeltme (2026-09-23): daha önce 10px, tek renkli, "etiket
+// listesi" gibi görünen bir buton olduğundan çoğu kullanıcı bunun sürüklenebilir
+// olduğunu fark etmiyordu - artık gerçek bir "tutamak" ikonu (⠿), belirgin
+// kenarlık ve daha büyük dokunma alanı var; üstteki lejant de bunu açıkça
+// anlatıyor (bkz. ArrangementEditor'ün üst kısmındaki "Sürükle-bırak" satırı).
+const CHIP_BASE_CLASS =
+  "flex w-full cursor-grab items-center gap-1 truncate rounded border px-1.5 py-1 text-left text-[10px] active:cursor-grabbing";
 
 // Bir sayfadaki tek bir metin bloğunu temsil eden, sürüklenebilir küçük
 // etiket - başka bir SortablePageCard'ın üzerine bırakıldığında
@@ -647,11 +746,68 @@ function DraggableBlockChip({
       {...listeners}
       type="button"
       title="Başka bir sayfaya sürükle"
-      className={`w-full cursor-grab truncate rounded border border-dashed border-primary/40 bg-primary/5 px-1.5 py-0.5 text-left text-[10px] text-foreground/80 active:cursor-grabbing ${
-        isDragging ? "opacity-40" : ""
-      }`}
+      className={`${CHIP_BASE_CLASS} border-primary/40 bg-primary/5 text-foreground/80 ${isDragging ? "opacity-40" : ""}`}
     >
-      ⠿ {heading}
+      <span aria-hidden className="shrink-0 text-primary">
+        ⠿
+      </span>
+      <span className="truncate">{heading}</span>
+    </button>
+  );
+}
+
+// Sayfanın görselini temsil eden sürüklenebilir etiket - moveImage'ı
+// tetikler (arrangement-merge.ts). Sadece görseli olan sayfa kartlarında
+// görünür (bkz. SortablePageCard).
+function DraggableImageChip({ unitNumber, pageIndex }: { unitNumber: number; pageIndex: number }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `image-${unitNumber}-${pageIndex}`,
+    data: { kind: "image", unitNumber, pageIndex } satisfies PageDragData,
+  });
+  return (
+    <button
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      type="button"
+      title="Görseli başka bir sayfaya sürükle"
+      className={`${CHIP_BASE_CLASS} border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 ${isDragging ? "opacity-40" : ""}`}
+    >
+      <span aria-hidden>🖼</span>
+      <span className="truncate">Görsel</span>
+    </button>
+  );
+}
+
+// Ünitenin bir dinleme sesini temsil eden sürüklenebilir etiket - ses
+// sayfa değil ünite bazlı olduğundan (bkz. ListeningAudio şeması) bu, tek
+// tek sayfa kartlarında değil PageColumn'un başlığında görünür ve hedefi
+// her zaman bir ünite (bir sayfa kartına ya da doğrudan sütuna bırakılabilir
+// - moveAudio'yu tetikler, arrangement-merge.ts).
+function DraggableAudioChip({
+  unitNumber,
+  audioIndex,
+  blockRef,
+}: {
+  unitNumber: number;
+  audioIndex: number;
+  blockRef: string;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `audio-${unitNumber}-${audioIndex}`,
+    data: { kind: "audio", unitNumber, audioIndex, blockRef } satisfies PageDragData,
+  });
+  return (
+    <button
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      type="button"
+      title="Başka bir üniteye sürükle"
+      className={`${CHIP_BASE_CLASS} w-auto max-w-28 border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-200 ${isDragging ? "opacity-40" : ""}`}
+    >
+      <span aria-hidden>🔊</span>
+      <span className="truncate">{blockRef}</span>
     </button>
   );
 }

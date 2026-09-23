@@ -18,6 +18,13 @@ const GENRE_OPTIONS = ["", "Macera", "Fantastik", "Bilim kurgu", "Günlük yaşa
 const AGE_OPTIONS = ["", "3-6 yaş", "7-10 yaş", "11-14 yaş", "Yetişkin"];
 const TONE_OPTIONS = ["", "Esprili", "Sıcak/sakin", "Heyecanlı", "Ciddi"];
 
+// Denetim sonrası düzeltme (2026-09-23): filtre satırındaki ham <select>'ler
+// artık kenarlıksız/şeffaf, ortak bir "chip toolbar" çerçevesi içinde -
+// composer'ın pill-şekilli butonlarıyla aynı dilde, ayrı bir araç çubuğu
+// gibi görünmüyor.
+const FILTER_SELECT_CLASS =
+  "h-7 rounded-md border-none bg-transparent px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+
 export function StudioWorkspace({
   storyProject,
   initialMessages,
@@ -151,11 +158,17 @@ export function StudioWorkspace({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 lg:flex-row">
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-foreground">{storyProject.title}</h1>
-          <div className="flex items-center gap-2">
+    // Denetim sonrası düzeltme (2026-09-23): eskiden sabit h-[28rem] yükseklikli,
+    // kenarlıklı bir kutu, max-w-6xl'e ortalanmış bir "form"un içine gömülüydü -
+    // artık gerçek bir tam-sayfa sohbet kabuğu: kök layout'taki 12'lik (3rem)
+    // header'ın altındaki tüm dikey alanı kaplıyor, composer bu sütunun altına
+    // sabit kalıyor (sayfa değil sütun kaydırılıyor), galeri kendi başına
+    // kaydırılan bağımsız bir sütun.
+    <div className="flex h-[calc(100dvh-3rem)] w-full">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
+          <h1 className="truncate text-lg font-semibold text-foreground">{storyProject.title}</h1>
+          <div className="flex shrink-0 items-center gap-2">
             {totalCostUsd > 0 && (
               <span
                 className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground"
@@ -170,50 +183,41 @@ export function StudioWorkspace({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <select
-            value={genre}
-            onChange={(e) => setGenre(e.target.value)}
-            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-          >
-            {GENRE_OPTIONS.map((g) => (
-              <option key={g} value={g}>
-                {g || "Tür seç…"}
-              </option>
-            ))}
-          </select>
-          <select
-            value={ageGroup}
-            onChange={(e) => setAgeGroup(e.target.value)}
-            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-          >
-            {AGE_OPTIONS.map((a) => (
-              <option key={a} value={a}>
-                {a || "Yaş grubu…"}
-              </option>
-            ))}
-          </select>
-          <select
-            value={tone}
-            onChange={(e) => setTone(e.target.value)}
-            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-          >
-            {TONE_OPTIONS.map((t) => (
-              <option key={t} value={t}>
-                {t || "Ton…"}
-              </option>
-            ))}
-          </select>
-          <Input
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            placeholder="Dil (örn. Türkçe)"
-            className="h-8 w-32 text-xs"
-          />
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-6 py-2">
+          <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Ayarlar</span>
+          <div className="flex flex-wrap items-center gap-0.5 rounded-full border border-border bg-muted/40 p-0.5">
+            <select value={genre} onChange={(e) => setGenre(e.target.value)} className={FILTER_SELECT_CLASS}>
+              {GENRE_OPTIONS.map((g) => (
+                <option key={g} value={g}>
+                  {g || "Tür seç…"}
+                </option>
+              ))}
+            </select>
+            <select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} className={FILTER_SELECT_CLASS}>
+              {AGE_OPTIONS.map((a) => (
+                <option key={a} value={a}>
+                  {a || "Yaş grubu…"}
+                </option>
+              ))}
+            </select>
+            <select value={tone} onChange={(e) => setTone(e.target.value)} className={FILTER_SELECT_CLASS}>
+              {TONE_OPTIONS.map((t) => (
+                <option key={t} value={t}>
+                  {t || "Ton…"}
+                </option>
+              ))}
+            </select>
+            <Input
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              placeholder="Dil (örn. Türkçe)"
+              className="h-7 w-28 border-none bg-transparent text-xs shadow-none focus-visible:ring-2"
+            />
+          </div>
         </div>
 
-        <ScrollArea className="mt-4 h-[28rem] flex-1 rounded-xl border border-border">
-          <div className="flex flex-col gap-4 p-4">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="mx-auto flex max-w-3xl flex-col gap-4 px-6 py-6">
             {messages.length === 0 && !sending && (
               <p className="text-sm text-muted-foreground">
                 Ne tür bir hikaye/içerik istediğini yaz. İstersen doğrudan bir görsel ya da ses de isteyebilirsin.
@@ -227,73 +231,76 @@ export function StudioWorkspace({
           </div>
         </ScrollArea>
 
-        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+        <div className="shrink-0 border-t border-border px-6 py-4">
+          {error && <p className="mb-2 text-sm text-destructive">{error}</p>}
+          <div className="mx-auto flex max-w-3xl flex-col gap-2">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleComposerKeyDown}
+              rows={3}
+              placeholder="Hikayeni anlat, bir sahneyi betimle ya da doğrudan bir görsel/ses iste… (Enter: gönder, Shift+Enter: yeni satır)"
+              className="max-h-[200px] resize-none"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => sendMessage()} disabled={sending || !input.trim()} className="h-9 rounded-full px-4">
+                {sending ? "Gönderiliyor…" : "Gönder"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => sendMessage("image")}
+                disabled={sending}
+                className="h-9 rounded-full px-4"
+              >
+                Bunun görselini üret
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => sendMessage("audio")}
+                disabled={sending}
+                className="h-9 rounded-full px-4"
+              >
+                Bunun sesini üret
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => sendMessage("video")}
+                disabled={sending}
+                title="Önce bir görsel üretilmiş olmalı"
+                className="h-9 rounded-full px-4"
+              >
+                Bunun videosunu üret
+              </Button>
+              <select
+                value={videoProvider}
+                onChange={(e) => setVideoProvider(e.target.value as "veo" | "higgsfield")}
+                title="Video sağlayıcısı"
+                className="h-9 rounded-full border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+              >
+                <option value="veo">Veo</option>
+                <option value="higgsfield">Higgsfield</option>
+              </select>
+            </div>
 
-        <div className="mt-3 flex flex-col gap-2">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleComposerKeyDown}
-            rows={3}
-            placeholder="Hikayeni anlat, bir sahneyi betimle ya da doğrudan bir görsel/ses iste… (Enter: gönder, Shift+Enter: yeni satır)"
-            className="max-h-[200px] resize-none"
-          />
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => sendMessage()} disabled={sending || !input.trim()} className="h-9 rounded-full px-4">
-              {sending ? "Gönderiliyor…" : "Gönder"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => sendMessage("image")}
-              disabled={sending}
-              className="h-9 rounded-full px-4"
-            >
-              Bunun görselini üret
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => sendMessage("audio")}
-              disabled={sending}
-              className="h-9 rounded-full px-4"
-            >
-              Bunun sesini üret
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => sendMessage("video")}
-              disabled={sending}
-              title="Önce bir görsel üretilmiş olmalı"
-              className="h-9 rounded-full px-4"
-            >
-              Bunun videosunu üret
-            </Button>
-            <select
-              value={videoProvider}
-              onChange={(e) => setVideoProvider(e.target.value as "veo" | "higgsfield")}
-              title="Video sağlayıcısı"
-              className="h-9 rounded-full border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-            >
-              <option value="veo">Veo</option>
-              <option value="higgsfield">Higgsfield</option>
-            </select>
+            <AdvancedImagePanel
+              storyProjectId={storyProject.id}
+              onArtifactsCreated={(newArtifacts) => setArtifacts((prev) => [...prev, ...newArtifacts])}
+            />
           </div>
         </div>
-
-        <AdvancedImagePanel
-          storyProjectId={storyProject.id}
-          onArtifactsCreated={(newArtifacts) => setArtifacts((prev) => [...prev, ...newArtifacts])}
-        />
       </div>
 
-      <div className="w-full shrink-0 lg:w-72">
-        <h2 className="text-sm font-medium text-foreground">Galeri</h2>
-        <div className="mt-3 flex flex-col gap-3">
-          {artifacts.length === 0 && <p className="text-xs text-muted-foreground">Henüz görsel/ses üretilmedi.</p>}
-          {artifacts.map((a) => (
-            <ArtifactCard key={a.id} artifact={a} variant="gallery" />
-          ))}
-        </div>
+      <div className="hidden w-72 shrink-0 flex-col overflow-hidden border-l border-border lg:flex">
+        <h2 className="shrink-0 border-b border-border px-4 py-3 text-sm font-medium text-foreground">Galeri</h2>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col gap-3 p-4">
+            {artifacts.length === 0 && <p className="text-xs text-muted-foreground">Henüz görsel/ses üretilmedi.</p>}
+            {artifacts.map((a) => (
+              <ArtifactCard key={a.id} artifact={a} variant="gallery" />
+            ))}
+          </div>
+        </ScrollArea>
       </div>
     </div>
   );

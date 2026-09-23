@@ -15,6 +15,7 @@ import type { GeneratedUnit, ContentBlock, GeneratedPage } from "@/lib/ai/schema
 import type { Variant } from "@/lib/pdf/BookDocument";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { VARIANT_LABELS, pagesForVariant, seededShuffle, fetchAsset } from "@/lib/content-html";
+import { resolvePageImageUrl } from "@/lib/page-image";
 
 // DOCX export - the "editor can actually mark it up in Word/Google Docs"
 // format flagged as the top remaining gap in ROADMAP.md's project-wide
@@ -192,7 +193,7 @@ export async function buildDocx(input: {
     );
 
     for (const page of pages) {
-      const imageUrl = pageImages?.[page.sourcePageNumber];
+      const imageUrl = resolvePageImageUrl(page, pageImages);
       if (imageUrl) {
         try {
           const { buffer } = await fetchAsset(imageUrl, "image/png");

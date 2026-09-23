@@ -24,6 +24,19 @@ type StyleProfile = {
   isDefault: boolean;
 };
 
+// Denetim sonrası düzeltme (2026-09-23): variantCount'un 1-4 kelepçelemesiyle
+// aynı gerekçe - sıfırdan modda gerçek bir kaynak PDF (dolayısıyla doğal bir
+// üst sınır) olmadığından, bir yazım hatası (örn. 500) onlarca gerçek AI
+// üretim çağrısını tetikleyebilir. Hem client hem API (route.ts) bu sınırı
+// uyguluyor.
+const MAX_UNIT_LIMIT = 30;
+
+// Denetim sonrası düzeltme: sıfırdan modda gerçek varsayılanı kullanıcıya
+// göstermek için - workflows/book-pipeline.tsx'teki DEFAULT_SCRATCH_UNIT_SKELETON
+// ile birebir aynı tutulmalı (ayrı bir paylaşılan modül gerektirmeyecek kadar
+// küçük ve durağan bir sabit, o yüzden burada kopyalandı).
+const DEFAULT_SCRATCH_UNIT_SKELETON = ["Giriş", "Ana İçerik", "Alıştırmalar", "Özet"];
+
 const OUTPUT_BOOK_TYPES: { value: string; label: string }[] = [
   { value: "student_book", label: "Student Book" },
   { value: "workbook", label: "Workbook" },
@@ -165,8 +178,8 @@ export default function NewProjectPage() {
         return;
       }
       const unitCount = Number(unitLimit.trim());
-      if (!unitLimit.trim() || !Number.isInteger(unitCount) || unitCount <= 0) {
-        setError("Lütfen kaç ünite üretileceğini girin.");
+      if (!unitLimit.trim() || !Number.isInteger(unitCount) || unitCount <= 0 || unitCount > MAX_UNIT_LIMIT) {
+        setError(`Lütfen 1-${MAX_UNIT_LIMIT} arası bir ünite sayısı girin.`);
         return;
       }
 
@@ -607,6 +620,7 @@ export default function NewProjectPage() {
             <Input
               type="number"
               min={1}
+              max={MAX_UNIT_LIMIT}
               value={unitLimit}
               onChange={(e) => setUnitLimit(e.target.value)}
               placeholder={
@@ -643,14 +657,26 @@ export default function NewProjectPage() {
               onChange={(e) => setUseSkeleton(e.target.checked)}
               className="accent-primary"
             />
-            Sabit ünite iskeleti kullan (deneysel)
+            {mode === "scratch" ? "Özel bölüm sırası kullan" : "Sabit ünite iskeleti kullan (deneysel)"}
           </label>
           <span className="text-xs text-muted-foreground">
-            Varsayılan olarak her ünitenin sayfa yapısı kaynak PDF&apos;in kendi sayfa düzeninden türetilir. Bunun
-            yerine, her ünitenin kaynak PDF&apos;ten bağımsız, aşağıda tanımladığın sabit bir bölüm sırasıyla
-            üretilmesini istersen bunu işaretle - örn. &quot;Dilbilgisi&quot;, &quot;Kelime&quot;, &quot;Okuma&quot;,
-            &quot;Dinleme&quot;, &quot;Konuşma&quot;, &quot;Tekrar&quot;. Herhangi bir konu için kendi bölümlerini
-            tanımlayabilirsin, dil öğrenimine özgü değildir.
+            {mode === "scratch" ? (
+              <>
+                Sıfırdan modda kaynak PDF olmadığı için her ünite zaten sabit bir bölüm sırasıyla üretilir. Bunu
+                işaretlemezsen varsayılan olarak şu 4 bölüm kullanılır:{" "}
+                <strong>{DEFAULT_SCRATCH_UNIT_SKELETON.join(", ")}</strong>. Kendi bölüm sıranı tanımlamak
+                istersen (örn. &quot;Dilbilgisi&quot;, &quot;Kelime&quot;, &quot;Okuma&quot;, &quot;Dinleme&quot;)
+                bunu işaretleyip aşağıya ekle.
+              </>
+            ) : (
+              <>
+                Varsayılan olarak her ünitenin sayfa yapısı kaynak PDF&apos;in kendi sayfa düzeninden türetilir.
+                Bunun yerine, her ünitenin kaynak PDF&apos;ten bağımsız, aşağıda tanımladığın sabit bir bölüm
+                sırasıyla üretilmesini istersen bunu işaretle - örn. &quot;Dilbilgisi&quot;, &quot;Kelime&quot;,
+                &quot;Okuma&quot;, &quot;Dinleme&quot;, &quot;Konuşma&quot;, &quot;Tekrar&quot;. Herhangi bir konu
+                için kendi bölümlerini tanımlayabilirsin, dil öğrenimine özgü değildir.
+              </>
+            )}
           </span>
           {useSkeleton && (
             <div className="mt-1 flex flex-col gap-2 rounded-lg border border-border p-3">

@@ -19,7 +19,9 @@ export function ChatMessage({ message, artifacts }: { message: StoryMessage; art
   return (
     <div className={`flex max-w-[85%] items-start gap-2 ${isUser ? "flex-row-reverse self-end" : "self-start"}`}>
       <Avatar size="sm" className="mt-4 shrink-0">
-        <AvatarFallback>{isUser ? "S" : "K"}</AvatarFallback>
+        <AvatarFallback className={isUser ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground"}>
+          {isUser ? "S" : "✦"}
+        </AvatarFallback>
       </Avatar>
       <div className="flex min-w-0 flex-col gap-1">
         <div className={`flex items-baseline gap-2 px-1 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -50,7 +52,7 @@ export function PendingAssistantMessage() {
   return (
     <div className="flex max-w-[85%] items-start gap-2 self-start">
       <Avatar size="sm" className="mt-4 shrink-0">
-        <AvatarFallback>K</AvatarFallback>
+        <AvatarFallback className="bg-primary text-primary-foreground">✦</AvatarFallback>
       </Avatar>
       <div className="flex flex-col gap-1.5">
         <Skeleton className="h-3 w-24" />

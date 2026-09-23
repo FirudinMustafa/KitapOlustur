@@ -5,6 +5,7 @@ import { seededShuffle } from "@/lib/content-html";
 import { encodeEan13 } from "@/lib/barcode/ean13";
 import { formatIsbn13 } from "@/lib/isbn";
 import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
+import { resolvePageImageUrl } from "@/lib/page-image";
 
 // ISBN/baskıya hazırlık (2026-09-20, ROADMAP.md): renders a real, scannable
 // EAN-13 barcode on the imprint page when the project has a validated ISBN
@@ -576,7 +577,7 @@ export function BookDocument({
               </View>
             )}
 
-            {pageImages?.[page.sourcePageNumber] && (
+            {resolvePageImageUrl(page, pageImages) && (
               <>
                 <View
                   style={[
@@ -599,7 +600,7 @@ export function BookDocument({
                       Image (print-layout component), not an HTML <img> - it has no `alt` prop
                       to give (see the pageIllustrationCaption style comment above for the
                       caption text that stands in for it). */}
-                  <Image src={pageImages[page.sourcePageNumber]} style={styles.pageIllustration} />
+                  <Image src={resolvePageImageUrl(page, pageImages)} style={styles.pageIllustration} />
                 </View>
                 {page.imagePrompt && !page.imageLayout && (
                   <Text style={styles.pageIllustrationCaption}>{page.imagePrompt}</Text>

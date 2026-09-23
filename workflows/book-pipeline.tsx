@@ -523,7 +523,14 @@ async function generateSkeletonSide(runId: string, input: UnitGenerationContext,
         ...unitGenerationPromptHeader(input),
         `This unit's content must be organized into exactly these sections, in this exact order:\n${sections.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
         `Produce "pages" with exactly one generated page per section listed above, in the same order. Set each page's sectionLabel to that section's exact name. Set pageType to "content" for every page (the section name itself, not pageType, is what distinguishes them). Write entirely original content appropriate to each named section (e.g. a "Dinleme" section should be a listening passage/script, a "Konuşma" section a speaking/roleplay prompt, a "Okuma" section a reading passage) - do not just repeat the same explanation-style content across every section.`,
-        `For background/inspiration only (do NOT mirror these page-for-page or copy them - this unit's structure is the fixed sections above, not the source's own page layout), here is a summary of what this unit covered in the uploaded source book:\n${JSON.stringify(input.unitSourcePages.map((p) => ({ pageType: p.pageType, summary: p.summary })))}`,
+        // Denetim sonrası düzeltme (2026-09-23): "Sıfırdan Kitap" modunda
+        // unitSourcePages her zaman boş (gerçek bir PDF yok) - bu satırı
+        // koşulsuz basmak modele "işte yüklenen kaynak kitaptan özet: []"
+        // gibi yanlış/çelişkili bir talimat gönderiyordu. Boşsa satır hiç
+        // eklenmiyor (aşağıdaki filter(Boolean) zaten falsy'leri atıyor).
+        input.unitSourcePages.length
+          ? `For background/inspiration only (do NOT mirror these page-for-page or copy them - this unit's structure is the fixed sections above, not the source's own page layout), here is a summary of what this unit covered in the uploaded source book:\n${JSON.stringify(input.unitSourcePages.map((p) => ({ pageType: p.pageType, summary: p.summary })))}`
+          : "",
         "For any section that should carry a photo or illustration, set imagePrompt to a vivid description of a NEW, original image - never a copy of any source image.",
         "If a section includes a dialogue, story, or a listening/read-aloud passage (most naturally the \"Dinleme\"/\"Konuşma\"-style sections), also add a matching entry to listeningAudio with the exact text to be read aloud. If it's a dialogue between two or more named speakers, also fill dialogueLines with each turn broken out by speaker, in order. Leave dialogueLines empty for a single-narrator passage.",
         "Provide a unit-level glossary of key terms with definitions and examples.",
