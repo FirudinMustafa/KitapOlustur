@@ -12,6 +12,15 @@ function makeApiError(statusCode: number | undefined, message = "raw provider me
 }
 
 describe("translateAiError", () => {
+  it("translates the confirmed-live free-tier-block message into a clear upgrade message", () => {
+    const err = new Error(
+      "Free tier users do not have access to this model. Upgrade to paid credits at https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dtop-up for unrestricted access.",
+    );
+    const result = translateAiError(err);
+    expect(result).toMatch(/ücretsiz \(free tier\)/);
+    expect(result).toContain("vercel.com/d?to=");
+  });
+
   it("translates HTTP 402 into a credit-exhausted message", () => {
     expect(translateAiError(makeApiError(402))).toMatch(/kredisi tükenmiş/);
   });
