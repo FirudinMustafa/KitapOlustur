@@ -176,9 +176,18 @@ export type BlockLayout = z.infer<typeof blockLayoutSchema>;
 export const contentBlockSchema = z.object({
   kind: contentBlockKindEnum,
   heading: z.string(),
-  body: z.string().describe("Main text. May include inline math notation like $x^2$ for numeric subjects."),
+  body: z
+    .string()
+    .describe(
+      "Main text, as plain prose only - no Markdown syntax (no **bold**, no # headings, no bullet dashes). May include inline math notation like $x^2$ for numeric subjects. Never include internal authoring labels like \"Visual Brief:\" or image/audio generation instructions here - those belong only in visualDescription/imagePrompt/listeningAudio, not in reader-facing body text.",
+    ),
   items: z.array(z.string()).optional().describe("Numbered practice items, questions, or problems"),
-  answerKey: z.array(z.string()).optional(),
+  answerKey: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'If this block has "items", the correct answer for each item, in the same order and count as items - never leave this empty when items is non-empty.',
+    ),
   visualDescription: z
     .string()
     .optional()
