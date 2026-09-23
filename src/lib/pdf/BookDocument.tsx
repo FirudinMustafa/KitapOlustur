@@ -7,6 +7,7 @@ import { formatIsbn13 } from "@/lib/isbn";
 import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 import { resolvePageImageUrl } from "@/lib/page-image";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF } from "./fonts";
+import { BLOCK_COLORS } from "@/lib/block-colors";
 
 registerBookFonts();
 
@@ -51,15 +52,6 @@ const VARIANT_LABELS: Record<Variant, string> = {
   workbook: "Workbook",
   teacher_book: "Teacher's Book",
   test_booklet: "Test Booklet",
-};
-
-const BLOCK_COLORS: Record<ContentBlockKind, { text: string; bg: string; border: string }> = {
-  narrative: { text: "#c2410c", bg: "#fff7ed", border: "#fb923c" },
-  explanation: { text: "#1d4ed8", bg: "#eff6ff", border: "#60a5fa" },
-  example: { text: "#0f766e", bg: "#f0fdfa", border: "#2dd4bf" },
-  practice: { text: "#be185d", bg: "#fdf2f8", border: "#f472b6" },
-  assessment: { text: "#374151", bg: "#f3f4f6", border: "#9ca3af" },
-  reference: { text: "#3730a3", bg: "#eef2ff", border: "#818cf8" },
 };
 
 function BlockIcon({ kind, color }: { kind: ContentBlockKind; color: string }) {

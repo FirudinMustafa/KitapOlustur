@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { ContentBlock, GeneratedPage, InteractiveExercise, ListeningAudio, WordTimestamp } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
+import { BLOCK_COLORS } from "@/lib/block-colors";
 
 // Extracted from BookReader.tsx ("Dizilim → Gerçek Kitap") so the merged
 // Dizilim flip-book preview can render the exact same real content (all
@@ -247,6 +248,17 @@ function AnswerKeyToggle({ answerKey }: { answerKey: string[] }) {
 // under the block instead of only in BookReader's unit-level fallback panel
 // (see BookReader.tsx's `unmatchedAudio` - it filters out anything a page's
 // blocks already claimed here, so the same clip never renders twice).
+// Turkish labels for the small kind chip - matches the vocabulary already
+// used elsewhere in the Turkish-facing UI (project creation form etc.).
+const BLOCK_KIND_LABELS: Record<ContentBlock["kind"], string> = {
+  narrative: "Anlatı",
+  explanation: "Açıklama",
+  example: "Örnek",
+  practice: "Alıştırma",
+  assessment: "Değerlendirme",
+  reference: "Kaynak",
+};
+
 export function BlockView({
   block,
   showAnswerKey,
@@ -256,11 +268,23 @@ export function BlockView({
   showAnswerKey: boolean;
   audio?: ListeningAudio;
 }) {
+  const color = BLOCK_COLORS[block.kind];
   return (
-    <section className="mb-4 rounded-lg border-l-4 border-primary bg-card p-4 text-card-foreground">
-      <h3 className="font-semibold text-foreground">{block.heading}</h3>
+    <section
+      className="mb-4 rounded-lg border-l-4 p-4 text-card-foreground"
+      style={{ borderLeftColor: color.border, backgroundColor: color.bg }}
+    >
+      <span
+        className="mb-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase"
+        style={{ color: color.text, backgroundColor: "#ffffff" }}
+      >
+        {BLOCK_KIND_LABELS[block.kind]}
+      </span>
+      <h3 className="font-heading font-semibold" style={{ color: color.text }}>
+        {block.heading}
+      </h3>
       {block.body.split(/\n+/).map((p, i) => (
-        <p key={i} className="mt-1 text-sm text-foreground/80">
+        <p key={i} className="font-reading mt-1 text-sm leading-relaxed text-foreground/80">
           {p}
         </p>
       ))}

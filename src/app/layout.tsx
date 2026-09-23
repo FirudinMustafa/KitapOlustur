@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import { ClerkProvider, Show } from "@clerk/nextjs";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
@@ -16,6 +16,17 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// "Site QA" (2026-09-23): design audit found the reader/Dizilim UI using the
+// same admin-panel sans-serif for book body text as every button/label in
+// the app, with no typographic hierarchy - contributed to the "doesn't feel
+// like a real book" complaint. A dedicated reading serif (only applied via
+// the `.font-reading` utility in globals.css, scoped to book content) gives
+// book pages a distinct feel without touching the rest of the UI.
+const sourceSerif = Source_Serif_4({
+  variable: "--font-reading",
+  subsets: ["latin", "latin-ext"],
+});
+
 export const metadata: Metadata = {
   title: "Kitap Orkestrası",
   description: "Herhangi bir ders kitabı için student book / workbook üretim orkestrası",
@@ -30,7 +41,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html
         lang="tr"
-        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${sourceSerif.variable} h-full antialiased`}
       >
         <body className="min-h-full">
           <TooltipProvider>

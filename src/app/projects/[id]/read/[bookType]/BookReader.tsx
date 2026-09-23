@@ -69,7 +69,7 @@ export function BookReader({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8 lg:flex-row">
       <nav className="w-full shrink-0 lg:w-56">
-        <h1 className="text-lg font-semibold text-foreground">{bookTitle}</h1>
+        <h1 className="font-heading text-lg font-semibold text-foreground">{bookTitle}</h1>
         <p className="text-xs text-muted-foreground">
           {VARIANT_LABELS[variant]}
           {level ? ` · ${level}` : ""}
@@ -101,7 +101,7 @@ export function BookReader({
               // eslint-disable-next-line @next/next/no-img-element -- see PageView's comment above
               <img src={coverImageSrc} alt="" className="mb-6 max-h-48 w-full rounded-lg object-cover" />
             )}
-            <h2 className="mb-4 text-xl font-semibold text-foreground">
+            <h2 className="font-heading mb-4 text-xl font-semibold text-foreground">
               Unit {current.unitNumber}: {current.title}
             </h2>
             {!!unmatchedAudio.length && (
