@@ -197,7 +197,9 @@ export const contentBlockSchema = z.object({
     .describe(
       "For a practice/assessment block, an optional structured exercise (multiple_choice, fill_blank, or matching) the interactive web reader can render as a real, auto-checkable activity instead of static text. Leave unset for blocks that don't fit one of these three shapes - items/answerKey alone are fine.",
     ),
-  layout: blockLayoutSchema.optional(),
+  layout: blockLayoutSchema
+    .optional()
+    .describe("Not set by the writer - leave unset. Only ever filled in later by the layout editor's save flow."),
 });
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 
@@ -271,7 +273,9 @@ export const generatedPageSchema = z.object({
   // page's own illustration (looked up separately via pageImages, keyed by
   // sourcePageNumber) instead of its default "full-width, above all blocks"
   // placement.
-  imageLayout: blockLayoutSchema.optional(),
+  imageLayout: blockLayoutSchema
+    .optional()
+    .describe("Not set by the writer - leave unset. Only ever filled in later by the layout editor's save flow."),
   // "Dizilim → Gerçek Kitap" (2026-09-23): only ever set by moveImage
   // (src/lib/arrangement-merge.ts), never by the writer model. A page's
   // image is normally looked up as pageImages[page.sourcePageNumber] (see

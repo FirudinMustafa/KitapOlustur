@@ -1775,6 +1775,37 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       const complementaryType: "student_book" | "workbook" =
         ctx.upload.bookType === "student_book" ? "workbook" : "student_book";
 
+      // "Site QA" (2026-09-23): contentBlockSchema.layout/generatedPageSchema.imageLayout
+      // are documented (schemas.ts) as only ever set by the layout editor's
+      // save flow (mergePageLayout) - but nothing stopped the writer model
+      // from filling them in anyway, and live generation confirmed it does:
+      // real generated pages came back with block.layout widths like 800/400
+      // (plausible-looking wireframe coordinates, not derived from any real
+      // page geometry) even though no one had ever opened the Dizilim
+      // positioning editor for that run. Downstream, PositionedPage
+      // (src/components/book/PageContent.tsx) trusts `layout` completely and
+      // renders it inside the real PAGE_WIDTH_PT-wide (595pt) frame, so a
+      // hallucinated 800-wide box overflowed and got clipped - the exact
+      // "content looks cut off/misaligned" bug reported from the live
+      // reader. Strip both fields from every freshly-generated page right
+      // here, unconditionally, so generation output can never carry stray
+      // positioning data regardless of what the model does - this doesn't
+      // rely on the model complying with a prompt instruction.
+      function stripWriterLayoutFields(pages: GeneratedPage[]): GeneratedPage[] {
+        return pages.map((page) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-omit is the idiom for "drop this key"
+          const { imageLayout: _droppedImageLayout, ...restPage } = page;
+          return {
+            ...restPage,
+            blocks: page.blocks.map((block) => {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-omit is the idiom for "drop this key"
+              const { layout: _droppedLayout, ...restBlock } = block;
+              return restBlock;
+            }),
+          };
+        });
+      }
+
       async function buildUnit(feedback?: string[], variantHint?: string): Promise<GeneratedUnit> {
         const genContext: UnitGenerationContext = {
           bookTitle: outline.bookTitle,
@@ -1820,8 +1851,12 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           mirroredPages: mirrored.pages,
         });
 
-        const studentBookPages = ctx.upload.bookType === "student_book" ? mirrored.pages : complementary.pages;
-        const workbookPages = ctx.upload.bookType === "workbook" ? mirrored.pages : complementary.pages;
+        const studentBookPages = stripWriterLayoutFields(
+          ctx.upload.bookType === "student_book" ? mirrored.pages : complementary.pages,
+        );
+        const workbookPages = stripWriterLayoutFields(
+          ctx.upload.bookType === "workbook" ? mirrored.pages : complementary.pages,
+        );
 
         const [teacherBook, testBooklet, listeningAudio] = await Promise.all([
           requestedVariants.includes("teacher_book")
@@ -1840,8 +1875,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           title: outlineUnit.title,
           studentBookPages,
           workbookPages,
-          teacherBookPages: teacherBook?.pages,
-          testBookletPages: testBooklet?.pages,
+          teacherBookPages: teacherBook?.pages ? stripWriterLayoutFields(teacherBook.pages) : undefined,
+          testBookletPages: testBooklet?.pages ? stripWriterLayoutFields(testBooklet.pages) : undefined,
           glossary: mirrored.glossary,
           listeningAudio,
         };
