@@ -187,12 +187,17 @@ const STEP_LABELS: Record<string, string> = {
 const MODEL_PRICING_PER_MILLION: Record<string, { input: number; output: number }> = {
   "anthropic/claude-sonnet-5": { input: 2, output: 10 },
   "anthropic/claude-haiku-4-5": { input: 1, output: 5 },
-  // "Gateway kredisini idareli kullanma" (2026-09-23): draft mode's new
-  // backing model (model.ts's BOOK_PIPELINE_MODEL_DRAFT) - confirmed live
-  // against the Vercel AI Gateway catalog. Without this entry, a draft run's
+  // "Gateway kredisini idareli kullanma" (2026-09-23): draft mode's backing
+  // model (model.ts's BOOK_PIPELINE_MODEL_DRAFT) - confirmed live against
+  // the Vercel AI Gateway catalog. Without an entry here, a draft run's
   // cost estimate would silently fall back to Sonnet 5's much higher rate
   // (DEFAULT_PRICING below) and wildly overstate its actual cost.
+  // gpt-5-nano was tried first and replaced with gemini-2.5-flash-lite
+  // after a live run found gpt-5-nano structurally incompatible with this
+  // app's discriminated-union schemas (see model.ts's comment) - kept here
+  // too in case a future schema change makes it usable again.
   "openai/gpt-5-nano": { input: 0.05, output: 0.4 },
+  "google/gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
 };
 const DEFAULT_PRICING = MODEL_PRICING_PER_MILLION["anthropic/claude-sonnet-5"];
 

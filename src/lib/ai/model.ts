@@ -16,20 +16,22 @@ export const BOOK_PIPELINE_SPEECH_MODEL = "openai/tts-1-hd";
 // so QA fidelity doesn't degrade along with draft content. See ROADMAP.md
 // Faz H6.
 //
-// "Gateway kredisini idareli kullanma" (2026-09-23): switched from
-// anthropic/claude-haiku-4-5 to openai/gpt-5-nano - confirmed live against
-// the Gateway's own catalog (https://ai-gateway.vercel.sh/v1/models, fetched
-// directly, not memorized) at $0.05/$0.40 per million input/output tokens,
-// ~20x cheaper than Haiku 4.5, while still carrying `tool-use` and
-// `structured-output` tags (needed for this pipeline's generateObject
-// calls). Since draft mode is explicitly "cheap preview, not final quality"
-// by design, swapping its backing model doesn't change what draft mode
-// promises - it's now genuinely closer to the cheap end of what the
-// Gateway offers. If output quality/instruction-following in Turkish proves
-// too weak in practice, google/gemini-2.5-flash-lite ($0.10/$0.40 per M,
-// same tag profile, also confirmed in the catalog) is the next cheapest
-// fallback to try.
-export const BOOK_PIPELINE_MODEL_DRAFT = "openai/gpt-5-nano";
+// "Gateway kredisini idareli kullanma" (2026-09-23): tried openai/gpt-5-nano
+// first (Haiku'dan ~20x ucuz, gateway kataloğundan doğrulanmıştı) ama gerçek
+// bir canlı çalıştırmada generateSkeletonSide/generateMirroredSide'ın
+// şeması (contentBlockSchema.interactive, bir z.discriminatedUnion) OpenAI
+// modellerinin strict JSON-schema modunda kesin olarak reddedilen bir
+// `oneOf` üretiyor - gerçek hata: "Invalid schema for response_format
+// 'response': ... 'oneOf' is not permitted." Bu, şemayı değiştirmeden
+// hiçbir OpenAI modeliyle (sadece gpt-5-nano değil) çözülemeyecek yapısal
+// bir uyumsuzluk - bu yüzden OpenAI ailesi yerine google/gemini-2.5-flash-lite
+// seçildi ($0.10/$0.40 per M token, Haiku'dan hâlâ ~10x ucuz, gateway
+// kataloğundan doğrulandı) - Gemini'nin structured output'u Anthropic gibi
+// discriminated union'ları kabul ediyor (aynı şema Haiku ile zaten
+// çalışıyordu). Doğrulanmadan önce Anthropic'e (Haiku) geri dönmek en
+// güvenli yedek - bu yüzden bu değişiklik gerçek bir canlı testle
+// doğrulanana kadar Haiku'ya dönmek gerekirse buraya not düşülecek.
+export const BOOK_PIPELINE_MODEL_DRAFT = "google/gemini-2.5-flash-lite";
 
 export function resolveTextModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? BOOK_PIPELINE_MODEL_DRAFT : BOOK_PIPELINE_MODEL;

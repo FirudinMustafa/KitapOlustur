@@ -601,7 +601,7 @@ export default function NewProjectPage() {
               />
               <span>
                 <span className="font-medium text-foreground">
-                  Taslak (Haiku 4.5 + Imagen 4, daha ucuz)
+                  Taslak (Gemini 2.5 Flash-Lite + GPT Image 1 Mini, daha ucuz)
                 </span>
                 <span className="block text-xs text-muted-foreground">
                   Ünite içeriği ve görseller daha ucuz modellerle üretilir — yapıyı hızlıca önizlemek için.
