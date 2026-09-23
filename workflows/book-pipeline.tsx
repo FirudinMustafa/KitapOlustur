@@ -909,10 +909,14 @@ async function generateListeningAudio(
 
     let audioUrl: string | undefined;
     if (audioBuffer) {
+      // allowOverwrite: bkz. generateReviewedImage'ın aynı gerekçesi - bu
+      // adım Workflow tarafından yeniden denenirse (step-level retry, 3
+      // deneme) aynı deterministik yola ikinci kez yazmaya çalışır.
       const blob = await put(`generated/${runId}/unit-${unitNumber}-audio-${i}.mp3`, audioBuffer, {
         access: "public",
         contentType: "audio/mpeg",
         addRandomSuffix: false,
+        allowOverwrite: true,
       });
       audioUrl = blob.url;
     }
@@ -1342,10 +1346,18 @@ async function generateReviewedImage(
     // that ships.
     await recordCost(runId, "image", estimateImageCostUsd(imageModel));
 
+    // Denetim sonrası düzeltme (2026-09-23, ilk gerçek canlı çalıştırmada
+    // bulundu): retry döngüsü aynı deterministik storagePath'e birden fazla
+    // kez yazıyor (attempt 2/3, ilk deneme QA'dan geçemezse) - allowOverwrite
+    // olmadan Vercel Blob ikinci yazmayı reddedip tüm görsel üretimini
+    // çökertiyordu ("This blob already exists"). Tasarım zaten "son deneme
+    // hangisiyse o kalır" olduğundan (bkz. bu fonksiyonun üstündeki yorum),
+    // overwrite doğru davranış.
     const blob = await put(storagePath, Buffer.from(image.uint8Array), {
       access: "public",
       contentType: image.mediaType,
       addRandomSuffix: false,
+      allowOverwrite: true,
     });
     lastBlobUrl = blob.url;
 
@@ -1573,10 +1585,15 @@ async function assembleAndSaveBooks(
         trimSize={trimSize}
       />,
     );
+    // allowOverwrite: aynı gerekçe - bu step (assembleAndSaveBooks) birden
+    // fazla variant için döngü halinde çalışıyor; bir variant'ın PDF'i
+    // yazıldıktan sonra döngüde ilerideki bir hata yüzünden step yeniden
+    // denenirse bu yola tekrar yazma denemesi olur.
     const blob = await put(`generated/${runId}/${variant}.pdf`, pdfBuffer, {
       access: "public",
       contentType: "application/pdf",
       addRandomSuffix: false,
+      allowOverwrite: true,
     });
 
     // EPUB export: best-effort, alongside the PDF - a failure here (e.g. a
@@ -1600,6 +1617,7 @@ async function assembleAndSaveBooks(
         access: "public",
         contentType: "application/epub+zip",
         addRandomSuffix: false,
+        allowOverwrite: true,
       });
       epubBlobUrl = epubBlob.url;
     } catch {
