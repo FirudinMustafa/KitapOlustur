@@ -1566,27 +1566,47 @@ export function buildContentsUnits(outline: BookOutline): CourseUnitSummary[] {
 const IMAGE_REFERENCE_PATTERN =
   /\b(resim\w*|resm\w*|görsel\w*|fotoğraf\w*|bakınız|bak[ıi]n\w*|picture|photo|image below|look at the (picture|image|photo))\b/i;
 
+// A live retest of the first version of this check (2026-09-24) found the
+// draft model dodging the items/answerKey rule rather than fixing it: it
+// stopped using the `items` array entirely and wrote the numbered exercise
+// as one plain-text paragraph inside `body` instead (e.g. "1. Kedi ____
+// der.\n2. Köpek ____ havlar." as a single string) - `items` was then empty,
+// so the answerKey-count check never fired. This pattern catches that
+// specific dodge: 2+ lines starting with "N." or "N)" inside body, with no
+// structured items to hold them.
+const NUMBERED_LIST_IN_BODY_PATTERN = /(^|\n)\s*\d+[.)]\s+/g;
+
+function pageReferencesImage(page: GeneratedPage): boolean {
+  return page.blocks.some((block) => IMAGE_REFERENCE_PATTERN.test(`${block.body} ${(block.items ?? []).join(" ")}`));
+}
+
+const UNIT_PAGE_ARRAY_FIELDS: { label: string; field: keyof Pick<GeneratedUnit, "studentBookPages" | "workbookPages" | "teacherBookPages" | "testBookletPages"> }[] = [
+  { label: "Student Book", field: "studentBookPages" },
+  { label: "Workbook", field: "workbookPages" },
+  { label: "Teacher's Book", field: "teacherBookPages" },
+  { label: "Test Booklet", field: "testBookletPages" },
+];
+
 export function validateUnitStructure(unit: GeneratedUnit): string[] {
   const issues: string[] = [];
-  const pageArrays: { label: string; pages?: GeneratedPage[] }[] = [
-    { label: "Student Book", pages: unit.studentBookPages },
-    { label: "Workbook", pages: unit.workbookPages },
-    { label: "Teacher's Book", pages: unit.teacherBookPages },
-    { label: "Test Booklet", pages: unit.testBookletPages },
-  ];
-  for (const { label, pages } of pageArrays) {
-    for (const page of pages ?? []) {
-      let pageNeedsImage = false;
+  for (const { label, field } of UNIT_PAGE_ARRAY_FIELDS) {
+    for (const page of unit[field] ?? []) {
       for (const block of page.blocks) {
         if (block.items?.length && block.items.length !== (block.answerKey?.length ?? 0)) {
           issues.push(
             `${label}, page ${page.sourcePageNumber}, block "${block.heading}": has ${block.items.length} items but ${block.answerKey?.length ?? 0} answerKey entries - answerKey must have exactly one correct answer per item, in the same order.`,
           );
         }
-        const text = `${block.body} ${(block.items ?? []).join(" ")}`;
-        if (IMAGE_REFERENCE_PATTERN.test(text)) pageNeedsImage = true;
+        if (!block.items?.length) {
+          const numberedLines = block.body.match(NUMBERED_LIST_IN_BODY_PATTERN);
+          if (numberedLines && numberedLines.length >= 2) {
+            issues.push(
+              `${label}, page ${page.sourcePageNumber}, block "${block.heading}": body contains a numbered exercise list written as plain text instead of the structured items/answerKey fields - move each numbered line into items and its correct answer into the matching answerKey entry. Do NOT write numbered exercises as prose inside body.`,
+            );
+          }
+        }
       }
-      if (pageNeedsImage && !page.imagePrompt) {
+      if (pageReferencesImage(page) && !page.imagePrompt) {
         issues.push(
           `${label}, page ${page.sourcePageNumber}: exercise text refers to an image the learner should look at, but imagePrompt is not set on this page - add a vivid imagePrompt describing exactly that image.`,
         );
@@ -1594,6 +1614,36 @@ export function validateUnitStructure(unit: GeneratedUnit): string[] {
     }
   }
   return issues;
+}
+
+// Deterministic backstop for when the model still won't comply with the
+// imagePrompt requirement after every retry attempt in validateUnitStructure's
+// feedback loop (confirmed live: 2 bounded retries were not always enough).
+// Unlike the answerKey/items dodge, a missing image has a safe, guaranteed
+// fix that doesn't need the model at all - synthesize a reasonable prompt
+// straight from the block text that triggered the match, so
+// generateUnitImages (which only skips a page when imagePrompt is falsy)
+// still produces an illustration. This never overwrites an imagePrompt the
+// model DID set - it only fills the gap when one is still missing.
+export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
+  function fillPages(pages?: GeneratedPage[]): GeneratedPage[] | undefined {
+    if (!pages) return pages;
+    return pages.map((page) => {
+      if (page.imagePrompt || !pageReferencesImage(page)) return page;
+      const headings = page.blocks.map((b) => b.heading).join(", ");
+      return {
+        ...page,
+        imagePrompt: `An illustration supporting this exercise (${headings}): a clear, friendly depiction of the objects/scene the exercise text describes, suitable for a young learner to count, name, or match.`,
+      };
+    });
+  }
+  return {
+    ...unit,
+    studentBookPages: fillPages(unit.studentBookPages) ?? unit.studentBookPages,
+    workbookPages: fillPages(unit.workbookPages) ?? unit.workbookPages,
+    teacherBookPages: fillPages(unit.teacherBookPages),
+    testBookletPages: fillPages(unit.testBookletPages),
+  };
 }
 
 async function assembleAndSaveBooks(
@@ -1987,6 +2037,12 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           );
           generated = await buildUnit(remainingIssues);
         }
+
+        // Backstop: a live retest showed the model can still refuse an
+        // imagePrompt after both retry attempts above - fill any remaining
+        // gap deterministically rather than shipping a page whose exercise
+        // needs a picture it will never get.
+        generated = applyFallbackImagePrompts(generated);
       } else {
         await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: ${variantCount} varyant üretiliyor`);
 
@@ -2005,6 +2061,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               if (!remainingIssues.length) break;
               unit = await buildUnit(remainingIssues);
             }
+            unit = applyFallbackImagePrompts(unit);
             const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
               reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),

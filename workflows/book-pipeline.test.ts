@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildContentsUnits, validateUnitStructure } from "./book-pipeline";
+import { buildContentsUnits, validateUnitStructure, applyFallbackImagePrompts } from "./book-pipeline";
 import type { BookOutline, GeneratedPage, GeneratedUnit } from "@/lib/ai/schemas";
 
 // buildContentsUnits is pure (no DB/AI calls), exported from book-pipeline.tsx
@@ -162,5 +162,71 @@ describe("validateUnitStructure", () => {
     const issues = validateUnitStructure(unit);
     expect(issues.some((i) => i.startsWith("Teacher's Book"))).toBe(true);
     expect(issues.some((i) => i.startsWith("Test Booklet"))).toBe(true);
+  });
+
+  it("flags a numbered exercise list written as prose in body instead of items", () => {
+    const unit = makeUnit({
+      workbookPages: [
+        makePage({
+          blocks: [
+            {
+              kind: "practice",
+              heading: "Boşlukları Doldur",
+              body: "1. Kedi ____ der.\n2. Köpek ____ havlar.\n3. İnek ____ der.",
+            },
+          ],
+        }),
+      ],
+    });
+    const issues = validateUnitStructure(unit);
+    expect(issues.some((i) => i.includes("Boşlukları Doldur") && i.includes("plain text"))).toBe(true);
+  });
+
+  it("does not flag body text with a single numbered mention (not a list)", () => {
+    const unit = makeUnit({
+      workbookPages: [makePage({ blocks: [{ kind: "explanation", heading: "Not", body: "1. sınıf öğrencileri için hazırlanmıştır." }] })],
+    });
+    expect(validateUnitStructure(unit)).toEqual([]);
+  });
+});
+
+describe("applyFallbackImagePrompts", () => {
+  it("fills imagePrompt on a page that references an image but has none", () => {
+    const unit = makeUnit({
+      studentBookPages: [
+        makePage({ blocks: [{ kind: "practice", heading: "Hayvanları Say", body: "Resimdeki hayvanları say.", items: ["Kaç tane?"], answerKey: ["4"] }] }),
+      ],
+    });
+    const result = applyFallbackImagePrompts(unit);
+    expect(result.studentBookPages[0].imagePrompt).toBeTruthy();
+    expect(result.studentBookPages[0].imagePrompt).toContain("Hayvanları Say");
+  });
+
+  it("never overwrites an imagePrompt the model already set", () => {
+    const unit = makeUnit({
+      studentBookPages: [
+        makePage({
+          imagePrompt: "A friendly farm scene with a cow and a cat.",
+          blocks: [{ kind: "practice", heading: "Hayvanları Say", body: "Resimdeki hayvanları say." }],
+        }),
+      ],
+    });
+    const result = applyFallbackImagePrompts(unit);
+    expect(result.studentBookPages[0].imagePrompt).toBe("A friendly farm scene with a cow and a cat.");
+  });
+
+  it("leaves pages that don't reference an image untouched", () => {
+    const unit = makeUnit({
+      studentBookPages: [makePage({ blocks: [{ kind: "explanation", heading: "Giriş", body: "Bu ünitede sayıları öğreneceğiz." }] })],
+    });
+    const result = applyFallbackImagePrompts(unit);
+    expect(result.studentBookPages[0].imagePrompt).toBeUndefined();
+  });
+
+  it("is a no-op for undefined optional page arrays", () => {
+    const unit = makeUnit();
+    const result = applyFallbackImagePrompts(unit);
+    expect(result.teacherBookPages).toBeUndefined();
+    expect(result.testBookletPages).toBeUndefined();
   });
 });
