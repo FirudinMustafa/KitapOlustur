@@ -73,10 +73,15 @@ type UnitOutline = BookOutline["units"][number];
 
 const ALL_VARIANTS: Variant[] = ["student_book", "workbook", "teacher_book", "test_booklet"];
 
-// Generous headroom for a single unit-side's worth of structured JSON (well
-// under claude-sonnet-5's ~80k output ceiling on the gateway), set explicitly
+// Headroom for a single unit-side's worth of structured JSON (well under
+// claude-sonnet-5's ~80k output ceiling on the gateway), set explicitly
 // because an unset limit risks a silent mid-JSON truncation on rich units.
-const UNIT_SIDE_MAX_OUTPUT_TOKENS = 16000;
+// Was 16000 until a live run's generateComplementarySide call hit that
+// ceiling on a rich unit and got cut off mid-JSON (finishReason: "length"),
+// failing schema validation after all 3 retries - bumped to give real
+// unit-side content (pages + glossary + listening audio scripts, or a full
+// teacher's book/test booklet side) more room before truncating.
+const UNIT_SIDE_MAX_OUTPUT_TOKENS = 32000;
 
 // extractPageMap's output scales with the source PDF's total page count (one
 // entry with verbatim sourceText per page), not with a single unit like the

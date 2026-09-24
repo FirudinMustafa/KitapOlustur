@@ -286,6 +286,23 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const pendingImageReview = run?.pendingImageReview;
   const unitReviewSummary = data.unitReviewSummary ?? [];
 
+  // Faz "Onay butonu geri bildirimi": tüm onay/gönder aksiyonları zaten
+  // buton metnini "Gönderiliyor…" yapıp kendini disable ediyordu, ama bu
+  // görsel olarak yeterince belirgin değildi - kullanıcı isteğin gidip
+  // gitmediğinden emin olamayıp butona tekrar tekrar basıyordu. Bu genel,
+  // göz ardı edilemeyecek bir üst-bant gösterge ekliyor; her ayrı "…ing"
+  // state'ini tek bir yerde toplar, böylece yeni bir onay adımı eklenince
+  // unutulmaz.
+  const anyActionPending =
+    rerunning ||
+    approving ||
+    assembling ||
+    selectingVariant ||
+    submittingFeedback ||
+    approvingContent ||
+    submittingImageReview ||
+    approvingFinal;
+
   async function refresh() {
     const fresh = await fetch(`/api/projects/${projectId}`);
     if (fresh.ok) setData(await fresh.json());
@@ -440,6 +457,17 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-12">
+      {anyActionPending && (
+        <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-xs font-medium text-card-foreground shadow-lg">
+            <span
+              className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground"
+              aria-hidden="true"
+            />
+            İsteğin gönderiliyor, lütfen tekrar tıklamadan bekle…
+          </div>
+        </div>
+      )}
       <h1 className="text-2xl font-semibold text-foreground">{project.name}</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         {project.level ? `${project.level} · ` : ""}
