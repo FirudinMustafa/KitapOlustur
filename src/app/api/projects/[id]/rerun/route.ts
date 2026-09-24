@@ -96,7 +96,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     })
     .returning();
 
-  const workflowRun = await start(bookPipelineWorkflow, [run.id]);
+  // "Yeniden çalıştır maliyeti": reuse the previous run's already-persisted
+  // extraction results (pageMap/outline/improvementPlan) instead of always
+  // re-paying for them - see copyForwardExtraction in book-pipeline.tsx.
+  // Always safe to pass: if the previous run never got that far, it's a
+  // no-op and this behaves exactly like a plain full restart.
+  const workflowRun = await start(
+    bookPipelineWorkflow,
+    previousRun ? [run.id, { mode: "full", resumeFromRunId: previousRun.id }] : [run.id],
+  );
 
   await db
     .update(generationRuns)

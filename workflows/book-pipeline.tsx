@@ -1834,7 +1834,52 @@ async function loadAssembledRunAssets(sourceRunId: string) {
   };
 }
 
-type WorkflowScope = { mode: "full" } | { mode: "assemble"; sourceRunId: string };
+// "Yeniden çalıştır maliyeti" (2026-09-24): a rerun after a failure used to
+// always restart the entire pipeline, re-paying for extractPageMap +
+// extractOutline + analyzeImprovements every time even though those steps
+// had already succeeded and were sitting in sourcePageMaps/extractedOutlines
+// under the OLD (failed) run's id - a live run showed those two steps alone
+// cost ~150k+ tokens, re-billed on every single retry of a later, unrelated
+// step. Every persisted table is keyed by runId (cascade FK to
+// generationRuns), so a brand-new run can't see an old run's rows by default
+// - this copies them forward into the NEW run's own rows (same reuse
+// pattern loadAssembledRunAssets above already uses for a "done" run, just
+// applied to the earlier, much more expensive extraction phase instead).
+// Returns null for whatever wasn't found (e.g. the source run failed before
+// even extractPageMap finished) - the caller falls back to computing that
+// piece normally, so this is always safe to call speculatively.
+async function copyForwardExtraction(
+  runId: string,
+  sourceRunId: string,
+): Promise<{ pageMap: PageMap | null; outline: BookOutline | null; improvementPlan: ImprovementPlan | null }> {
+  "use step";
+
+  const [sourcePageMapRow, sourceOutlineRow] = await Promise.all([
+    db.query.sourcePageMaps.findFirst({ where: eq(sourcePageMaps.runId, sourceRunId) }),
+    db.query.extractedOutlines.findFirst({ where: eq(extractedOutlines.runId, sourceRunId) }),
+  ]);
+
+  let pageMap: PageMap | null = null;
+  if (sourcePageMapRow) {
+    pageMap = { totalPages: sourcePageMapRow.totalPages, pages: sourcePageMapRow.pages as PageMap["pages"] };
+    await db.insert(sourcePageMaps).values({ runId, totalPages: pageMap.totalPages, pages: pageMap.pages });
+  }
+
+  let outline: BookOutline | null = null;
+  let improvementPlan: ImprovementPlan | null = null;
+  if (sourceOutlineRow) {
+    const copied = sourceOutlineRow.outline as { outline: BookOutline; improvementPlan?: ImprovementPlan };
+    outline = copied.outline;
+    improvementPlan = copied.improvementPlan ?? null;
+    await db.insert(extractedOutlines).values({ runId, outline: copied });
+  }
+
+  return { pageMap, outline, improvementPlan };
+}
+
+type WorkflowScope =
+  | { mode: "full"; resumeFromRunId?: string }
+  | { mode: "assemble"; sourceRunId: string };
 
 type PendingVariants = {
   unitNumber: number;
@@ -1872,34 +1917,54 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       return { runId, status: "done" as const };
     }
 
+    const resumed =
+      scope.mode === "full" && scope.resumeFromRunId
+        ? await copyForwardExtraction(runId, scope.resumeFromRunId)
+        : null;
+
     let pageMap: PageMap;
     let outline: BookOutline;
     if (ctx.run.isFromScratch) {
-      await setRunStatus(runId, "extracting", "Kitabın yapısı (dizelge) sıfırdan oluşturuluyor");
-      pageMap = { totalPages: 0, pages: [] };
-      outline = await generateOutlineFromBrief(
-        runId,
-        ctx.project.name,
-        ctx.project.level,
-        ctx.run.unitLimit ?? DEFAULT_SCRATCH_UNIT_COUNT,
-        ctx.run.scratchBrief,
-        ctx.run.targetLanguage,
-      );
+      if (resumed?.outline) {
+        await setRunStatus(runId, "extracting", "Kitabın yapısı (dizelge) önceki başarılı sonuçtan yeniden kullanıldı");
+        pageMap = { totalPages: 0, pages: [] };
+        outline = resumed.outline;
+      } else {
+        await setRunStatus(runId, "extracting", "Kitabın yapısı (dizelge) sıfırdan oluşturuluyor");
+        pageMap = { totalPages: 0, pages: [] };
+        outline = await generateOutlineFromBrief(
+          runId,
+          ctx.project.name,
+          ctx.project.level,
+          ctx.run.unitLimit ?? DEFAULT_SCRATCH_UNIT_COUNT,
+          ctx.run.scratchBrief,
+          ctx.run.targetLanguage,
+        );
+      }
     } else {
-      await setRunStatus(runId, "mapping_pages", "Kaynak PDF sayfa sayfa haritalanıyor");
-      pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
+      if (resumed?.pageMap) {
+        pageMap = resumed.pageMap;
+      } else {
+        await setRunStatus(runId, "mapping_pages", "Kaynak PDF sayfa sayfa haritalanıyor");
+        pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
+      }
 
-      await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) çıkarılıyor");
-      outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap, ctx.run.targetLanguage, ctx.project.level);
+      if (resumed?.outline) {
+        await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) önceki başarılı sonuçtan yeniden kullanıldı");
+        outline = resumed.outline;
+      } else {
+        await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) çıkarılıyor");
+        outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap, ctx.run.targetLanguage, ctx.project.level);
+      }
     }
 
-    await setRunStatus(runId, "analyzing", "Nice-to-have listesine göre iyileştirme planı hazırlanıyor");
-    const improvementPlan: ImprovementPlan = await analyzeImprovements(
-      runId,
-      outline,
-      ctx.niceToHave,
-      ctx.run.customNotes,
-    );
+    let improvementPlan: ImprovementPlan;
+    if (resumed?.improvementPlan) {
+      improvementPlan = resumed.improvementPlan;
+    } else {
+      await setRunStatus(runId, "analyzing", "Nice-to-have listesine göre iyileştirme planı hazırlanıyor");
+      improvementPlan = await analyzeImprovements(runId, outline, ctx.niceToHave, ctx.run.customNotes);
+    }
 
     await setRunStatus(runId, "awaiting_outline_approval", "Dizelge onayı bekleniyor");
     const outlineApprovalHook = createHook<{ approved: boolean; unitLimit?: number | null }>({

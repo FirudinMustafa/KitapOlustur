@@ -1142,23 +1142,29 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {upload && (
-        <div className="mt-4 flex items-end gap-3 rounded-lg border border-dashed border-border p-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Ünite sınırıyla yeniden çalıştır (opsiyonel)
-            </label>
-            <Input
-              type="number"
-              min={1}
-              value={rerunUnitLimit}
-              onChange={(e) => setRerunUnitLimit(e.target.value)}
-              placeholder="Örn. 4"
-              className="h-9 w-32"
-            />
+        <div className="mt-4 flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
+          <div className="flex items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Ünite sınırıyla yeniden çalıştır (opsiyonel)
+              </label>
+              <Input
+                type="number"
+                min={1}
+                value={rerunUnitLimit}
+                onChange={(e) => setRerunUnitLimit(e.target.value)}
+                placeholder="Örn. 4"
+                className="h-9 w-32"
+              />
+            </div>
+            <Button onClick={handleRerun} disabled={rerunning} size="sm" className="h-9 rounded-full px-4 text-xs">
+              {rerunning ? "Başlatılıyor…" : "Yeniden çalıştır"}
+            </Button>
           </div>
-          <Button onClick={handleRerun} disabled={rerunning} size="sm" className="h-9 rounded-full px-4 text-xs">
-            {rerunning ? "Başlatılıyor…" : "Yeniden çalıştır"}
-          </Button>
+          <p className="text-[11px] text-muted-foreground">
+            Önceki analiz (sayfa haritalama + dizelge) başarılıysa otomatik olarak yeniden kullanılır - bu adımlar
+            için ek ücret alınmaz.
+          </p>
         </div>
       )}
 
