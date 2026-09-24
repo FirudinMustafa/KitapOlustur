@@ -1547,6 +1547,55 @@ export function buildContentsUnits(outline: BookOutline): CourseUnitSummary[] {
   }));
 }
 
+// "Site QA" (2026-09-24): soft schema/prompt hints alone (answerKey's
+// .describe(), the imagePrompt-required-for-image-referencing-exercises
+// prompt line added earlier) were confirmed NOT sufficient on a live
+// retest - the draft model still left answerKey empty and still skipped
+// imagePrompt for exercises that plainly needed a picture. This is a
+// deterministic, code-enforced check instead: it doesn't trust the model to
+// comply, it inspects what the model actually produced and demands a
+// regeneration (via the same issues-array/buildUnit(feedback) retry path
+// reviewUnit etc. already use, see buildUnit's callers) whenever the output
+// is structurally incomplete. Pure (no DB/AI calls) and exported
+// specifically so it's testable in isolation - see buildContentsUnits above
+// for the same pattern.
+// Turkish suffixes attach directly to the noun (resim-deki, resm-e, resm-i,
+// görsel-e, görsel-deki, ...), so a plain \b...\b whole-word match would miss
+// "resimdeki"/"resme" style inflections - \w* after the root catches any
+// suffix instead of enumerating every case ending.
+const IMAGE_REFERENCE_PATTERN =
+  /\b(resim\w*|resm\w*|görsel\w*|fotoğraf\w*|bakınız|bak[ıi]n\w*|picture|photo|image below|look at the (picture|image|photo))\b/i;
+
+export function validateUnitStructure(unit: GeneratedUnit): string[] {
+  const issues: string[] = [];
+  const pageArrays: { label: string; pages?: GeneratedPage[] }[] = [
+    { label: "Student Book", pages: unit.studentBookPages },
+    { label: "Workbook", pages: unit.workbookPages },
+    { label: "Teacher's Book", pages: unit.teacherBookPages },
+    { label: "Test Booklet", pages: unit.testBookletPages },
+  ];
+  for (const { label, pages } of pageArrays) {
+    for (const page of pages ?? []) {
+      let pageNeedsImage = false;
+      for (const block of page.blocks) {
+        if (block.items?.length && block.items.length !== (block.answerKey?.length ?? 0)) {
+          issues.push(
+            `${label}, page ${page.sourcePageNumber}, block "${block.heading}": has ${block.items.length} items but ${block.answerKey?.length ?? 0} answerKey entries - answerKey must have exactly one correct answer per item, in the same order.`,
+          );
+        }
+        const text = `${block.body} ${(block.items ?? []).join(" ")}`;
+        if (IMAGE_REFERENCE_PATTERN.test(text)) pageNeedsImage = true;
+      }
+      if (pageNeedsImage && !page.imagePrompt) {
+        issues.push(
+          `${label}, page ${page.sourcePageNumber}: exercise text refers to an image the learner should look at, but imagePrompt is not set on this page - add a vivid imagePrompt describing exactly that image.`,
+        );
+      }
+    }
+  }
+  return issues;
+}
+
 async function assembleAndSaveBooks(
   runId: string,
   bookTitle: string,
@@ -1899,33 +1948,63 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           reviewSkillBalance(runId, n, generated),
         ]);
 
+        const structuralIssues = validateUnitStructure(generated);
         const issues = [
           ...structureReview.issues,
           ...languageReview.issues,
           ...levelReview.issues,
           ...safetyReview.issues,
           ...skillBalanceReview.issues,
+          ...structuralIssues,
         ];
         if (
           (!structureReview.passed ||
             !languageReview.passed ||
             !levelReview.passed ||
             !safetyReview.passed ||
-            !skillBalanceReview.passed) &&
+            !skillBalanceReview.passed ||
+            structuralIssues.length) &&
           issues.length
         ) {
           await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: geri bildirimle yeniden üretiliyor`);
           generated = await buildUnit(issues);
+        }
+
+        // Keep retrying specifically on structural completeness (missing
+        // answerKey entries, missing imagePrompt for an image-dependent
+        // exercise) beyond the single AI-review retry above - unlike the AI
+        // reviews' qualitative judgment calls, this check is deterministic,
+        // so a bounded extra loop can actually chase it to zero instead of
+        // accepting "still broken after one retry" the way the AI-review
+        // path does.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const remainingIssues = validateUnitStructure(generated);
+          if (!remainingIssues.length) break;
+          await setRunStatus(
+            runId,
+            "generating",
+            `Ünite ${n}/${totalUnits}: eksik görsel/cevap anahtarı için yeniden üretiliyor (${attempt + 1}/2)`,
+          );
+          generated = await buildUnit(remainingIssues);
         }
       } else {
         await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: ${variantCount} varyant üretiliyor`);
 
         const variants = await Promise.all(
           Array.from({ length: variantCount }, async (_, i) => {
-            const unit = await buildUnit(
+            let unit = await buildUnit(
               undefined,
               `This is candidate variant ${i + 1} of ${variantCount} for this unit. Take a distinctly different creative angle (different examples, scenarios, or exercise styles) from the other variants while still meeting every requirement above.`,
             );
+            // Same bounded structural-completeness loop as the single-variant
+            // path below - every variant offered to the human must clear the
+            // deterministic answerKey/imagePrompt check, not just whichever
+            // one gets picked.
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const remainingIssues = validateUnitStructure(unit);
+              if (!remainingIssues.length) break;
+              unit = await buildUnit(remainingIssues);
+            }
             const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
               reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),
@@ -1933,6 +2012,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               reviewContentSafety(runId, n, unit),
               reviewSkillBalance(runId, n, unit),
             ]);
+            const structuralIssues = validateUnitStructure(unit);
             return {
               index: i,
               unit,
@@ -1942,13 +2022,15 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
                 ...levelReview.issues,
                 ...safetyReview.issues,
                 ...skillBalanceReview.issues,
+                ...structuralIssues,
               ],
               passed:
                 structureReview.passed &&
                 languageReview.passed &&
                 levelReview.passed &&
                 safetyReview.passed &&
-                skillBalanceReview.passed,
+                skillBalanceReview.passed &&
+                !structuralIssues.length,
             };
           }),
         );
