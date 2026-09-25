@@ -7,7 +7,7 @@ import {
   type LanguageModelUsage,
   type RepairTextFunction,
 } from "ai";
-import { eq, inArray, desc, sql } from "drizzle-orm";
+import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { put } from "@vercel/blob";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { FatalError, createHook } from "workflow";
@@ -1076,6 +1076,29 @@ async function savePageImages(runId: string, coverImageUrl: string, pageImageUrl
   await db.update(generationRuns).set({ coverImageUrl, pageImageUrls }).where(eq(generationRuns.id, runId));
 }
 
+// "Yeniden çalıştır maliyeti, Faz 2": a single-variant unit (the common
+// case, variantCount===1) never got a variantHistory row of its own -
+// only the multi-variant path (archiveVariants below) wrote one. That left
+// no checkpoint for a resume to reuse: if unit 2's buildUnit call failed
+// after units 0-1 already succeeded (their content, reviews, and real AI
+// spend all real and correct), a rerun had no way to see that and redid
+// them from scratch too. This gives the single-variant path the same
+// variantHistory row shape (variantIndex 0, selected true) purely as a
+// resumable checkpoint - see copyForwardUnits below for the read side.
+async function checkpointUnit(runId: string, unitNumber: number, unit: GeneratedUnit): Promise<void> {
+  "use step";
+
+  await db.insert(variantHistory).values({
+    runId,
+    unitNumber,
+    variantIndex: 0,
+    selected: true,
+    passed: true,
+    issues: [],
+    unit,
+  });
+}
+
 // Faz H4: archives every generated variant (see variantHistory in
 // src/db/schema.ts) before clearing the run's pendingVariants scratch
 // column, so unselected variants aren't silently discarded - replaces the
@@ -1893,6 +1916,90 @@ async function copyForwardExtraction(
   return { pageMap, outline, improvementPlan };
 }
 
+// "Yeniden çalıştır maliyeti, Faz 2": same reuse pattern as
+// copyForwardExtraction above, for the per-unit text-generation loop - a
+// live run failed inside buildUnit (generateMirroredSide) for unit 1 after
+// unit 0's content, reviews, and originality check had already succeeded
+// and cost real tokens (~240k in that run). Reads every already-`selected`
+// variantHistory row for sourceRunId (written either by checkpointUnit for
+// a single-variant unit, or by archiveVariants for whichever variant a
+// human picked - both leave exactly one selected=true row per unit number),
+// copies each forward into the new run's own rows, and returns them keyed
+// by unit number so the per-unit loop can skip buildUnit/review entirely
+// for any unit that's already done. Only covers the initial per-unit loop
+// (before the content-approval gate) - a unit regenerated later from human
+// feedback during content approval doesn't get a fresh variantHistory row,
+// so this always returns the pre-feedback version for that case; out of
+// scope here since the reported failures happen earlier, inside this loop.
+async function copyForwardUnits(runId: string, sourceRunId: string): Promise<Record<number, GeneratedUnit>> {
+  "use step";
+
+  const rows = await db.query.variantHistory.findMany({
+    where: and(eq(variantHistory.runId, sourceRunId), eq(variantHistory.selected, true)),
+  });
+  if (!rows.length) return {};
+
+  const unitNumbers = rows.map((row) => row.unitNumber);
+  const result: Record<number, GeneratedUnit> = {};
+
+  await Promise.all(
+    rows.map(async (row) => {
+      result[row.unitNumber] = row.unit as GeneratedUnit;
+      await db.insert(variantHistory).values({
+        runId,
+        unitNumber: row.unitNumber,
+        variantIndex: row.variantIndex,
+        selected: true,
+        passed: row.passed,
+        issues: row.issues,
+        unit: row.unit,
+      });
+    }),
+  );
+
+  // Also copy each resumed unit's review/originality rows forward, purely
+  // so the UI (unitReviewSummary sign-off badges, the originality report)
+  // still shows complete data for units this run never actually
+  // re-reviewed - these don't feed token accounting (that's a separate
+  // jsonb accumulator on generationRuns, untouched here), so there's no
+  // double-billing risk, just UI completeness.
+  const [reviewRows, originalityRows] = await Promise.all([
+    db.query.unitReviews.findMany({
+      where: and(eq(unitReviews.runId, sourceRunId), inArray(unitReviews.unitNumber, unitNumbers)),
+    }),
+    db.query.originalityChecks.findMany({
+      where: and(eq(originalityChecks.runId, sourceRunId), inArray(originalityChecks.unitNumber, unitNumbers)),
+    }),
+  ]);
+  await Promise.all([
+    reviewRows.length
+      ? db.insert(unitReviews).values(
+          reviewRows.map((row) => ({
+            runId,
+            unitNumber: row.unitNumber,
+            reviewType: row.reviewType,
+            passed: row.passed,
+            issues: row.issues,
+          })),
+        )
+      : Promise.resolve(),
+    originalityRows.length
+      ? db.insert(originalityChecks).values(
+          originalityRows.map((row) => ({
+            runId,
+            unitNumber: row.unitNumber,
+            pageNumber: row.pageNumber,
+            ngramOverlapScore: row.ngramOverlapScore,
+            llmAssessment: row.llmAssessment,
+            flagged: row.flagged,
+          })),
+        )
+      : Promise.resolve(),
+  ]);
+
+  return result;
+}
+
 type WorkflowScope =
   | { mode: "full"; resumeFromRunId?: string }
   | { mode: "assemble"; sourceRunId: string };
@@ -1933,10 +2040,9 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       return { runId, status: "done" as const };
     }
 
-    const resumed =
-      scope.mode === "full" && scope.resumeFromRunId
-        ? await copyForwardExtraction(runId, scope.resumeFromRunId)
-        : null;
+    const resumeFromRunId = scope.mode === "full" ? scope.resumeFromRunId : undefined;
+    const resumed = resumeFromRunId ? await copyForwardExtraction(runId, resumeFromRunId) : null;
+    const resumedUnits = resumeFromRunId ? await copyForwardUnits(runId, resumeFromRunId) : {};
 
     let pageMap: PageMap;
     let outline: BookOutline;
@@ -2137,8 +2243,12 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       unitBuilders.set(n, buildUnit);
 
       let generated: GeneratedUnit;
+      const resumedUnit = resumedUnits[n];
 
-      if (variantCount === 1) {
+      if (resumedUnit) {
+        await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: önceki başarılı sonuçtan yeniden kullanıldı`);
+        generated = resumedUnit;
+      } else if (variantCount === 1) {
         await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: içerik üretiliyor`);
         generated = await buildUnit();
 
@@ -2258,6 +2368,9 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         await archiveVariants(runId, n, variants, selection.selectedIndex);
       }
 
+      if (!resumedUnit && variantCount === 1) {
+        await checkpointUnit(runId, n, generated);
+      }
       units.push(generated);
     }
 

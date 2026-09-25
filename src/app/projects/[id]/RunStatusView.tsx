@@ -1162,8 +1162,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Önceki analiz (sayfa haritalama + dizelge) başarılıysa otomatik olarak yeniden kullanılır - bu adımlar
-            için ek ücret alınmaz.
+            Önceki analiz (sayfa haritalama + dizelge) ve daha önce başarıyla üretilmiş üniteler otomatik olarak
+            yeniden kullanılır - bu adımlar için ek ücret alınmaz, sadece kalan/başarısız kısımlar yeniden çalışır.
           </p>
         </div>
       )}
