@@ -113,15 +113,29 @@ const REVIEW_INTERVAL_UNITS = 4;
 // Faz "Çift-JSON-kodlanmış model kaçışı": a live run's generateMirroredSide
 // call finished normally (finishReason: "stop", so not the token-truncation
 // class of failure above) but still failed schema validation - the model
-// had JSON.stringify'd a nested field's value into a string instead of
-// emitting the actual array/object the schema expects, e.g.
-// {"glossary":"{\"glossary\":[...]}"} instead of {"glossary":[...]}. Passed
-// as every generateObject call's experimental_repairText below: AI SDK
-// calls this on exactly this failure mode (JSON parse OR schema validation
-// error) before giving up, so recursively un-stringifying any string value
-// that is itself valid JSON resolves this specific dodge without burning a
-// full step retry (see workflow's FatalError after 3 retries).
+// wrapped a nested field's value in an extra layer named after that same
+// field, instead of emitting the actual array/object the schema expects.
+// Seen in two shapes so far: stringified - {"glossary":"{\"glossary\":[...]}"}
+// - and, on a later run, a plain nested object with the same key repeated -
+// {"glossary":{"glossary":[...]}} - instead of {"glossary":[...]} either
+// way. Passed as every generateObject call's experimental_repairText below:
+// AI SDK calls this on exactly this failure mode (JSON parse OR schema
+// validation error) before giving up, so recursively (a) un-stringifying
+// any string value that is itself valid JSON and (b) unwrapping any object
+// value shaped as { <sameKeyAsParent>: innerValue } resolves this dodge
+// without burning a full step retry (see workflow's FatalError after 3
+// retries).
 const repairDoubleEncodedJsonLeaves: RepairTextFunction = async ({ text }) => {
+  function unwrapSelfNested(key: string, value: unknown): unknown {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const keys = Object.keys(value as Record<string, unknown>);
+      if (keys.length === 1 && keys[0] === key) {
+        return unwrapSelfNested(key, (value as Record<string, unknown>)[key]);
+      }
+    }
+    return value;
+  }
+
   function unwrapStringifiedJson(value: unknown): unknown {
     if (typeof value === "string") {
       const trimmed = value.trim();
@@ -136,7 +150,9 @@ const repairDoubleEncodedJsonLeaves: RepairTextFunction = async ({ text }) => {
     }
     if (Array.isArray(value)) return value.map(unwrapStringifiedJson);
     if (value && typeof value === "object") {
-      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, unwrapStringifiedJson(v)]));
+      return Object.fromEntries(
+        Object.entries(value).map(([k, v]) => [k, unwrapSelfNested(k, unwrapStringifiedJson(v))]),
+      );
     }
     return value;
   }
