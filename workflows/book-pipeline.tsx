@@ -177,8 +177,23 @@ async function withObjectDiagnostics<T>(
   } catch (err) {
     if (NoObjectGeneratedError.isInstance(err)) {
       const snippet = err.text ? err.text.slice(0, 500) : "(no raw text captured)";
+      // The repeated live model-escape incidents (glossary field
+      // stringified, then self-nested as a plain object, in different
+      // calls) were each diagnosed purely by eyeballing a 500-char text
+      // snippet and guessing which field broke - slow, and the field that
+      // actually fails often sits past character 500 in a large unit's
+      // JSON. AI SDK's own TypeValidationError already carries the
+      // underlying Zod error (with exact field paths) as `.cause.cause` -
+      // surface it here so a future FatalError message names the broken
+      // field directly instead of requiring another guess-and-redeploy
+      // cycle.
+      const zodIssues = (err.cause as { cause?: { issues?: { path: (string | number)[]; message: string }[] } })
+        ?.cause?.issues;
+      const issuesText = zodIssues?.length
+        ? ` Schema issues: ${zodIssues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`
+        : "";
       throw new Error(
-        `AI did not return a schema-valid object (finishReason: ${err.finishReason ?? "unknown"}). Raw output snippet: ${snippet}`,
+        `AI did not return a schema-valid object (finishReason: ${err.finishReason ?? "unknown"}).${issuesText} Raw output snippet: ${snippet}`,
       );
     }
     // "Gateway kredisini idareli kullanma": every other failure (rate limit,
