@@ -1,5 +1,6 @@
 import {
   generateObject,
+  generateText,
   generateImage,
   experimental_generateSpeech as generateSpeech,
   experimental_transcribe as transcribe,
@@ -54,14 +55,20 @@ import {
   type StyleBible,
 } from "@/lib/ai/schemas";
 import {
-  BOOK_PIPELINE_MODEL,
   resolveTextModel,
+  resolveFinalTextModel,
+  toTextModel,
   resolveImageModel,
   resolveSpeechModel,
+  isFreeImageModelActive,
+  isFreeSpeechModelActive,
+  FREE_IMAGE_MODEL_ID,
   BOOK_PIPELINE_COVER_IMAGE_SIZE,
   BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
   type StudioImageSizeId,
 } from "@/lib/ai/model";
+import { google } from "@ai-sdk/google";
+import { synthesizeWithElevenLabs } from "@/lib/ai/elevenlabs";
 import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { translateAiError } from "@/lib/ai/error-messages";
 import { unitsToMarkdown } from "@/lib/markdown";
@@ -312,7 +319,7 @@ async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: pageMapSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: PAGE_MAP_MAX_OUTPUT_TOKENS,
@@ -350,7 +357,7 @@ async function extractOutline(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: bookOutlineSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -421,7 +428,7 @@ async function generateOutlineFromBrief(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: bookOutlineSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -459,7 +466,7 @@ async function analyzeImprovements(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: improvementPlanSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -498,7 +505,7 @@ async function buildStyleBible(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: styleBibleSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -563,7 +570,7 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: input.textModel,
+      model: toTextModel(input.textModel),
       schema: generatedMirroredSideSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -612,7 +619,7 @@ async function generateSkeletonSide(runId: string, input: UnitGenerationContext,
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: input.textModel,
+      model: toTextModel(input.textModel),
       schema: generatedMirroredSideSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -663,7 +670,7 @@ async function generateComplementarySide(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: input.textModel,
+      model: toTextModel(input.textModel),
       schema: generatedComplementarySideSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -702,7 +709,7 @@ const ORIGINALITY_NGRAM_THRESHOLD = 0.15;
 async function assessOriginalityWithLlm(sourceText: string, generatedText: string, ngramOverlapScore: number) {
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: originalityLlmAssessmentSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -760,7 +767,7 @@ async function generateTeacherBookSide(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: input.textModel,
+      model: toTextModel(input.textModel),
       schema: generatedComplementarySideSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -786,7 +793,7 @@ async function generateTestBookletSide(runId: string, input: UnitGenerationConte
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: input.textModel,
+      model: toTextModel(input.textModel),
       schema: generatedComplementarySideSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -834,7 +841,7 @@ async function generateCumulativeAssessment(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: book.textModel,
+      model: toTextModel(book.textModel),
       schema: generatedComplementarySideSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -894,7 +901,7 @@ async function generateUnitReviewSide(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: book.textModel,
+      model: toTextModel(book.textModel),
       schema: generatedComplementarySideSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
@@ -936,6 +943,15 @@ async function synthesizeSpeechWithRetry(
 ): Promise<Buffer | undefined> {
   for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
     try {
+      if (isFreeSpeechModelActive()) {
+        // Free mode: ElevenLabs via direct REST (see elevenlabs.ts's doc
+        // comment for why this skips generateSpeech()/SpeechModel
+        // entirely). No per-character cost to record - it's free-tier
+        // quota, not billed Gateway usage.
+        const buf = await synthesizeWithElevenLabs(text);
+        if (!buf) throw new Error("ElevenLabs synthesis boş sonuç döndürdü.");
+        return buf;
+      }
       const { audio } = await generateSpeech({ model, text, voice, outputFormat: "mp3" });
       // Only the successful attempt is billed by character count - a failed
       // attempt (the catch branch below) doesn't produce audio to charge for.
@@ -1146,7 +1162,7 @@ async function reviewUnit(runId: string, unitNumber: number, outlineUnit: UnitOu
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1174,7 +1190,7 @@ async function reviewLanguageAccuracy(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1229,7 +1245,7 @@ async function reviewReadingLevel(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1263,7 +1279,7 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1298,7 +1314,7 @@ async function reviewSkillBalance(runId: string, unitNumber: number, generated: 
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1348,7 +1364,7 @@ async function reviewBookCoherence(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: bookCoherenceReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1406,7 +1422,7 @@ async function reviewImage(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: BOOK_PIPELINE_MODEL,
+      model: toTextModel(resolveFinalTextModel()),
       schema: imageReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1462,15 +1478,32 @@ async function generateReviewedImage(
   let lastBlobUrl: string | null = null;
 
   for (let attempt = 1; attempt <= MAX_IMAGE_ATTEMPTS; attempt++) {
-    const imageModel = resolveImageModel(qualityMode);
-    const { image } = await generateImage({
-      model: imageModel,
-      prompt,
-      size,
-    });
+    let image: { uint8Array: Uint8Array; mediaType: string };
+    let imageModel: string;
+
+    if (isFreeImageModelActive()) {
+      // Free mode: Nano Banana (gemini-2.5-flash-image) is a chat model
+      // reached via generateText()+result.files, not generateImage() - see
+      // isFreeImageModelActive's doc comment in model.ts. GPT Image's fixed
+      // `size` values don't apply here, so fold rough size guidance into
+      // the prompt text instead.
+      imageModel = FREE_IMAGE_MODEL_ID;
+      const result = await generateText({
+        model: google(FREE_IMAGE_MODEL_ID),
+        prompt: `${prompt}\n\n(Image size guidance: ${size})`,
+      });
+      const imageFile = result.files?.find((f) => f.mediaType?.startsWith("image/"));
+      if (!imageFile) throw new Error("Nano Banana görüntü döndürmedi.");
+      image = { uint8Array: imageFile.uint8Array, mediaType: imageFile.mediaType };
+    } else {
+      imageModel = resolveImageModel(qualityMode);
+      const res = await generateImage({ model: imageModel, prompt, size });
+      image = res.image;
+    }
     // Every attempt is a real, separate paid call - including retries after
     // a failed QA check - so each one is recorded, not just the final image
-    // that ships.
+    // that ships. In free mode, imageModel isn't in IMAGE_PRICE_USD_ESTIMATE
+    // so this safely records null/no-op cost (see pricing.ts).
     await recordCost(runId, "image", estimateImageCostUsd(imageModel));
 
     // Denetim sonrası düzeltme (2026-09-23, ilk gerçek canlı çalıştırmada

@@ -1,5 +1,79 @@
+import { google } from "@ai-sdk/google";
+import type { LanguageModel } from "ai";
+
 export const BOOK_PIPELINE_MODEL = "anthropic/claude-sonnet-5";
 export const BOOK_PIPELINE_SPEECH_MODEL = "openai/tts-1-hd";
+
+// "Free mode" (2026-09-27): AI Gateway now requires a positive credit
+// balance for every request, even BYOK ("A positive credit balance is
+// required for all requests, including BYOK, so fallback providers remain
+// available" - the FatalError that blocked buildStyleBible with a $0
+// balance), so nothing on this file's Gateway path runs until credit is
+// added. This mode is a bypass, not a replacement: it lets the pipeline be
+// smoke-tested against genuinely free, no-credit-card provider tiers before
+// paying for Gateway credit. Every existing Gateway export above/below is
+// untouched - AI_PROVIDER_MODE defaults to "gateway" so current paid
+// behavior is unchanged unless explicitly opted into.
+//
+// Text uses Google AI Studio (Gemini) directly via @ai-sdk/google, confirmed
+// via live web research (2026-09-27) to have a genuinely free, no-card,
+// no-GCP-billing tier (Flash/Flash-Lite, 1500 req/day) - and Gemini already
+// has proven structured-output compatibility with this pipeline's
+// z.discriminatedUnion schemas (see BOOK_PIPELINE_MODEL_DRAFT's comment
+// below), so it's a low-risk swap for every generateObject call site.
+// Image (Nano Banana, gemini-2.5-flash-image) and speech (ElevenLabs) free
+// tiers also exist but need different call shapes than this pipeline's
+// generateImage()/generateSpeech() - see resolveImageModel/
+// resolveSpeechModel below and their callers in book-pipeline.tsx for how
+// those are branched.
+export type AiProviderMode = "gateway" | "free";
+
+export function getAiProviderMode(): AiProviderMode {
+  return process.env.AI_PROVIDER_MODE === "free" ? "free" : "gateway";
+}
+
+// Model IDs confirmed via a live spike (2026-09-27, real generateObject
+// calls against Google AI Studio's free tier with a real API key) - NOT
+// guessed from training data, which is stale here: gemini-2.5-flash and
+// gemini-2.5-flash-lite both come back "no longer available to new users"
+// from the live API despite still being listed by ListModels. gemini-3.8-
+// flash/gemini-3.6-flash/gemini-3.7-flash/gemini-flash-latest all hit
+// transient "high demand" 503s repeatedly on this key's free tier and
+// aren't reliable.
+//
+// gemini-3.5-flash returned a real, schema-valid result in the isolated
+// spike, but failed with the same "high demand" 503 - repeatedly, through
+// every one of the workflow platform's own automatic step retries, not
+// just the AI SDK's inner 3 - in a real end-to-end pipeline run
+// (generateOutlineFromBrief, wrun_01M3HW3VS8MJTFK5BB28J515M0, stuck for
+// several minutes). gemini-3.1-flash-lite was the only model that stayed
+// reliable across both the isolated spike and the real pipeline run, so
+// free mode uses it for both tiers - no cost pressure to prefer a stronger
+// model in free mode anyway, and reliability matters more here than raw
+// quality for a smoke test.
+const FREE_TEXT_MODEL_ID = "gemini-3.1-flash-lite";
+const FREE_TEXT_MODEL_ID_DRAFT = "gemini-3.1-flash-lite";
+// NOT verified working - every Gemini image model (gemini-2.5-flash-image,
+// gemini-3.1-flash-image, gemini-3.1-flash-lite-image, gemini-3-pro-image)
+// returned a real 429 from the live API: "Quota exceeded ... limit: 0" for
+// generativelanguage.googleapis.com/generate_content_free_tier_requests.
+// This is an account/Google-Cloud-project-level free-tier image allowance
+// of zero, not a wrong model ID or a code bug - same live spike, same API
+// key. See isFreeImageModelActive's comment below for what this means for
+// callers.
+export const FREE_IMAGE_MODEL_ID = "gemini-2.5-flash-image";
+
+// resolveTextModel/resolveFinalTextModel (below) must keep returning a
+// plain string, even in free mode: their result (as `textModel`) gets
+// persisted to generationRuns.modelVersion and threaded across "use step"
+// boundaries as a typed `string` field (see book-pipeline.tsx), which a
+// durable Workflow step serializes between steps - a LanguageModel class
+// instance isn't serializable there. The actual provider SDK wrapping
+// happens only at the point of the generateObject/generateText call, via
+// this helper, never stored or threaded through step params.
+export function toTextModel(modelId: string): string | LanguageModel {
+  return getAiProviderMode() === "free" ? google(modelId) : modelId;
+}
 
 // Faz H6: cheaper text model for "draft" quality mode - a fast, low-cost
 // pass to preview a book's unit content before committing to a full "final"
@@ -34,7 +108,21 @@ export const BOOK_PIPELINE_SPEECH_MODEL = "openai/tts-1-hd";
 export const BOOK_PIPELINE_MODEL_DRAFT = "google/gemini-2.5-flash-lite";
 
 export function resolveTextModel(qualityMode: "draft" | "final"): string {
+  if (getAiProviderMode() === "free") {
+    return qualityMode === "draft" ? FREE_TEXT_MODEL_ID_DRAFT : FREE_TEXT_MODEL_ID;
+  }
   return qualityMode === "draft" ? BOOK_PIPELINE_MODEL_DRAFT : BOOK_PIPELINE_MODEL;
+}
+
+// Free-mode override for the always-final-tier call sites (source
+// extraction, style bible, outline, review/QA) that intentionally bypass
+// resolveTextModel's draft/final split - see BOOK_PIPELINE_MODEL_DRAFT's
+// comment above for why those stay on BOOK_PIPELINE_MODEL in gateway mode.
+// Free mode still needs to redirect these away from Gateway, just without
+// the draft/final choice (there's no cost pressure to differentiate in free
+// mode).
+export function resolveFinalTextModel(): string {
+  return getAiProviderMode() === "free" ? FREE_TEXT_MODEL_ID : BOOK_PIPELINE_MODEL;
 }
 
 // Faz H6 extension (2026-09-19), CORRECTED same day: the original pick here
@@ -55,6 +143,28 @@ export const BOOK_PIPELINE_IMAGE_MODEL_DRAFT = "openai/gpt-image-1-mini";
 
 export function resolveImageModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? BOOK_PIPELINE_IMAGE_MODEL_DRAFT : BOOK_PIPELINE_IMAGE_MODEL_FINAL;
+}
+
+// Free mode's image path (Nano Banana / gemini-2.5-flash-image, see
+// FREE_IMAGE_MODEL_ID above) is a chat model reached through
+// generateText()+result.files, not generateImage() - so unlike text, a
+// plain model-string swap in resolveImageModel isn't enough. The caller
+// (generateReviewedImage in book-pipeline.tsx) needs to know to branch its
+// entire call shape; this is that signal.
+//
+// STATUS (verified via live spike, 2026-09-27): every Gemini image model
+// tried returned a real 429 - "free_tier_requests limit: 0" - for the
+// Google Cloud project behind this API key. This is a project-level free
+// image quota of zero, not a code/shape bug (the generateText()+files call
+// itself is wired correctly; it just never got far enough to return a file
+// to inspect). If Google grants image quota to the project later, this
+// path should start working without further code changes - if it doesn't,
+// check the exact result.files shape against a live response before
+// trusting it further. Until then, free mode's image generation will keep
+// throwing "Nano Banana görüntü döndürmedi" - image generation still needs
+// Gateway credit.
+export function isFreeImageModelActive(): boolean {
+  return getAiProviderMode() === "free";
 }
 
 // Faz "Kapak/Görsel Oranı Düzeltmesi" (2026-09-21, ROADMAP.md): every image
@@ -95,6 +205,28 @@ export const BOOK_PIPELINE_SPEECH_MODEL_DRAFT = "openai/tts-1";
 
 export function resolveSpeechModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? BOOK_PIPELINE_SPEECH_MODEL_DRAFT : BOOK_PIPELINE_SPEECH_MODEL;
+}
+
+// Free mode's speech path is ElevenLabs, called directly via
+// src/lib/ai/elevenlabs.ts's REST client rather than generateSpeech() - the
+// official @ai-sdk/elevenlabs package's version conflict (see the comment
+// above) rules out the ai-SDK SpeechModel path entirely, so there's no
+// model-string swap here, only a signal for the caller
+// (synthesizeSpeechWithRetry in book-pipeline.tsx) to branch to that REST
+// client instead.
+//
+// STATUS (verified via live spike, 2026-09-27): ElevenLabs' API rejects
+// premade/library voices on a free account with a real 402 -
+// "Free users cannot use library voices via the API. Please upgrade your
+// subscription to use this voice." - so this path does not currently work
+// on ElevenLabs' free tier at all, regardless of voice ID chosen. This is
+// a genuine ElevenLabs account-tier restriction, not a code bug. Free
+// mode's speech generation will keep failing (falling back to no-audio,
+// same as any other synthesis failure - see MAX_AUDIO_ATTEMPTS) until
+// either the ElevenLabs account is upgraded or another free TTS provider
+// is wired in here instead.
+export function isFreeSpeechModelActive(): boolean {
+  return getAiProviderMode() === "free";
 }
 
 // Hikaye Stüdyosu video: Google Veo, confirmed available directly through
