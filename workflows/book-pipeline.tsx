@@ -1,6 +1,5 @@
 import {
   generateObject,
-  generateText,
   generateImage,
   experimental_generateSpeech as generateSpeech,
   experimental_transcribe as transcribe,
@@ -62,13 +61,12 @@ import {
   resolveSpeechModel,
   isFreeImageModelActive,
   isFreeSpeechModelActive,
-  FREE_IMAGE_MODEL_ID,
   BOOK_PIPELINE_COVER_IMAGE_SIZE,
   BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
   type StudioImageSizeId,
 } from "@/lib/ai/model";
-import { google } from "@ai-sdk/google";
 import { synthesizeWithElevenLabs } from "@/lib/ai/elevenlabs";
+import { generateImageWithCloudflare } from "@/lib/ai/cloudflare-image";
 import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { translateAiError } from "@/lib/ai/error-messages";
 import { unitsToMarkdown } from "@/lib/markdown";
@@ -1482,19 +1480,16 @@ async function generateReviewedImage(
     let imageModel: string;
 
     if (isFreeImageModelActive()) {
-      // Free mode: Nano Banana (gemini-2.5-flash-image) is a chat model
-      // reached via generateText()+result.files, not generateImage() - see
-      // isFreeImageModelActive's doc comment in model.ts. GPT Image's fixed
-      // `size` values don't apply here, so fold rough size guidance into
-      // the prompt text instead.
-      imageModel = FREE_IMAGE_MODEL_ID;
-      const result = await generateText({
-        model: google(FREE_IMAGE_MODEL_ID),
-        prompt: `${prompt}\n\n(Image size guidance: ${size})`,
-      });
-      const imageFile = result.files?.find((f) => f.mediaType?.startsWith("image/"));
-      if (!imageFile) throw new Error("Nano Banana görüntü döndürmedi.");
-      image = { uint8Array: imageFile.uint8Array, mediaType: imageFile.mediaType };
+      // Free mode: Cloudflare Workers AI (flux-1-schnell) via direct REST -
+      // see isFreeImageModelActive's doc comment in model.ts for why this
+      // replaced the originally-attempted Nano Banana path (real Google
+      // free-tier quota bug, not a code issue). GPT Image's fixed `size`
+      // values don't apply here, so fold rough size guidance into the
+      // prompt text instead.
+      imageModel = "cloudflare/flux-1-schnell";
+      const result = await generateImageWithCloudflare(`${prompt}\n\n(Image size guidance: ${size})`);
+      if (!result) throw new Error("Cloudflare Workers AI görüntü döndürmedi.");
+      image = result;
     } else {
       imageModel = resolveImageModel(qualityMode);
       const res = await generateImage({ model: imageModel, prompt, size });

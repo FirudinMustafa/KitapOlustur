@@ -53,15 +53,9 @@ export function getAiProviderMode(): AiProviderMode {
 // quality for a smoke test.
 const FREE_TEXT_MODEL_ID = "gemini-3.1-flash-lite";
 const FREE_TEXT_MODEL_ID_DRAFT = "gemini-3.1-flash-lite";
-// NOT verified working - every Gemini image model (gemini-2.5-flash-image,
-// gemini-3.1-flash-image, gemini-3.1-flash-lite-image, gemini-3-pro-image)
-// returned a real 429 from the live API: "Quota exceeded ... limit: 0" for
-// generativelanguage.googleapis.com/generate_content_free_tier_requests.
-// This is an account/Google-Cloud-project-level free-tier image allowance
-// of zero, not a wrong model ID or a code bug - same live spike, same API
-// key. See isFreeImageModelActive's comment below for what this means for
-// callers.
-export const FREE_IMAGE_MODEL_ID = "gemini-2.5-flash-image";
+// Free-mode images do NOT go through Gemini (see isFreeImageModelActive's
+// comment below for why that path is abandoned) - they go through
+// Cloudflare Workers AI, see src/lib/ai/cloudflare-image.ts.
 
 // resolveTextModel/resolveFinalTextModel (below) must keep returning a
 // plain string, even in free mode: their result (as `textModel`) gets
@@ -145,24 +139,21 @@ export function resolveImageModel(qualityMode: "draft" | "final"): string {
   return qualityMode === "draft" ? BOOK_PIPELINE_IMAGE_MODEL_DRAFT : BOOK_PIPELINE_IMAGE_MODEL_FINAL;
 }
 
-// Free mode's image path (Nano Banana / gemini-2.5-flash-image, see
-// FREE_IMAGE_MODEL_ID above) is a chat model reached through
-// generateText()+result.files, not generateImage() - so unlike text, a
-// plain model-string swap in resolveImageModel isn't enough. The caller
-// (generateReviewedImage in book-pipeline.tsx) needs to know to branch its
-// entire call shape; this is that signal.
+// Free mode's image path was originally attempted through Gemini's Nano
+// Banana (gemini-2.5-flash-image via generateText()+result.files, since
+// it's a chat model, not a generateImage()-compatible one) - abandoned
+// after a live spike (2026-09-27) hit a real, repeatable 429 on every
+// Gemini image model tried: "free_tier_requests limit: 0" for the Google
+// Cloud project behind the API key. Confirmed via live web research
+// (2026-09-27) to be a known, documented Google-side issue (affects a
+// meaningful fraction of accounts, even some with billing configured) -
+// not a wrong model ID or a code bug.
 //
-// STATUS (verified via live spike, 2026-09-27): every Gemini image model
-// tried returned a real 429 - "free_tier_requests limit: 0" - for the
-// Google Cloud project behind this API key. This is a project-level free
-// image quota of zero, not a code/shape bug (the generateText()+files call
-// itself is wired correctly; it just never got far enough to return a file
-// to inspect). If Google grants image quota to the project later, this
-// path should start working without further code changes - if it doesn't,
-// check the exact result.files shape against a live response before
-// trusting it further. Until then, free mode's image generation will keep
-// throwing "Nano Banana görüntü döndürmedi" - image generation still needs
-// Gateway credit.
+// Free mode now uses Cloudflare Workers AI instead (flux-1-schnell, see
+// cloudflare-image.ts) - a genuinely free tier (100k requests/day, no
+// credit card) that isn't subject to Google's quota bug. Like text, image
+// still needs a caller-side branch (not a plain model-string swap) because
+// Cloudflare's REST shape differs entirely from generateImage()'s.
 export function isFreeImageModelActive(): boolean {
   return getAiProviderMode() === "free";
 }
