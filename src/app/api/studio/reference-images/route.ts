@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { savedReferenceImages } from "@/db/schema";
+import { isOwnBlobUrl } from "@/lib/blob-url";
 
 // Faz "Gelişmiş Görsel Üretim Paneli" (2026-09-21, ROADMAP.md): a personal,
 // cross-story reference-image library (schema comment on savedReferenceImages
@@ -30,9 +31,9 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null);
-  const url = body && typeof body.url === "string" && body.url ? body.url : null;
+  const url = body && typeof body.url === "string" && isOwnBlobUrl(body.url) ? body.url : null;
   if (!url) {
-    return NextResponse.json({ error: "Görsel URL'si gerekli" }, { status: 400 });
+    return NextResponse.json({ error: "Geçerli bir görsel URL'si gerekli (bu uygulamaya yüklenmiş olmalı)" }, { status: 400 });
   }
   const tags = Array.isArray(body?.tags)
     ? body.tags.filter((t: unknown): t is string => typeof t === "string" && t.trim().length > 0)

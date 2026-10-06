@@ -462,7 +462,7 @@ export function ArrangementEditor({
                 {uploadingImage ? "Yükleniyor…" : "Görsel yükle"}
                 <input
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept="image/png,image/jpeg"
                   className="hidden"
                   disabled={uploadingImage}
                   onChange={(e) => {

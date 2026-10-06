@@ -15,7 +15,10 @@ export async function POST(request: Request) {
       body,
       request,
       onBeforeGenerateToken: async () => ({
-        allowedContentTypes: ["image/png", "image/jpeg", "image/svg+xml", "image/webp"],
+        // No WebP: @react-pdf/image (PDF export) only decodes PNG/JPEG/SVG, so a
+        // WebP logo broke the next book assembly (QA fix, 2026-10-06).
+        allowedContentTypes: ["image/png", "image/jpeg", "image/svg+xml"],
+        maximumSizeInBytes: 5 * 1024 * 1024,
         addRandomSuffix: true,
       }),
     });

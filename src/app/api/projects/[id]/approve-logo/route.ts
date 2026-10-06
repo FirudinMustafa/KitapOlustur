@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
+import { isOwnBlobUrl } from "@/lib/blob-url";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
@@ -26,6 +27,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const body = await request.json().catch(() => ({}));
   const skip = body?.skip === true;
   const logoUrl = typeof body?.logoUrl === "string" && body.logoUrl ? body.logoUrl : null;
+  // The logo is fetched server-side when the PDF is rendered - only accept
+  // this app's own Blob uploads (see isOwnBlobUrl).
+  if (logoUrl && !isOwnBlobUrl(logoUrl)) {
+    return NextResponse.json({ error: "Geçersiz logo adresi" }, { status: 400 });
+  }
 
   try {
     await resumeHook(`logo-upload:${run.id}`, { logoUrl, skip });

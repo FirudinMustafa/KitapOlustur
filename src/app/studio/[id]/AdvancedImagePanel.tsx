@@ -115,7 +115,9 @@ export function AdvancedImagePanel({
     try {
       const blob = await upload(file.name, file, {
         access: "public",
-        handleUploadUrl: "/api/blob/upload",
+        // QA fix (2026-10-06): /api/blob/upload only accepts PDFs, so every
+        // reference image upload was rejected - use the image upload route.
+        handleUploadUrl: "/api/blob/upload-page-image",
         contentType: file.type || "image/png",
       });
       const tags = uploadTags
@@ -138,6 +140,18 @@ export function AdvancedImagePanel({
       setError("Referans görsel yüklenirken bir hata oluştu");
     } finally {
       setUploadingRef(false);
+    }
+  }
+
+  // The DELETE route existed but nothing in the UI called it, so saved
+  // references could never be removed (QA fix, 2026-10-06).
+  async function handleDeleteReference(id: string) {
+    setError(null);
+    const res = await fetch(`/api/studio/reference-images/${id}`, { method: "DELETE" }).catch(() => null);
+    if (res?.ok) {
+      setReferences((prev) => prev.filter((r) => r.id !== id));
+    } else {
+      setError("Referans görsel silinemedi");
     }
   }
 
@@ -267,9 +281,18 @@ export function AdvancedImagePanel({
             <div className="mt-1.5 flex flex-wrap gap-2">
               {references.length === 0 && <p className="text-xs text-muted-foreground">Henüz kayıtlı referans yok.</p>}
               {references.map((r) => (
-                <div key={r.id} className="w-20">
+                <div key={r.id} className="group relative w-20">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={r.url} alt={r.tags.join(", ")} className="h-20 w-20 rounded-md object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteReference(r.id)}
+                    title="Referansı sil"
+                    aria-label="Referansı sil"
+                    className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-background/90 text-xs text-foreground shadow ring-1 ring-border opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                  >
+                    ×
+                  </button>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {r.tags.map((t) => (
                       <button
@@ -292,7 +315,7 @@ export function AdvancedImagePanel({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg"
                 onChange={(e) => e.target.files?.[0] && handleUploadReference(e.target.files[0])}
                 className="hidden"
               />

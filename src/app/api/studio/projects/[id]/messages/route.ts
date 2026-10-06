@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { storyProjects, storyMessages, storyArtifacts } from "@/db/schema";
 import { requireStoryProjectOwner } from "@/lib/auth";
-import { resolveTextModel } from "@/lib/ai/model";
+import { resolveTextModel, toTextModel } from "@/lib/ai/model";
 import {
   generateStoryImage,
   generateStoryAudio,
@@ -207,7 +207,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   let result;
   try {
     result = await generateText({
-      model: resolveTextModel(storyProject.qualityMode),
+      model: toTextModel(resolveTextModel(storyProject.qualityMode)),
       system: STUDIO_SYSTEM_PROMPT,
       messages: modelMessages,
       stopWhen: stepCountIs(5),

@@ -849,7 +849,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               <label className="text-xs font-medium text-amber-800 dark:text-amber-300">Logo dosyası (opsiyonel)</label>
               <input
                 type="file"
-                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                accept="image/png,image/jpeg,image/svg+xml"
                 onChange={(e) => {
                   const f = e.target.files?.[0] ?? null;
                   setLogoFile(f);

@@ -130,8 +130,12 @@ export function StudioWorkspace({
           videoProvider: action === "video" ? videoProvider : undefined,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        // QA fix (2026-10-06): a failed send left the optimistic bubble in
+        // the chat and threw away what the user had typed.
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticMessage.id));
+        setInput(raw);
         setError(data.error ?? "Bir hata oluştu");
         return;
       }
@@ -144,6 +148,8 @@ export function StudioWorkspace({
         setArtifacts((prev) => [...prev, ...data.artifacts]);
       }
     } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticMessage.id));
+      setInput(raw);
       setError("Ağ hatası, tekrar dener misin?");
     } finally {
       setSending(false);

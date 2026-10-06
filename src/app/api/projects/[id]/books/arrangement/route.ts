@@ -7,6 +7,7 @@ import { generationRuns, generatedBooks, extractedOutlines } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { renumberRealUnits } from "@/lib/arrangement-merge";
 import { generatedUnitSchema, type GeneratedUnit, type BookOutline } from "@/lib/ai/schemas";
+import { isOwnBlobUrl } from "@/lib/blob-url";
 
 const patchBodySchema = z.object({
   units: z.array(generatedUnitSchema),
@@ -16,7 +17,9 @@ const patchBodySchema = z.object({
   // generateUnitImages step already writes to. Merged (not replaced) into
   // the run's existing pageImageUrls so uploading one page's image never
   // drops every other page's AI-generated image.
-  pageImages: z.record(z.string(), z.string()).optional(),
+  // Page images are fetched server-side when PDFs are rendered - only this
+  // app's own Blob uploads are accepted (see isOwnBlobUrl).
+  pageImages: z.record(z.string(), z.string().refine(isOwnBlobUrl)).optional(),
 });
 
 async function loadLatestDoneRun(projectId: string) {
