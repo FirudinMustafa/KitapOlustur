@@ -27,6 +27,13 @@ describe("checkPrintReadiness", () => {
     expect(report.issues.some((i) => i.includes("yatay"))).toBe(true);
   });
 
+  it("reports a square cover as square, not landscape", () => {
+    const report = checkPrintReadiness({ coverWidthPx: 1024, coverHeightPx: 1024 });
+    expect(report.cover?.orientation).toBe("square");
+    expect(report.issues.some((i) => i.includes("kare"))).toBe(true);
+    expect(report.issues.some((i) => i.includes("yatay"))).toBe(false);
+  });
+
   it("passes a portrait cover meeting the recommended resolution", () => {
     const report = checkPrintReadiness({
       isbn: "9780306406157",

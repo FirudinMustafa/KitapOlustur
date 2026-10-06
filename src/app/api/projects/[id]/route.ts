@@ -18,6 +18,7 @@ import { requireProjectOwner } from "@/lib/auth";
 import { computeUnitProgress } from "@/lib/unit-progress";
 import { summarizeUnitReviewsForPersona } from "@/lib/personas";
 import type { OutlineDocument } from "@/app/projects/[id]/RunStatusView";
+import { fetchCoverDimensions } from "@/lib/cover-dimensions";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -123,5 +124,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     feedback,
     unitProgress,
     unitReviewSummary,
+    coverDimensions: await fetchCoverDimensions(run?.coverImageUrl),
   });
 }

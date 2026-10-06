@@ -25,7 +25,7 @@ import {
   type PendingImageReview,
 } from "./RunStatusView";
 import { computeUnitProgress } from "@/lib/unit-progress";
-import { getImageDimensions } from "@/lib/image-dimensions";
+import { fetchCoverDimensions } from "@/lib/cover-dimensions";
 
 export const dynamic = "force-dynamic";
 
@@ -72,20 +72,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     flaggedImageCount = [...latestByKey.values()].filter((r) => !r.passed).length;
   }
 
-  // Faz "ISBN/baskıya hazırlık": fetched server-side (not client-side) so
-  // there's no cross-origin fetch from the browser to the Blob host - the
-  // cover is small enough (a single generated image) that this doesn't
-  // need caching/optimization beyond what the run-status page already does.
-  let coverDimensions: { width: number; height: number } | null = null;
-  if (run?.coverImageUrl) {
-    try {
-      const res = await fetch(run.coverImageUrl);
-      const buffer = Buffer.from(await res.arrayBuffer());
-      coverDimensions = getImageDimensions(buffer);
-    } catch {
-      coverDimensions = null;
-    }
-  }
+  const coverDimensions = await fetchCoverDimensions(run?.coverImageUrl);
 
   const coherenceReview = run
     ? await db.query.bookCoherenceReviews.findFirst({

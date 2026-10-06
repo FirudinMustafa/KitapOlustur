@@ -28,6 +28,7 @@ import {
   variantHistory,
   generatedBooks,
   unitFeedback,
+  teacherFeedback,
   type RunStatus,
 } from "@/db/schema";
 import { ngramJaccardSimilarity } from "@/lib/originality";
@@ -1958,12 +1959,68 @@ async function loadAssembledRunAssets(sourceRunId: string) {
   });
   if (!existingBook?.content) throw new FatalError(`No previously generated units found for source run ${sourceRunId}`);
 
+  // QA fix (2026-10-06): assemble-only rebuilds used to pass no sourceStyle,
+  // so a re-derived book silently lost the source-derived palette and the
+  // user's logo. Rebuilt from the columns the full run persisted
+  // (saveUserLogoUrl / saveSourceStyleMeta); density isn't persisted, so it
+  // falls back to BookDocument's default.
+  const paletteColors = (sourceRun.paletteColors as string[] | null) ?? null;
+  const sourceStyle: BookDocumentSourceStyle | undefined =
+    paletteColors?.length || sourceRun.userLogoUrl
+      ? {
+          dominantColors: paletteColors ?? undefined,
+          logoUrl: sourceRun.userLogoUrl,
+          logoPosition: (sourceRun.logoPosition as BookDocumentSourceStyle["logoPosition"]) ?? null,
+        }
+      : undefined;
+
   return {
     outline,
     units: existingBook.content as GeneratedUnit[],
     coverImageSrc: sourceRun.coverImageUrl ?? "",
     pageImages: sourceRun.pageImageUrls ?? {},
+    sourceStyle,
   };
+}
+
+// QA fix (2026-10-06): an assemble-only run is a brand-new generationRuns
+// row, and every view of a project (overview, Dizilim, reader) reads the
+// LATEST run's per-run rows - so after "Seçilenleri derle" the coherence
+// report, cost/usage, image/originality flags, persona sign-offs, teacher
+// feedback and the outline itself (which Dizilim needs) all vanished. The
+// content didn't change, so those rows are copied forward unchanged.
+async function copyForwardRunReports(runId: string, sourceRunId: string) {
+  "use step";
+
+  const sourceRun = await db.query.generationRuns.findFirst({ where: eq(generationRuns.id, sourceRunId) });
+  if (sourceRun) {
+    await db
+      .update(generationRuns)
+      .set({ modelVersion: sourceRun.modelVersion, tokenUsage: sourceRun.tokenUsage, costUsage: sourceRun.costUsage })
+      .where(eq(generationRuns.id, runId));
+  }
+
+  // Drop the source row id so Postgres assigns a fresh one.
+  const strip = <T extends { id?: string; runId: string }>(rows: T[]) =>
+    rows.map((row) => ({ ...row, id: undefined, runId }));
+  const [pageMaps, outlines, coherence, images, originality, reviews, feedback] = await Promise.all([
+    db.query.sourcePageMaps.findMany({ where: eq(sourcePageMaps.runId, sourceRunId) }),
+    db.query.extractedOutlines.findMany({ where: eq(extractedOutlines.runId, sourceRunId) }),
+    db.query.bookCoherenceReviews.findMany({ where: eq(bookCoherenceReviews.runId, sourceRunId) }),
+    db.query.imageReviews.findMany({ where: eq(imageReviews.runId, sourceRunId) }),
+    db.query.originalityChecks.findMany({ where: eq(originalityChecks.runId, sourceRunId) }),
+    db.query.unitReviews.findMany({ where: eq(unitReviews.runId, sourceRunId) }),
+    db.query.teacherFeedback.findMany({ where: eq(teacherFeedback.runId, sourceRunId) }),
+  ]);
+  await Promise.all([
+    pageMaps.length ? db.insert(sourcePageMaps).values(strip(pageMaps)) : null,
+    outlines.length ? db.insert(extractedOutlines).values(strip(outlines)) : null,
+    coherence.length ? db.insert(bookCoherenceReviews).values(strip(coherence)) : null,
+    images.length ? db.insert(imageReviews).values(strip(images)) : null,
+    originality.length ? db.insert(originalityChecks).values(strip(originality)) : null,
+    reviews.length ? db.insert(unitReviews).values(strip(reviews)) : null,
+    feedback.length ? db.insert(teacherFeedback).values(strip(feedback)) : null,
+  ]);
 }
 
 // "Yeniden çalıştır maliyeti" (2026-09-24): a rerun after a failure used to
@@ -2116,6 +2173,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     if (scope.mode === "assemble") {
       await setRunStatus(runId, "assembling", "Seçilen kitap tipleri mevcut içerikten yeniden derleniyor");
       const assets = await loadAssembledRunAssets(scope.sourceRunId);
+      await copyForwardRunReports(runId, scope.sourceRunId);
       const contentsUnits = buildContentsUnits(assets.outline);
       await assembleAndSaveBooks(
         runId,
@@ -2128,7 +2186,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         assets.pageImages,
         ctx.project.isbn,
         ctx.project.trimSize,
-        undefined,
+        assets.sourceStyle,
         assets.outline.contentLanguage,
       );
       await setRunStatus(runId, "done", "Tamamlandı");

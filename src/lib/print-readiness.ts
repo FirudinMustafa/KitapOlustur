@@ -23,6 +23,7 @@ export type PrintReadinessReport = {
         widthPx: number;
         heightPx: number;
         isPortrait: boolean;
+        orientation: "portrait" | "landscape" | "square";
         meetsRecommendedResolution: boolean;
       }
     | null;
@@ -48,17 +49,22 @@ export function checkPrintReadiness(input: {
   let cover: PrintReadinessReport["cover"] = null;
   if (input.coverWidthPx && input.coverHeightPx) {
     const isPortrait = input.coverHeightPx > input.coverWidthPx;
+    // QA fix (2026-10-06): a square cover (e.g. 1024×1024) used to be
+    // reported as "yatay" (landscape).
+    const orientation =
+      input.coverHeightPx === input.coverWidthPx ? "square" : isPortrait ? "portrait" : "landscape";
     const meetsRecommendedResolution =
       input.coverWidthPx >= RECOMMENDED_COVER_WIDTH_PX && input.coverHeightPx >= RECOMMENDED_COVER_HEIGHT_PX;
     cover = {
       widthPx: input.coverWidthPx,
       heightPx: input.coverHeightPx,
       isPortrait,
+      orientation,
       meetsRecommendedResolution,
     };
     if (!isPortrait) {
       issues.push(
-        `Kapak görseli yatay (${input.coverWidthPx}×${input.coverHeightPx}px) - gerçek kitap kapakları dikey olur. Bu kitap, kapak görsellerinin dikey (1024×1536) üretilmesinden önce oluşturulmuş olabilir - yeniden oluşturmak sorunu çözebilir.`,
+        `Kapak görseli ${orientation === "square" ? "kare" : "yatay"} (${input.coverWidthPx}×${input.coverHeightPx}px) - gerçek kitap kapakları dikey olur. Bu kitap, kapak görsellerinin dikey (1024×1536) üretilmesinden önce oluşturulmuş olabilir - yeniden oluşturmak sorunu çözebilir.`,
       );
     }
     if (!meetsRecommendedResolution) {

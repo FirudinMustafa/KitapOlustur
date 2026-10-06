@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { upload as uploadToBlob } from "@vercel/blob/client";
+import { toast } from "sonner";
+import { networkErrorMessage, responseErrorMessage } from "@/lib/api-error";
 import { BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
 import type { UnitProgress } from "@/lib/unit-progress";
 import { PipelineStageTracker } from "./PipelineStageTracker";
@@ -273,6 +275,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
     .sort((a, b) => b[1] - a[1]);
   const totalTokens = run?.tokenUsage?.total ?? 0;
   const pricing = (run?.modelVersion && MODEL_PRICING_PER_MILLION[run.modelVersion]) || DEFAULT_PRICING;
+  // QA fix (2026-10-06): free-mode runs (AI_PROVIDER_MODE=free) store a bare
+  // provider model id like "gemini-3.1-flash-lite" (no "vendor/" Gateway
+  // prefix) and are billed nothing, but the card priced them at Sonnet 5
+  // rates and labelled their Cloudflare images "GPT Image".
+  const isFreeTierRun = !!run?.modelVersion && !run.modelVersion.includes("/");
   const estimatedCostMin = (totalTokens / 1_000_000) * pricing.input;
   const estimatedCostMax = (totalTokens / 1_000_000) * pricing.output;
   const imageCostUsd = run?.costUsage?.image ?? 0;
@@ -323,6 +330,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         body: JSON.stringify({ unitLimit: parsedLimit }),
       });
       if (res.ok) await refresh();
+      else toast.error(await responseErrorMessage(res));
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setRerunning(false);
     }
@@ -338,6 +348,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         body: JSON.stringify({ approved, unitLimit: parsedLimit }),
       });
       if (res.ok) await refresh();
+      else toast.error(await responseErrorMessage(res));
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setApproving(false);
     }
@@ -361,7 +374,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         setLogoFile(null);
         setLogoPreviewUrl(null);
         await refresh();
+      } else {
+        toast.error(await responseErrorMessage(res));
       }
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setSubmittingLogo(false);
     }
@@ -376,6 +393,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         body: JSON.stringify({ logoUrl: null, skip: true }),
       });
       if (res.ok) await refresh();
+      else toast.error(await responseErrorMessage(res));
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setSubmittingLogo(false);
     }
@@ -395,7 +415,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       if (res.ok) {
         setUnitChangeComments({});
         await refresh();
+      } else {
+        toast.error(await responseErrorMessage(res));
       }
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setApprovingContent(false);
     }
@@ -416,7 +440,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       if (res.ok) {
         setImageDecisions({});
         await refresh();
+      } else {
+        toast.error(await responseErrorMessage(res));
       }
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setSubmittingImageReview(false);
     }
@@ -431,6 +459,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         body: JSON.stringify({ approved }),
       });
       if (res.ok) await refresh();
+      else toast.error(await responseErrorMessage(res));
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setApprovingFinal(false);
     }
@@ -445,6 +476,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         body: JSON.stringify({ unitNumber, selectedIndex }),
       });
       if (res.ok) await refresh();
+      else toast.error(await responseErrorMessage(res));
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setSelectingVariant(false);
     }
@@ -471,7 +505,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       if (res.ok) {
         setAssembleTypes(new Set());
         await refresh();
+      } else {
+        toast.error(await responseErrorMessage(res));
       }
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setAssembling(false);
     }
@@ -492,7 +530,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         setFeedbackRating("");
         setFeedbackComment("");
         await refresh();
+      } else {
+        toast.error(await responseErrorMessage(res));
       }
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setSubmittingFeedback(false);
     }
@@ -656,18 +698,24 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             ))}
           </ul>
           <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
-            Yaklaşık metin ({run?.modelVersion ?? "Sonnet 5"}) maliyeti: ~${estimatedCostMin.toFixed(3)}–$
-            {estimatedCostMax.toFixed(3)}
-            <span className="block text-[10px] text-muted-foreground/70">
-              (girdi/çıktı token&apos;ları ayrı tutulmadığı için kesin değer değil, olası aralık; taslak modda
-              inceleme/dizelge adımları yine de Sonnet 5 üzerinden faturalanır)
-            </span>
+            {isFreeTierRun ? (
+              <>Metin modeli: {run?.modelVersion} - ücretsiz katman, faturalanmadı.</>
+            ) : (
+              <>
+                Yaklaşık metin ({run?.modelVersion ?? "Sonnet 5"}) maliyeti: ~${estimatedCostMin.toFixed(3)}–$
+                {estimatedCostMax.toFixed(3)}
+                <span className="block text-[10px] text-muted-foreground/70">
+                  (girdi/çıktı token&apos;ları ayrı tutulmadığı için kesin değer değil, olası aralık; taslak modda
+                  inceleme/dizelge adımları yine de Sonnet 5 üzerinden faturalanır)
+                </span>
+              </>
+            )}
           </p>
           {(imageCount > 0 || audioCount > 0) && (
             <div className="mt-3 border-t border-border pt-3">
               {imageCount > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  {imageCount} görsel üretildi (GPT Image){" "}
+                  {imageCount} görsel üretildi{isFreeTierRun ? " (ücretsiz katman)" : " (GPT Image)"}{" "}
                   {imageCostUsd > 0 ? (
                     <span className="font-medium text-foreground">~${imageCostUsd.toFixed(3)}</span>
                   ) : (
@@ -1157,7 +1205,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
-      {run?.status === "done" && (
+      {(run?.status === "done" || run?.status === "failed") && (
         <div className="mt-4 rounded-lg border border-dashed border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">
             AI çağrısı yapmadan, mevcut içerikten ek kitap tipi derle
@@ -1291,7 +1339,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               <dd className="font-medium text-foreground">
                 {printReadiness.cover
                   ? `${printReadiness.cover.widthPx}×${printReadiness.cover.heightPx}px (${
-                      printReadiness.cover.isPortrait ? "dikey" : "yatay"
+                      { portrait: "dikey", landscape: "yatay", square: "kare" }[printReadiness.cover.orientation]
                     })`
                   : "Kapak henüz yok"}
               </dd>
