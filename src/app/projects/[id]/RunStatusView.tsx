@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { upload as uploadToBlob } from "@vercel/blob/client";
 import { toast } from "sonner";
+import { FileTextIcon, Loader2Icon } from "lucide-react";
+import { StatusBadge } from "@/components/app/status-badge";
 import { networkErrorMessage, responseErrorMessage } from "@/lib/api-error";
 import { BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
 import type { UnitProgress } from "@/lib/unit-progress";
@@ -559,20 +561,32 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-6 py-12">
+    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
       {anyActionPending && (
-        <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
-          <div className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-xs font-medium text-card-foreground shadow-lg">
-            <span
-              className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground"
-              aria-hidden="true"
-            />
+        <div className="fixed inset-x-0 top-16 z-50 flex justify-center px-4" role="status">
+          <div className="flex items-center gap-2 rounded-full border bg-popover px-4 py-2 text-xs font-medium text-popover-foreground shadow-lg">
+            <Loader2Icon className="size-3.5 animate-spin text-primary" aria-hidden="true" />
             İsteğin gönderiliyor, lütfen tekrar tıklamadan bekle…
           </div>
         </div>
       )}
-      <div className="flex items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-foreground">{project.name}</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Kitap projesi</p>
+          <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground sm:text-[2.1rem]">
+            {project.name}
+          </h1>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <StatusBadge status={run?.status} />
+            {project.level && <span>{project.level}</span>}
+            {upload && (
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <FileTextIcon className="size-3.5 shrink-0" />
+                <span className="truncate">{upload.filename}</span>
+              </span>
+            )}
+          </div>
+        </div>
         {(!run || TERMINAL_STATUSES.has(run.status)) && (
           <DeleteButton
             endpoint={`/api/projects/${projectId}`}
@@ -582,10 +596,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           />
         )}
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {project.level ? `${project.level} · ` : ""}
-        {upload ? `Kaynak: ${upload.filename}` : ""}
-      </p>
 
       <div className="mt-8">
         <PipelineStageTracker
@@ -602,16 +612,16 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       </div>
 
       {coherenceReview && (
-        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
+        <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">
+            <h2 className="font-heading text-lg font-medium text-foreground">
               Kitap Tutarlılık Raporu <span className="font-normal text-muted-foreground">(Baş Editör)</span>
             </h2>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                 coherenceReview.passed
-                  ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                  : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                  ? "bg-success-soft text-success-soft-foreground"
+                  : "bg-warning-soft text-warning-soft-foreground"
               }`}
             >
               {coherenceReview.passed ? "Sorun bulunamadı" : `${coherenceReview.issues.length} not (bilgilendirici)`}
@@ -642,9 +652,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                   <span
                     className={`mr-1.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
                       issue.severity === "high"
-                        ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                        ? "bg-danger-soft text-danger-soft-foreground"
                         : issue.severity === "medium"
-                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                          ? "bg-warning-soft text-warning-soft-foreground"
                           : "bg-secondary text-secondary-foreground"
                     }`}
                   >
@@ -659,12 +669,12 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {!!flaggedOriginalityChecks?.length && (
-        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
+        <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">
+            <h2 className="font-heading text-lg font-medium text-foreground">
               Orijinallik Raporu <span className="font-normal text-muted-foreground">(Özgünlük Denetçisi)</span>
             </h2>
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+            <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-medium text-warning-soft-foreground">
               {flaggedOriginalityChecks.length} sayfa işaretlendi (bilgilendirici)
             </span>
           </div>
@@ -684,10 +694,10 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                     <span
                       className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
                         check.llmAssessment.similarityLevel === "high"
-                          ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                          ? "bg-danger-soft text-danger-soft-foreground"
                           : check.llmAssessment.similarityLevel === "medium"
-                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                            : "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                            ? "bg-warning-soft text-warning-soft-foreground"
+                            : "bg-success-soft text-success-soft-foreground"
                       }`}
                     >
                       İkinci görüş: {check.llmAssessment.similarityLevel}
@@ -715,8 +725,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {!!totalTokens && (
-        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
-          <h2 className="text-sm font-semibold text-foreground">Maliyet ve Kullanım</h2>
+        <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
+          <h2 className="font-heading text-lg font-medium text-foreground">Maliyet ve Kullanım</h2>
           <ul className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
             {tokenBreakdown.map(([key, tokens]) => (
               <li key={key} className="flex items-center justify-between">
@@ -773,28 +783,28 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_outline_approval" && outlineData && (
-        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+          <h2 className="font-heading text-lg font-medium text-foreground">
             Üretime başlamadan önce dizelgeyi onayla
-            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+            <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
               ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
             </span>
           </h2>
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="mt-1 text-sm text-muted-foreground">
             {outlineData.bookTitle} · {outlineData.subject}
           </p>
           {!!unitCount && !isFreeTierRun && (
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               Tahmini metin üretim maliyeti ({unitCount} ünite): ~${estimatedPreRunCostMin.toFixed(2)}–$
               {estimatedPreRunCostMax.toFixed(2)}
-              <span className="block text-[10px] text-amber-600 dark:text-amber-500">
+              <span className="block text-xs text-muted-foreground/80">
                 kaba bir tahmin - gerçek maliyet üretim bitince &quot;Maliyet ve Kullanım&quot; bölümünde görünür; görsel/ses
                 dahil değil
               </span>
             </p>
           )}
           {outlineData.declaredLevelAlignment && !outlineData.declaredLevelAlignment.matches && (
-            <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+            <div className="mt-3 rounded-xl border border-danger/30 bg-danger-soft p-3 text-xs text-danger-soft-foreground">
               <p className="font-semibold">Seviye uyuşmazlığı: proje oluştururken belirttiğin seviye ile kaynak materyalin gerçek seviyesi eşleşmiyor olabilir.</p>
               <p className="mt-1">{outlineData.declaredLevelAlignment.note}</p>
             </div>
@@ -803,7 +813,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             {outlineData.units.map((u) => (
               <div
                 key={u.number}
-                className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-card-foreground"
+                className="flex flex-col gap-2 rounded-xl border bg-card p-3.5 text-card-foreground"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-foreground">
@@ -828,7 +838,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           )}
           <div className="mt-4 flex items-end gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-amber-800 dark:text-amber-300">
+              <label className="text-xs font-medium text-foreground">
                 Ünite sınırı (opsiyonel, değiştirmek için)
               </label>
               <Input
@@ -844,7 +854,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               onClick={() => handleApproval(true)}
               disabled={approving}
               size="sm"
-              className="h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
             >
               {approving ? "Gönderiliyor…" : "Onayla ve üret"}
             </Button>
@@ -853,7 +862,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               disabled={approving}
               variant="outline"
               size="sm"
-              className="h-9 rounded-full px-4 text-xs"
             >
               Reddet
             </Button>
@@ -862,19 +870,19 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_logo_upload" && (
-        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+          <h2 className="font-heading text-lg font-medium text-foreground">
             Kaynak PDF&apos;te bir logo tespit edildi
-            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+            <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
               ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
             </span>
           </h2>
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="mt-1 text-sm text-muted-foreground">
             Kendi logonuzu yüklerseniz üretilen kitaba yerleştirilir. Yüklemezseniz logo alanı boş bırakılır.
           </p>
           <div className="mt-3 flex items-end gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-amber-800 dark:text-amber-300">Logo dosyası (opsiyonel)</label>
+              <label className="text-xs font-medium text-foreground">Logo dosyası (opsiyonel)</label>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/svg+xml"
@@ -894,7 +902,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               onClick={handleLogoUpload}
               disabled={submittingLogo || !logoFile}
               size="sm"
-              className="h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
             >
               {submittingLogo ? "Gönderiliyor…" : "Yükle ve devam et"}
             </Button>
@@ -903,7 +910,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               disabled={submittingLogo}
               variant="outline"
               size="sm"
-              className="h-9 rounded-full px-4 text-xs"
             >
               Logo yok / atla
             </Button>
@@ -912,10 +918,10 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_variant_selection" && run.pendingVariants && (
-        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+          <h2 className="font-heading text-lg font-medium text-foreground">
             Ünite {run.pendingVariants.unitNumber} için bir varyant seç
-            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+            <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
               ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
             </span>
           </h2>
@@ -925,7 +931,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               return (
                 <div
                   key={v.index}
-                  className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-card-foreground"
+                  className="flex flex-col gap-2 rounded-xl border bg-card p-3.5 text-card-foreground"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-foreground">
@@ -934,8 +940,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                         v.passed
-                          ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                          : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                          ? "bg-success-soft text-success-soft-foreground"
+                          : "bg-warning-soft text-warning-soft-foreground"
                       }`}
                     >
                       {v.passed ? "Kontrolden geçti" : `${v.issues.length} not`}
@@ -951,7 +957,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                     </div>
                   )}
                   {v.issues.length > 0 && (
-                    <ul className="list-disc pl-4 text-[11px] text-amber-800 dark:text-amber-300">
+                    <ul className="list-disc pl-4 text-xs text-warning-soft-foreground">
                       {v.issues.slice(0, 3).map((issue, i) => (
                         <li key={i}>{issue}</li>
                       ))}
@@ -961,7 +967,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                     onClick={() => handleSelectVariant(run.pendingVariants!.unitNumber, v.index)}
                     disabled={selectingVariant}
                     size="sm"
-                    className="mt-1 h-8 rounded-full bg-amber-600 px-3 text-xs text-white hover:bg-amber-700"
+                    className="mt-1 w-full"
                   >
                     Bunu seç
                   </Button>
@@ -973,14 +979,14 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_content_approval" && pendingContentApproval && (
-        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+          <h2 className="font-heading text-lg font-medium text-foreground">
             Görsel üretimine geçmeden önce tüm ünitelerin içeriğini onayla
-            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+            <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
               ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
             </span>
           </h2>
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="mt-1 text-sm text-muted-foreground">
             Gerçek yayıncılıktaki &quot;copyedit bitmeden tasarım başlamaz&quot; kuralıyla aynı mantık - metin burada
             onaylanmadan hiçbir görsel üretilmiyor. Bir üniteye özel değişiklik istersen aşağıya not düş - o ünite
             geri bildiriminle yeniden üretilip tekrar onayına sunulur, diğerleri olduğu gibi onaylanmış sayılır.
@@ -991,7 +997,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               return (
                 <div
                   key={unit.unitNumber}
-                  className="rounded-lg border border-border bg-card p-3 text-card-foreground"
+                  className="rounded-xl border bg-card p-3.5 text-card-foreground"
                 >
                   <p className="text-sm font-medium text-foreground">
                     Ünite {unit.unitNumber}: {unit.title}
@@ -1018,8 +1024,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                             key={r.reviewType}
                             className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                               r.passed
-                                ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                                : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                                ? "bg-success-soft text-success-soft-foreground"
+                                : "bg-warning-soft text-warning-soft-foreground"
                             }`}
                           >
                             {r.passed ? "✓" : "⚠"} {PERSONA_LABELS[r.persona]}
@@ -1047,7 +1053,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                           const prevBlock = previousUnitVersions[unit.unitNumber].studentBookPages[0]?.blocks[0];
                           return (
                             <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                              <div className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                              <div className="rounded-lg border border-danger/25 bg-danger-soft p-2.5 text-xs text-danger-soft-foreground">
                                 <p className="font-semibold">Önceki (değişiklik istenmeden önce)</p>
                                 {prevBlock ? (
                                   <>
@@ -1058,7 +1064,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                                   <p className="mt-0.5 italic">İçerik yok</p>
                                 )}
                               </div>
-                              <div className="rounded border border-green-200 bg-green-50 p-2 text-xs text-green-900 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300">
+                              <div className="rounded-lg border border-success/25 bg-success-soft p-2.5 text-xs text-success-soft-foreground">
                                 <p className="font-semibold">Şimdiki (yeniden üretildi)</p>
                                 {firstBlock ? (
                                   <>
@@ -1092,7 +1098,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               onClick={() => handleContentApproval(true)}
               disabled={approvingContent}
               size="sm"
-              className="h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
             >
               {approvingContent
                 ? "Gönderiliyor…"
@@ -1105,7 +1110,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               disabled={approvingContent}
               variant="outline"
               size="sm"
-              className="h-9 rounded-full px-4 text-xs"
             >
               Tümünü reddet (üretimi iptal et)
             </Button>
@@ -1114,14 +1118,14 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_image_review" && pendingImageReview && (
-        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+          <h2 className="font-heading text-lg font-medium text-foreground">
             Otomatik kalite kontrolünden geçemeyen görseller
-            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+            <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
               ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
             </span>
           </h2>
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="mt-1 text-sm text-muted-foreground">
             Bu görseller birden fazla otomatik denemeden sonra hâlâ işaretli. Her biri için kabul et ya da yeniden
             üret seç (belirtmezsen kabul edilmiş sayılır).
           </p>
@@ -1132,7 +1136,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               return (
                 <div
                   key={key}
-                  className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-card-foreground"
+                  className="flex flex-col gap-2 rounded-xl border bg-card p-3.5 text-card-foreground"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image */}
                   <img src={img.imageUrl} alt="" className="max-h-40 w-full rounded-md object-cover" />
@@ -1144,7 +1148,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       <p className="text-[10px] text-muted-foreground">
                         Sanat Yönetmeni tarafından işaretlendi (otomatik 3 deneme sonrası)
                       </p>
-                      <ul className="list-disc pl-4 text-[11px] text-amber-800 dark:text-amber-300">
+                      <ul className="list-disc pl-4 text-xs text-warning-soft-foreground">
                         {img.issues.slice(0, 3).map((issue, i) => (
                           <li key={i}>{issue}</li>
                         ))}
@@ -1156,7 +1160,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       onClick={() => setImageDecisions((prev) => ({ ...prev, [key]: "accept" }))}
                       className={`h-8 flex-1 rounded-full px-3 text-xs font-medium ${
                         decision === "accept"
-                          ? "bg-green-600 text-white"
+                          ? "bg-success text-success-foreground"
                           : "border border-border text-foreground hover:bg-accent"
                       }`}
                     >
@@ -1166,7 +1170,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                       onClick={() => setImageDecisions((prev) => ({ ...prev, [key]: "regenerate" }))}
                       className={`h-8 flex-1 rounded-full px-3 text-xs font-medium ${
                         decision === "regenerate"
-                          ? "bg-amber-600 text-white"
+                          ? "bg-warning text-warning-foreground"
                           : "border border-border text-foreground hover:bg-accent"
                       }`}
                     >
@@ -1181,7 +1185,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             onClick={handleImageReviewSubmit}
             disabled={submittingImageReview}
             size="sm"
-            className="mt-4 h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
+            className="mt-4"
           >
             {submittingImageReview ? "Gönderiliyor…" : "Kararları gönder"}
           </Button>
@@ -1189,14 +1193,14 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_final_approval" && (
-        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+          <h2 className="font-heading text-lg font-medium text-foreground">
             Nihai onay - kitaplar henüz derlenmedi
-            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+            <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
               ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
             </span>
           </h2>
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="mt-1 text-sm text-muted-foreground">
             Tüm içerik, görsel ve tutarlılık kontrolleri tamamlandı. Onaylarsan kitaplar (PDF/EPUB/LMS) derlenip
             &quot;tamamlandı&quot; olarak işaretlenecek - reddedersen üretim durur, hiçbir dosya oluşmaz.
           </p>
@@ -1206,7 +1210,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               onClick={() => handleFinalApproval(true)}
               disabled={approvingFinal}
               size="sm"
-              className="h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
             >
               {approvingFinal ? "Gönderiliyor…" : "Onayla ve derle"}
             </Button>
@@ -1215,7 +1218,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               disabled={approvingFinal}
               variant="outline"
               size="sm"
-              className="h-9 rounded-full px-4 text-xs"
             >
               Değişiklik iste
             </Button>
@@ -1224,7 +1226,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "changes_requested" && (
-        <div className="mt-4 rounded-lg border border-dashed border-border p-4">
+        <div className="mt-5 rounded-2xl border border-dashed p-5">
           <p className="text-sm font-medium text-foreground">Değişiklik istendi, kitaplar derlenmedi.</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Bu run&apos;ın tüm içerik/görsel verisi hâlâ duruyor - yeniden üretmek için aşağıdaki &quot;Yeniden
@@ -1234,7 +1236,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {(run?.status === "done" || run?.status === "failed") && (
-        <div className="mt-4 rounded-lg border border-dashed border-border p-3">
+        <div className="mt-5 rounded-2xl border border-dashed p-4">
           <p className="text-xs font-medium text-muted-foreground">
             AI çağrısı yapmadan, mevcut içerikten ek kitap tipi derle
           </p>
@@ -1264,7 +1266,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             onClick={handleAssembleOnly}
             disabled={assembling || !assembleTypes.size}
             size="sm"
-            className="mt-3 h-9 rounded-full px-4 text-xs"
+            className="mt-3"
           >
             {assembling ? "Başlatılıyor…" : "Seçilenleri derle"}
           </Button>
@@ -1272,8 +1274,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "done" && (
-        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
-          <h2 className="text-sm font-semibold text-foreground">Öğretmen geri bildirimi</h2>
+        <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
+          <h2 className="font-heading text-lg font-medium text-foreground">Öğretmen geri bildirimi</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Bu geri bildirim şu an sadece kaydediliyor; gelecekte üretim kalitesini iyileştirmek için kullanılacak.
           </p>
@@ -1301,7 +1303,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               onClick={handleSubmitFeedback}
               disabled={submittingFeedback || (!feedbackRating && !feedbackComment.trim())}
               size="sm"
-              className="h-9 w-fit rounded-full px-4 text-xs"
+              className="w-fit"
             >
               {submittingFeedback ? "Gönderiliyor…" : "Gönder"}
             </Button>
@@ -1323,7 +1325,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           run is still working or waiting for approval started a second,
           parallel run (QA fix, 2026-10-06). */}
       {upload && (!run || TERMINAL_STATUSES.has(run.status)) && (
-        <div className="mt-4 flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
+        <div className="mt-5 flex flex-col gap-2 rounded-2xl border border-dashed p-4">
           <div className="flex items-end gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-muted-foreground">
@@ -1338,7 +1340,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                 className="h-9 w-32"
               />
             </div>
-            <Button onClick={handleRerun} disabled={rerunning} size="sm" className="h-9 rounded-full px-4 text-xs">
+            <Button onClick={handleRerun} disabled={rerunning} size="sm">
               {rerunning ? "Başlatılıyor…" : "Yeniden çalıştır"}
             </Button>
           </div>
@@ -1350,14 +1352,14 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {books.length > 0 && (
-        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-card-foreground">
+        <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">Baskıya Hazırlık</h2>
+            <h2 className="font-heading text-lg font-medium text-foreground">Baskıya Hazırlık</h2>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                 printReadiness.issues.length === 0
-                  ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                  : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                  ? "bg-success-soft text-success-soft-foreground"
+                  : "bg-warning-soft text-warning-soft-foreground"
               }`}
             >
               {printReadiness.issues.length === 0 ? "Hazır" : `${printReadiness.issues.length} sorun`}
@@ -1402,33 +1404,32 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               bağlamsal buton kaldırıldı. Sayfa Düzeni ayrıca Dizilim'e
               taşındı (bkz. ArrangementEditor.tsx'in sayfa konumlandırma
               modu), ayrı bir editör olarak kalmadı. */}
-          <h2 className="text-lg font-medium text-foreground">Üretilen kitaplar</h2>
+          <h2 className="font-heading text-2xl font-medium text-foreground">Üretilen kitaplar</h2>
           {books.map((book) => {
             const audioTracks = audioTracksFor(book);
             return (
-            <div key={book.id} className="rounded-xl border border-border bg-card p-4 text-card-foreground">
+            <div key={book.id} className="rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-medium text-foreground">
                   {BOOK_TYPE_LABELS[book.bookType] ?? book.bookType}
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" className="rounded-full px-3 text-xs" render={<Link href={`/projects/${projectId}/read/${book.bookType}`} />}>
+                  <Button variant="outline" size="sm" render={<Link href={`/projects/${projectId}/read/${book.bookType}`} />}>
                     Etkileşimli oku
                   </Button>
                   {book.pdfBlobUrl && (
-                    <Button size="sm" className="rounded-full px-3 text-xs" render={<a href={book.pdfBlobUrl} target="_blank" rel="noopener noreferrer" />}>
+                    <Button size="sm" render={<a href={book.pdfBlobUrl} target="_blank" rel="noopener noreferrer" />}>
                       PDF indir
                     </Button>
                   )}
                   {book.epubBlobUrl && (
-                    <Button variant="outline" size="sm" className="rounded-full px-3 text-xs" render={<a href={book.epubBlobUrl} target="_blank" rel="noopener noreferrer" />}>
+                    <Button variant="outline" size="sm" render={<a href={book.epubBlobUrl} target="_blank" rel="noopener noreferrer" />}>
                       EPUB indir
                     </Button>
                   )}
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-full px-3 text-xs"
                     render={
                       <a
                         href={`/api/projects/${projectId}/export/common-cartridge?bookType=${book.bookType}`}
@@ -1443,7 +1444,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-full px-3 text-xs"
                     render={
                       <a
                         href={`/api/projects/${projectId}/export/docx?bookType=${book.bookType}`}
@@ -1459,7 +1459,6 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                     <Button
                       variant="outline"
                       size="sm"
-                      className="rounded-full px-3 text-xs"
                       onClick={() =>
                         setShowMarkdown((prev) => ({ ...prev, [book.id]: !prev[book.id] }))
                       }
