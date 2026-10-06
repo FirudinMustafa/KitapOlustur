@@ -8,6 +8,7 @@ import { projects, sourceUploads, generationRuns } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
 import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
 import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
+import { isOwnBlobUrl } from "@/lib/blob-url";
 
 const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
 // Denetim sonrası düzeltme (2026-09-23): variantCount'un 1-4 kelepçelemesiyle
@@ -88,6 +89,11 @@ export async function POST(request: Request) {
   }
   if (!isFromScratch && (typeof blobUrl !== "string" || !blobUrl || typeof filename !== "string" || !filename)) {
     return NextResponse.json({ error: "PDF dosyası gerekli" }, { status: 400 });
+  }
+  // The pipeline downloads this URL server-side - only accept uploads that
+  // went through this app's own Blob store (QA fix, 2026-10-06).
+  if (!isFromScratch && !isOwnBlobUrl(blobUrl)) {
+    return NextResponse.json({ error: "Geçersiz PDF adresi" }, { status: 400 });
   }
   if (isFromScratch && (!Number.isInteger(unitLimitRaw) || unitLimitRaw <= 0)) {
     return NextResponse.json({ error: "Ünite sayısı gerekli" }, { status: 400 });

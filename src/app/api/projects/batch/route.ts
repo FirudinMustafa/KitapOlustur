@@ -7,6 +7,7 @@ import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
 import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
+import { isOwnBlobUrl } from "@/lib/blob-url";
 
 const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
 
@@ -18,6 +19,9 @@ const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_book
 // independent generationRuns row/workflow run under the hood; nothing about
 // the pipeline itself changes or knows about "batches". A batch is purely a
 // creation-time convenience, not a new runtime concept.
+const MAX_UNIT_LIMIT = 30;
+const MAX_BATCH_ITEMS = 10;
+
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) {
@@ -56,10 +60,18 @@ export async function POST(request: Request) {
       typeof x.name === "string" &&
       x.name.trim() &&
       typeof x.blobUrl === "string" &&
-      x.blobUrl &&
+      isOwnBlobUrl(x.blobUrl) &&
       typeof x.filename === "string" &&
       x.filename,
   );
+  // QA fix (2026-10-06): the batch route had neither the single route's
+  // 30-unit cap nor any limit on how many books one request may start.
+  if (itemsRaw.length > MAX_BATCH_ITEMS) {
+    return NextResponse.json({ error: `Tek seferde en fazla ${MAX_BATCH_ITEMS} kitap başlatılabilir` }, { status: 400 });
+  }
+  if (Number.isInteger(unitLimitRaw) && unitLimitRaw > MAX_UNIT_LIMIT) {
+    return NextResponse.json({ error: `Ünite sayısı en fazla ${MAX_UNIT_LIMIT} olabilir` }, { status: 400 });
+  }
   if (items.length !== itemsRaw.length) {
     return NextResponse.json({ error: "Bazı dosyalar geçersiz (ad veya blob URL eksik)" }, { status: 400 });
   }
