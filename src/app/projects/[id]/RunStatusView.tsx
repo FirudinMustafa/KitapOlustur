@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { checkPrintReadiness } from "@/lib/print-readiness";
 import { PERSONA_LABELS, type PersonaReviewSummary } from "@/lib/personas";
+import { DeleteButton } from "@/components/app/delete-button";
 
 type ListeningAudioEntry = { blockRef: string; script: string; audioUrl?: string };
 export type GeneratedUnitContent = { unitNumber: number; listeningAudio?: ListeningAudioEntry[] };
@@ -568,7 +569,17 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           </div>
         </div>
       )}
-      <h1 className="text-2xl font-semibold text-foreground">{project.name}</h1>
+      <div className="flex items-start justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-foreground">{project.name}</h1>
+        {(!run || TERMINAL_STATUSES.has(run.status)) && (
+          <DeleteButton
+            endpoint={`/api/projects/${projectId}`}
+            redirectTo="/projects"
+            title="Projeyi sil"
+            description={`"${project.name}" projesi, tüm üretimleri ve kitaplarıyla birlikte kalıcı olarak silinecek. Bu işlem geri alınamaz.`}
+          />
+        )}
+      </div>
       <p className="mt-1 text-sm text-muted-foreground">
         {project.level ? `${project.level} · ` : ""}
         {upload ? `Kaynak: ${upload.filename}` : ""}

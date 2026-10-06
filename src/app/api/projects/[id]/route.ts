@@ -127,3 +127,29 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     coverDimensions: await fetchCoverDimensions(run?.coverImageUrl),
   });
 }
+
+// Project deletion (QA, 2026-10-06: projects could be created but never
+// removed). Every per-project row cascades from projects.id. Refused while a
+// run is still working or waiting on an approval, since its workflow would
+// keep writing to rows that no longer exist. Generated Blob files are left in
+// place (they're addressed by run id and unreachable once the rows are gone).
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+
+  const ownerCheck = await requireProjectOwner(id);
+  if (ownerCheck instanceof NextResponse) return ownerCheck;
+
+  const latestRun = await db.query.generationRuns.findFirst({
+    where: eq(generationRuns.projectId, id),
+    orderBy: [desc(generationRuns.createdAt)],
+  });
+  if (latestRun && !["done", "failed", "changes_requested"].includes(latestRun.status)) {
+    return NextResponse.json(
+      { error: "Devam eden bir üretim varken proje silinemez - bitmesini bekle ya da reddet." },
+      { status: 409 },
+    );
+  }
+
+  await db.delete(projects).where(eq(projects.id, id));
+  return NextResponse.json({ ok: true });
+}

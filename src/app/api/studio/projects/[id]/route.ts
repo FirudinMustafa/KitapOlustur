@@ -29,3 +29,15 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
   return NextResponse.json({ storyProject, messages, artifacts });
 }
+
+// Story deletion (QA, 2026-10-06: stories could be created but never
+// removed). Messages and artifacts cascade from storyProjects.id.
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+
+  const ownerCheck = await requireStoryProjectOwner(id);
+  if (ownerCheck instanceof NextResponse) return ownerCheck;
+
+  await db.delete(storyProjects).where(eq(storyProjects.id, id));
+  return NextResponse.json({ ok: true });
+}

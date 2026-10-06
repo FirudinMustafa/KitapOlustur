@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DeleteButton } from "@/components/app/delete-button";
 
 type StoryProject = typeof storyProjects.$inferSelect;
 type StoryMessage = typeof storyMessages.$inferSelect;
@@ -175,6 +176,12 @@ export function StudioWorkspace({
         <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
           <h1 className="truncate text-lg font-semibold text-foreground">{storyProject.title}</h1>
           <div className="flex shrink-0 items-center gap-2">
+            <DeleteButton
+              endpoint={`/api/studio/projects/${storyProject.id}`}
+              redirectTo="/studio"
+              title="Hikayeyi sil"
+              description={`"${storyProject.title}" hikayesi, tüm mesajları ve ürettiği görsel/ses kayıtlarıyla birlikte kalıcı olarak silinecek. Bu işlem geri alınamaz.`}
+            />
             {totalCostUsd > 0 && (
               <span
                 className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground"
