@@ -1,4 +1,5 @@
 import type { storyMessages, storyArtifacts } from "@/db/schema";
+import { SparklesIcon, UserIcon } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArtifactCard } from "./ArtifactCard";
@@ -20,7 +21,7 @@ export function ChatMessage({ message, artifacts }: { message: StoryMessage; art
     <div className={`flex max-w-[85%] items-start gap-2 ${isUser ? "flex-row-reverse self-end" : "self-start"}`}>
       <Avatar size="sm" className="mt-4 shrink-0">
         <AvatarFallback className={isUser ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground"}>
-          {isUser ? "S" : "✦"}
+          {isUser ? <UserIcon className="size-3.5" /> : <SparklesIcon className="size-3.5" />}
         </AvatarFallback>
       </Avatar>
       <div className="flex min-w-0 flex-col gap-1">
@@ -28,9 +29,13 @@ export function ChatMessage({ message, artifacts }: { message: StoryMessage; art
           <span className="text-xs font-medium text-foreground/70">{isUser ? "Sen" : "Kitap Orkestrası"}</span>
           <span className="text-[10px] text-muted-foreground">{formatTime(message.createdAt)}</span>
         </div>
+        {/* whitespace-pre-wrap: assistant replies are multi-paragraph
+            stories - without it every paragraph collapsed into one block. */}
         <div
-          className={`rounded-lg px-3 py-2 text-sm ${
-            isUser ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground ring-1 ring-foreground/10"
+          className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+            isUser
+              ? "rounded-tr-md bg-primary text-primary-foreground"
+              : "rounded-tl-md border bg-card font-reading text-[0.95rem] text-card-foreground shadow-xs"
           }`}
         >
           {message.content}
@@ -52,7 +57,7 @@ export function PendingAssistantMessage() {
   return (
     <div className="flex max-w-[85%] items-start gap-2 self-start">
       <Avatar size="sm" className="mt-4 shrink-0">
-        <AvatarFallback className="bg-primary text-primary-foreground">✦</AvatarFallback>
+        <AvatarFallback className="bg-primary text-primary-foreground"><SparklesIcon className="size-3.5" /></AvatarFallback>
       </Avatar>
       <div className="flex flex-col gap-1.5">
         <Skeleton className="h-3 w-24" />

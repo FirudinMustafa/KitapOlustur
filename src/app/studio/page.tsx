@@ -1,8 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
+import { SparklesIcon } from "lucide-react";
 
 import { db } from "@/db/client";
 import { storyProjects } from "@/db/schema";
+import { PageContainer, PageHeader } from "@/components/app/page-header";
+import { EmptyState } from "@/components/app/empty-state";
 import { NewStoryButton } from "./NewStoryButton";
 import { StudioLibraryList } from "./StudioLibraryList";
 
@@ -22,22 +25,25 @@ export default async function StudioLibraryPage() {
   });
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-12">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Hikaye Stüdyosu</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Sohbet ederek serbest hikaye/metin yaz, görsel ve seslendirme üret.
-          </p>
-        </div>
-        <NewStoryButton />
-      </div>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Yaratıcı alan"
+        title="Hikaye Stüdyosu"
+        description="Sohbet ederek serbest hikaye ve metinler yaz; görsel ve seslendirme üret."
+        actions={<NewStoryButton />}
+      />
 
-      {allStoryProjects.length === 0 && (
-        <p className="mt-8 text-sm text-muted-foreground">Henüz bir hikaye yok. Başlamak için &quot;Yeni Hikaye&quot;ye tıkla.</p>
+      {allStoryProjects.length === 0 ? (
+        <EmptyState
+          className="mt-10"
+          icon={SparklesIcon}
+          title="Henüz bir hikaye yok"
+          description="Bir konu ver, hikayeyi birlikte yazalım; istediğin sahnenin görselini ya da sesli anlatımını da üretebilirsin."
+          action={<NewStoryButton label="İlk hikayeni başlat" />}
+        />
+      ) : (
+        <StudioLibraryList storyProjects={allStoryProjects} />
       )}
-
-      <StudioLibraryList storyProjects={allStoryProjects} />
-    </div>
+    </PageContainer>
   );
 }

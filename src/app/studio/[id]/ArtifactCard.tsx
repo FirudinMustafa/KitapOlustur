@@ -12,9 +12,9 @@ export function ArtifactCard({ artifact, variant }: { artifact: StoryArtifact; v
   const isGallery = variant === "gallery";
 
   return (
-    <div className={isGallery ? "rounded-xl bg-card p-2 text-card-foreground ring-1 ring-foreground/10" : ""}>
+    <div className={isGallery ? "rounded-xl border bg-card p-2 text-card-foreground shadow-xs" : ""}>
       {artifact.status === "failed" ? (
-        <p className="text-xs text-destructive">
+        <p className="rounded-lg bg-danger-soft px-2.5 py-1.5 text-xs whitespace-normal text-danger-soft-foreground">
           {isGallery ? "Başarısız" : "Üretim başarısız"}: {artifact.errorMessage}
         </p>
       ) : artifact.status === "pending" ? (
