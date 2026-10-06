@@ -12,12 +12,22 @@
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io";
 
-// "Rachel", one of ElevenLabs' standard premade voices, available on the
-// free tier. Free mode uses a single fixed voice for every line (dialogue's
-// per-speaker OpenAI voice pool - DIALOGUE_VOICE_POOL in book-pipeline.tsx -
-// doesn't apply to ElevenLabs voice IDs, and the tiny free quota makes a
-// separate multi-voice pool not worth building for a smoke test).
-const ELEVENLABS_DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+// Free mode uses a single fixed voice for every line (dialogue's per-speaker
+// OpenAI voice pool - DIALOGUE_VOICE_POOL in book-pipeline.tsx - doesn't
+// apply to ElevenLabs voice IDs).
+//
+// QA fix (2026-10-06): this used to be "Rachel" (21m00Tcm4TlvDq8ikWAM),
+// which ElevenLabs has since moved to its voice library - free accounts get
+// "402 paid_plan_required: Free users cannot use library voices via the
+// API", so every listening clip of every free-mode run silently failed and
+// no book had audio. "Sarah" is a default voice verified live to work on a
+// free key (as are George/Matilda/Lily; Aria is not). Overridable via
+// ELEVENLABS_VOICE_ID.
+const ELEVENLABS_DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
+
+function voiceId(): string {
+  return process.env.ELEVENLABS_VOICE_ID?.trim() || ELEVENLABS_DEFAULT_VOICE_ID;
+}
 
 export function isElevenLabsConfigured(): boolean {
   return Boolean(process.env.ELEVENLABS_API_KEY);
@@ -27,7 +37,7 @@ export async function synthesizeWithElevenLabs(text: string): Promise<Buffer | u
   if (!isElevenLabsConfigured()) return undefined;
 
   try {
-    const res = await fetch(`${ELEVENLABS_API_BASE}/v1/text-to-speech/${ELEVENLABS_DEFAULT_VOICE_ID}`, {
+    const res = await fetch(`${ELEVENLABS_API_BASE}/v1/text-to-speech/${voiceId()}`, {
       method: "POST",
       headers: {
         "xi-api-key": process.env.ELEVENLABS_API_KEY!,

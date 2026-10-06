@@ -1,6 +1,15 @@
 import { generateImage, experimental_generateSpeech as generateSpeech } from "ai";
 import { put } from "@vercel/blob";
-import { resolveImageModel, resolveSpeechModel, resolveVeoModel, type StudioImageSizeId } from "@/lib/ai/model";
+import {
+  isFreeImageModelActive,
+  isFreeSpeechModelActive,
+  resolveImageModel,
+  resolveSpeechModel,
+  resolveVeoModel,
+  type StudioImageSizeId,
+} from "@/lib/ai/model";
+import { generateImageWithCloudflare } from "@/lib/ai/cloudflare-image";
+import { synthesizeWithElevenLabs } from "@/lib/ai/elevenlabs";
 import { estimateImageCostUsd, estimateSpeechCostUsd, estimateStudioImageCostUsd } from "@/lib/ai/pricing";
 import { submitImageToVideo } from "@/lib/ai/higgsfield";
 import { generateVeoVideoFromImage } from "@/lib/ai/veo";
@@ -16,6 +25,20 @@ import { generateVeoVideoFromImage } from "@/lib/ai/veo";
 // fixed-schema coursebook page - if the user doesn't like the result they
 // just ask again in the chat, so a single attempt per request is the right
 // tradeoff (avoids doubling image-generation cost on every message).
+
+// QA fix (2026-10-06): the studio always went through the AI Gateway, even
+// with AI_PROVIDER_MODE=free - so on a free setup every studio image/audio
+// request failed with "A positive credit balance is required". Free mode now
+// uses the same providers the book pipeline already uses there (Cloudflare
+// Workers AI for images, ElevenLabs for speech).
+const FREE_IMAGE_MODEL_LABEL = "cloudflare/flux-1-schnell";
+const FREE_SPEECH_MODEL_LABEL = "elevenlabs/eleven_multilingual_v2";
+
+async function freeImage(prompt: string) {
+  const image = await generateImageWithCloudflare(prompt);
+  if (!image) throw new Error("Ücretsiz görsel sağlayıcısı (Cloudflare Workers AI) görsel döndürmedi.");
+  return image;
+}
 
 export type StudioGenerationResult =
   | { status: "done"; url: string; model: string; costUsd: number | null }
@@ -35,15 +58,16 @@ export async function generateStoryImage(
   prompt: string,
   qualityMode: "draft" | "final",
 ): Promise<StudioGenerationResult> {
-  const model = resolveImageModel(qualityMode);
+  const free = isFreeImageModelActive();
+  const model = free ? FREE_IMAGE_MODEL_LABEL : resolveImageModel(qualityMode);
   try {
-    const { image } = await generateImage({ model, prompt, aspectRatio: "16:9" });
+    const image = free ? await freeImage(prompt) : (await generateImage({ model, prompt, aspectRatio: "16:9" })).image;
     const blob = await put(`studio/${storyProjectId}/image-${Date.now()}.png`, Buffer.from(image.uint8Array), {
       access: "public",
       contentType: image.mediaType,
       addRandomSuffix: false,
     });
-    return { status: "done", url: blob.url, model, costUsd: estimateImageCostUsd(model) };
+    return { status: "done", url: blob.url, model, costUsd: free ? null : estimateImageCostUsd(model) };
   } catch (err) {
     return { status: "failed", model, errorMessage: err instanceof Error ? err.message : String(err) };
   }
@@ -69,6 +93,28 @@ export async function generateAdvancedStoryImage(
   count: number,
   referenceImageUrls?: string[],
 ): Promise<AdvancedStudioImageResult> {
+  if (isFreeImageModelActive()) {
+    // Free provider: no model/size choice or reference images - size goes
+    // into the prompt as guidance, same as the book pipeline does.
+    try {
+      const urls: string[] = [];
+      for (let i = 0; i < count; i++) {
+        const image = await freeImage(`${prompt}
+
+(Image size guidance: ${size})`);
+        const blob = await put(`studio/${storyProjectId}/image-${Date.now()}-${i}.png`, Buffer.from(image.uint8Array), {
+          access: "public",
+          contentType: image.mediaType,
+          addRandomSuffix: false,
+        });
+        urls.push(blob.url);
+      }
+      return { status: "done", urls, model: FREE_IMAGE_MODEL_LABEL, costUsd: null };
+    } catch (err) {
+      return { status: "failed", model: FREE_IMAGE_MODEL_LABEL, errorMessage: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   try {
     const { images } = await generateImage({
       model,
@@ -152,15 +198,26 @@ export async function generateStoryAudio(
   text: string,
   qualityMode: "draft" | "final",
 ): Promise<StudioGenerationResult> {
-  const model = resolveSpeechModel(qualityMode);
+  const free = isFreeSpeechModelActive();
+  const model = free ? FREE_SPEECH_MODEL_LABEL : resolveSpeechModel(qualityMode);
   try {
-    const { audio } = await generateSpeech({ model, text, outputFormat: "mp3" });
-    const blob = await put(`studio/${storyProjectId}/audio-${Date.now()}.mp3`, Buffer.from(audio.uint8Array), {
+    let bytes: Uint8Array;
+    let mediaType = "audio/mpeg";
+    if (free) {
+      const buf = await synthesizeWithElevenLabs(text);
+      if (!buf) throw new Error("Ücretsiz ses sağlayıcısı (ElevenLabs) ses döndürmedi.");
+      bytes = buf;
+    } else {
+      const { audio } = await generateSpeech({ model, text, outputFormat: "mp3" });
+      bytes = audio.uint8Array;
+      mediaType = audio.mediaType;
+    }
+    const blob = await put(`studio/${storyProjectId}/audio-${Date.now()}.mp3`, Buffer.from(bytes), {
       access: "public",
-      contentType: audio.mediaType,
+      contentType: mediaType,
       addRandomSuffix: false,
     });
-    return { status: "done", url: blob.url, model, costUsd: estimateSpeechCostUsd(model, text.length) };
+    return { status: "done", url: blob.url, model, costUsd: free ? null : estimateSpeechCostUsd(model, text.length) };
   } catch (err) {
     return { status: "failed", model, errorMessage: err instanceof Error ? err.message : String(err) };
   }
