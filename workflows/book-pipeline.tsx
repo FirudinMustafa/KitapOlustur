@@ -54,6 +54,7 @@ import {
   type GeneratedPage,
   type StyleBible,
 } from "@/lib/ai/schemas";
+import { dropInvalidInteractive } from "@/lib/ai/drop-invalid-interactive";
 import {
   resolveTextModel,
   resolveFinalTextModel,
@@ -165,7 +166,7 @@ const repairDoubleEncodedJsonLeaves: RepairTextFunction = async ({ text }) => {
   }
 
   try {
-    return JSON.stringify(unwrapStringifiedJson(JSON.parse(text)));
+    return JSON.stringify(dropInvalidInteractive(unwrapStringifiedJson(JSON.parse(text))));
   } catch {
     return null;
   }
