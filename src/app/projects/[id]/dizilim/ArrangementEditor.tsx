@@ -173,6 +173,7 @@ export function ArrangementEditor({
             prev,
             { unitNumber: activeData.unitNumber, pageArrayField, pageIndex: activeData.pageIndex },
             { unitNumber: overData.unitNumber, pageArrayField, pageIndex: overData.index },
+            pageImages,
           );
           setMessage(`Görsel Ünite ${overData.unitNumber}'e taşındı.`);
           return next;
@@ -336,7 +337,10 @@ export function ArrangementEditor({
       const res = await fetch(`/api/projects/${projectId}/rerun`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookTypes: ["student_book", "workbook", "teacher_book", "test_booklet"] }),
+        // QA fix (2026-10-06): only book types that actually have pages -
+        // requesting all four built empty (cover + contents only) Teacher's
+        // Book / Test Booklet PDFs for projects that never generated them.
+        body: JSON.stringify({ bookTypes: availableFields.map((f) => PAGE_ARRAY_TO_VARIANT[f]) }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

@@ -240,6 +240,30 @@ describe("moveImage", () => {
     expect(result[0].studentBookPages[2].imageOverrideSourcePageNumber).toBe(100);
   });
 
+  it("swaps images when the destination page already shows one", () => {
+    const units = [makeUnit(1, 2)];
+    const result = moveImage(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+      { 100: "a.png", 101: "b.png" },
+    );
+    expect(result[0].studentBookPages[0].imageOverrideSourcePageNumber).toBe(101);
+    expect(result[0].studentBookPages[1].imageOverrideSourcePageNumber).toBe(100);
+  });
+
+  it("leaves the source empty when the destination had no image", () => {
+    const units = [makeUnit(1, 2)];
+    const result = moveImage(
+      units,
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 0 },
+      { unitNumber: 1, pageArrayField: "studentBookPages", pageIndex: 1 },
+      { 100: "a.png" },
+    );
+    expect(result[0].studentBookPages[0].imageOverrideSourcePageNumber).toBeNull();
+    expect(result[0].studentBookPages[1].imageOverrideSourcePageNumber).toBe(100);
+  });
+
   it("throws when the source page has no image to move", () => {
     const units = [makeUnit(1, 2)];
     units[0].studentBookPages[0].imageOverrideSourcePageNumber = null;

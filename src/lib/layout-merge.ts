@@ -1,5 +1,5 @@
 import type { BlockLayout, ContentBlock, GeneratedPage, GeneratedUnit } from "./ai/schemas";
-import { PAGE_PADDING, CONTENT_WIDTH_PT } from "./pdf/page-geometry";
+import { PAGE_PADDING, CONTENT_WIDTH_PT, CONTENT_HEIGHT_PT } from "./pdf/page-geometry";
 
 export type PageArrayField = "studentBookPages" | "workbookPages" | "teacherBookPages" | "testBookletPages";
 
@@ -16,15 +16,29 @@ const DEFAULT_BLOCK_HEIGHT = 130;
 // content width, positioned below whatever came before) so an editor can
 // always render/drag every block on a fixed canvas instead of everything
 // piling up at (0,0). Pure/side-effect-free - does not mutate `page`.
+// QA fix (2026-10-06): with a fixed 130pt slot, a page with 6+ blocks
+// stacked its later blocks below the 842pt page - invisible in the editor
+// canvas (overflow hidden) and clamped on top of each other in the PDF. Slots
+// now shrink so every unpositioned block starts out inside the content box.
+const BLOCK_GAP = 12;
+const MIN_DEFAULT_BLOCK_HEIGHT = 40;
+
 export function withDefaultLayouts(page: GeneratedPage): (ContentBlock & { layout: BlockLayout })[] {
+  const unpositioned = page.blocks.filter((b) => !b.layout).length;
+  const slotHeight = unpositioned
+    ? Math.max(
+        MIN_DEFAULT_BLOCK_HEIGHT,
+        Math.min(DEFAULT_BLOCK_HEIGHT, Math.floor(CONTENT_HEIGHT_PT / unpositioned) - BLOCK_GAP),
+      )
+    : DEFAULT_BLOCK_HEIGHT;
   let nextY = PAGE_PADDING.top;
   return page.blocks.map((block) => {
     if (block.layout) {
       nextY = Math.max(nextY, block.layout.y + block.layout.height);
       return block as ContentBlock & { layout: BlockLayout };
     }
-    const layout: BlockLayout = { x: PAGE_PADDING.left, y: nextY, width: CONTENT_WIDTH_PT, height: DEFAULT_BLOCK_HEIGHT };
-    nextY += DEFAULT_BLOCK_HEIGHT + 12;
+    const layout: BlockLayout = { x: PAGE_PADDING.left, y: nextY, width: CONTENT_WIDTH_PT, height: slotHeight };
+    nextY += slotHeight + BLOCK_GAP;
     return { ...block, layout };
   });
 }

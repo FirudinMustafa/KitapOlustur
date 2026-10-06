@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blocksForRender, clampLayoutToPage, mergePageLayout } from "./layout-merge";
+import { blocksForRender, clampLayoutToPage, mergePageLayout, withDefaultLayouts } from "./layout-merge";
 import type { GeneratedUnit } from "./ai/schemas";
 
 function makeUnit(unitNumber: number): GeneratedUnit {
@@ -128,5 +128,25 @@ describe("clampLayoutToPage", () => {
       width: 595,
       height: 842,
     });
+  });
+});
+
+describe("withDefaultLayouts", () => {
+  it("keeps every default slot inside the page even for block-heavy pages", () => {
+    const blocks = Array.from({ length: 8 }, (_, i) => ({ kind: "explanation" as const, heading: `b${i}`, body: "x" }));
+    const out = withDefaultLayouts({ sourcePageNumber: 1, pageType: "content", unitNumber: 1, blocks });
+    const last = out[out.length - 1].layout;
+    expect(last.y + last.height).toBeLessThanOrEqual(841.89 - 56 + 1);
+    expect(out.every((b) => b.layout.height >= 40)).toBe(true);
+  });
+
+  it("keeps the roomy 130pt slot for short pages", () => {
+    const out = withDefaultLayouts({
+      sourcePageNumber: 1,
+      pageType: "content",
+      unitNumber: 1,
+      blocks: [{ kind: "explanation", heading: "a", body: "x" }],
+    });
+    expect(out[0].layout.height).toBe(130);
   });
 });

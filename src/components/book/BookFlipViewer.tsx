@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import type { GeneratedPage, ListeningAudio } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT } from "@/lib/pdf/page-geometry";
@@ -22,6 +22,13 @@ const FLIP_PAGE_WIDTH = 320;
 const FLIP_PAGE_HEIGHT = Math.round(FLIP_PAGE_WIDTH * (PAGE_HEIGHT_PT / PAGE_WIDTH_PT));
 const FLIP_SCALE = FLIP_PAGE_WIDTH / PAGE_WIDTH_PT;
 
+// Cheap stable string hash (djb2) - only used to derive a React key.
+function hashString(input: string): string {
+  let h = 5381;
+  for (let i = 0; i < input.length; i++) h = ((h << 5) + h + input.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 export type FlipPageEntry = {
   page: GeneratedPage;
   unitNumber: number;
@@ -42,6 +49,19 @@ export function BookFlipViewer({
 }) {
   const flipBookRef = useRef<{ pageFlip: () => { flipNext: () => void; flipPrev: () => void } } | null>(null);
 
+  // QA fix (2026-10-06): page-flip.js re-parents the page elements React
+  // rendered into its own wrapper. Any later change to the pages (Dizilim:
+  // dragging a page/block, editing a layout, uploading an image) made React
+  // try to remove/reorder those nodes where they no longer are -
+  // "removeChild: The node to be removed is not a child of this node" - which
+  // crashed the whole editor. The flip-book is instead remounted from scratch
+  // whenever its content changes, so React never patches nodes the library
+  // has moved.
+  const contentKey = useMemo(
+    () => hashString(JSON.stringify([flatPages.map((e) => [e.unitNumber, e.index, e.page]), pageImages, showAnswerKey])),
+    [flatPages, pageImages, showAnswerKey],
+  );
+
   // Verified live (2026-09-28): page-flip.js (react-pageflip's engine)
   // measures its container once and caches that measurement - if it
   // measures before the surrounding layout has settled (routine right
@@ -58,7 +78,7 @@ export function BookFlipViewer({
     const delays = [50, 300, 800];
     const ids = delays.map((ms) => setTimeout(() => window.dispatchEvent(new Event("resize")), ms));
     return () => ids.forEach(clearTimeout);
-  }, []);
+  }, [contentKey]);
 
   if (!flatPages.length) {
     return <p className="text-sm text-muted-foreground">Bu kitap tipi için sayfa yok.</p>;
@@ -69,6 +89,7 @@ export function BookFlipViewer({
       {/* @ts-expect-error -- react-pageflip's IProps typing doesn't export
           cleanly through next/dynamic's inferred component type */}
       <HTMLFlipBook
+        key={contentKey}
         ref={flipBookRef}
         width={FLIP_PAGE_WIDTH}
         height={FLIP_PAGE_HEIGHT}

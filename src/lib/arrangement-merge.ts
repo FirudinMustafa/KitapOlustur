@@ -212,7 +212,12 @@ export interface PageLocation {
 // if it had one, else its own sourcePageNumber), then clear the source page's
 // override to `null` (explicitly "no image here now", even though
 // pageImages still has an entry under its own sourcePageNumber).
-export function moveImage(units: GeneratedUnit[], from: PageLocation, to: PageLocation): GeneratedUnit[] {
+export function moveImage(
+  units: GeneratedUnit[],
+  from: PageLocation,
+  to: PageLocation,
+  pageImages?: Record<number, string>,
+): GeneratedUnit[] {
   const fromUnitIndex = units.findIndex((u) => u.unitNumber === from.unitNumber);
   if (fromUnitIndex === -1) throw new Error(`Ünite ${from.unitNumber} bulunamadı.`);
   const toUnitIndex = units.findIndex((u) => u.unitNumber === to.unitNumber);
@@ -232,12 +237,26 @@ export function moveImage(units: GeneratedUnit[], from: PageLocation, to: PageLo
     from.unitNumber === to.unitNumber && from.pageArrayField === to.pageArrayField && from.pageIndex === to.pageIndex;
   if (samePage) return units;
 
+  // QA fix (2026-10-06): dropping an image onto a page that already shows
+  // one used to overwrite the destination's image (it silently disappeared
+  // from the book). When the caller passes pageImages (so it's known whether
+  // the destination really shows an image), the two pages swap images;
+  // otherwise / when the destination had none, the source ends up empty as
+  // before.
+  const destPage = (units[toUnitIndex][to.pageArrayField] ?? [])[to.pageIndex];
+  const destKeyCandidate =
+    destPage && destPage.imageOverrideSourcePageNumber !== null
+      ? (destPage.imageOverrideSourcePageNumber ?? destPage.sourcePageNumber)
+      : null;
+  const destImageKey = destKeyCandidate !== null && pageImages?.[destKeyCandidate] ? destKeyCandidate : null;
+  const sourceAfter = destImageKey === null || destImageKey === imageKey ? null : destImageKey;
+
   if (fromUnitIndex === toUnitIndex && from.pageArrayField === to.pageArrayField) {
     const pages = fromPages.slice();
     if (to.pageIndex < 0 || to.pageIndex >= pages.length) {
       throw new Error(`Ünite ${to.unitNumber} için ${to.pageArrayField}[${to.pageIndex}] sayfası bulunamadı.`);
     }
-    pages[from.pageIndex] = { ...pages[from.pageIndex], imageOverrideSourcePageNumber: null };
+    pages[from.pageIndex] = { ...pages[from.pageIndex], imageOverrideSourcePageNumber: sourceAfter };
     pages[to.pageIndex] = { ...pages[to.pageIndex], imageOverrideSourcePageNumber: imageKey };
     return units.map((u, i) => (i === fromUnitIndex ? { ...u, [from.pageArrayField]: pages } : u));
   }
@@ -247,7 +266,7 @@ export function moveImage(units: GeneratedUnit[], from: PageLocation, to: PageLo
     throw new Error(`Ünite ${to.unitNumber} için ${to.pageArrayField}[${to.pageIndex}] sayfası bulunamadı.`);
   }
   const updatedSourcePages = fromPages.map((p, i) =>
-    i === from.pageIndex ? { ...p, imageOverrideSourcePageNumber: null } : p,
+    i === from.pageIndex ? { ...p, imageOverrideSourcePageNumber: sourceAfter } : p,
   );
   const updatedDestPages = destPagesBefore.map((p, i) =>
     i === to.pageIndex ? { ...p, imageOverrideSourcePageNumber: imageKey } : p,
