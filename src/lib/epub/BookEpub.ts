@@ -13,6 +13,7 @@ import {
 } from "@/lib/content-html";
 import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
 import { resolvePageImageUrl } from "@/lib/page-image";
+import { withUnitGlossary } from "@/lib/unit-glossary";
 
 // EPUB export - the digital/accessible sibling to BookDocument.tsx's PDF.
 // Deliberately hand-rolled with jszip rather than an epub-generation
@@ -127,7 +128,7 @@ th, td { border: 1px solid #d1d5db; padding: 0.4em; text-align: left; font-size:
   }
 
   for (const unit of units) {
-    const pages = pagesForVariant(unit, variant);
+    const pages = withUnitGlossary(unit, pagesForVariant(unit, variant), variant);
     if (!pages.length) continue;
 
     const pageSections: string[] = [];

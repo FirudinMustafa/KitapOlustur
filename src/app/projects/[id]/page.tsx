@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { isUuid } from "@/lib/uuid";
 import { auth } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
 
@@ -35,6 +36,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   // requireProjectOwner in src/lib/auth.ts, kept in sync manually since this
   // is a server component rather than an API route.
   const { userId } = await auth();
+  if (!isUuid(id)) notFound();
   const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!project || !userId || project.ownerId !== userId) notFound();
 

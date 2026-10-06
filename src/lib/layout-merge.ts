@@ -67,3 +67,35 @@ export function mergePageLayout(
 
   return units.map((u, i) => (i === unitIndex ? updatedUnit : u));
 }
+
+// QA fix (2026-10-06): a page where only SOME blocks carry a `.layout`
+// (legacy data - today's editor always saves every block on a positioned
+// page) printed its absolutely positioned blocks on top of the flow blocks
+// in both the PDF and the web reader. Filling the gaps with
+// withDefaultLayouts slots doesn't help either - those slots collide with
+// the stored boxes and push text off the page. Such a page is rendered fully
+// in normal flow instead (no overlap, no clipped text, page wrapping works);
+// re-saving it in the Dizilim editor positions every block again. Fully
+// positioned pages are left exactly as the user arranged them.
+export function blocksForRender(page: GeneratedPage): ContentBlock[] {
+  const positioned = page.blocks.filter((b) => b.layout).length;
+  if (positioned === 0 || positioned === page.blocks.length) return page.blocks;
+  return page.blocks.map((block) => ({ ...block, layout: undefined }));
+}
+
+// QA fix (2026-10-06): an absolutely positioned block that extends past the
+// bottom of the page (e.g. dragged low in the editor, or a stacked default
+// slot like y=800/height=130 on an 842pt A4 page) sent react-pdf's page
+// wrapping into an endless loop - the assembly step ran until the process
+// ran out of memory. Every positioned box is clamped inside the page before
+// rendering.
+export function clampLayoutToPage(layout: BlockLayout, pageWidth: number, pageHeight: number): BlockLayout {
+  const width = Math.max(1, Math.min(layout.width, pageWidth));
+  const height = Math.max(1, Math.min(layout.height, pageHeight));
+  return {
+    x: Math.min(Math.max(0, layout.x), pageWidth - width),
+    y: Math.min(Math.max(0, layout.y), pageHeight - height),
+    width,
+    height,
+  };
+}

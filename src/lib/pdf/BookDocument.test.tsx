@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToBuffer } from "@react-pdf/renderer";
-import { BookDocument } from "./BookDocument";
+import { BookDocument, upperFor } from "./BookDocument";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 import type { CourseUnitSummary } from "./ContentsDocument";
 
@@ -73,5 +73,20 @@ describe("BookDocument with ISBN", () => {
       />,
     );
     expect(buffer.subarray(0, 4).toString()).toBe("%PDF");
+  });
+});
+
+describe("upperFor", () => {
+  it("uses Turkish casing for Turkish content", () => {
+    expect(upperFor("Sayıları ve Nesneleri", "tr")).toBe("SAYILARI VE NESNELERİ");
+  });
+
+  it("detects Turkish from the text when no language is known", () => {
+    expect(upperFor("Sayıları ve Nesneleri")).toBe("SAYILARI VE NESNELERİ");
+  });
+
+  it("keeps default casing for other languages", () => {
+    expect(upperFor("Listening activities", "en")).toBe("LISTENING ACTIVITIES");
+    expect(upperFor("Listening activities")).toBe("LISTENING ACTIVITIES");
   });
 });

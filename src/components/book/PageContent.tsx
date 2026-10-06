@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import type { ContentBlock, GeneratedPage, InteractiveExercise, ListeningAudio, WordTimestamp } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
 import { BLOCK_COLORS } from "@/lib/block-colors";
+import { blocksForRender } from "@/lib/layout-merge";
 
 // Extracted from BookReader.tsx ("Dizilim → Gerçek Kitap") so the merged
 // Dizilim flip-book preview can render the exact same real content (all
@@ -365,8 +366,9 @@ export function PositionedPage({
   listeningAudio?: ListeningAudio[];
   renderBlockWrapper?: BlockWrapper;
 }) {
-  const positionedBlocks = page.blocks.filter((b) => b.layout);
-  const flowBlocks = page.blocks.filter((b) => !b.layout);
+  const renderBlocks = blocksForRender(page);
+  const positionedBlocks = renderBlocks.filter((b) => b.layout);
+  const flowBlocks = renderBlocks.filter((b) => !b.layout);
   return (
     <div className="mb-6">
       <div

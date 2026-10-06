@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergePageLayout } from "./layout-merge";
+import { blocksForRender, clampLayoutToPage, mergePageLayout } from "./layout-merge";
 import type { GeneratedUnit } from "./ai/schemas";
 
 function makeUnit(unitNumber: number): GeneratedUnit {
@@ -71,5 +71,62 @@ describe("mergePageLayout", () => {
     const original = JSON.parse(JSON.stringify(units));
     mergePageLayout(units, 1, "studentBookPages", 0, [{ kind: "explanation", heading: "Changed", body: "x" }]);
     expect(units).toEqual(original);
+  });
+});
+
+describe("blocksForRender", () => {
+  const block = (heading: string, layout?: { x: number; y: number; width: number; height: number }) => ({
+    kind: "explanation" as const,
+    heading,
+    body: "b",
+    ...(layout ? { layout } : {}),
+  });
+  const page = (blocks: ReturnType<typeof block>[]) => ({
+    sourcePageNumber: 1,
+    pageType: "content" as const,
+    unitNumber: 1,
+    blocks,
+  });
+
+  it("leaves fully unpositioned pages in normal flow", () => {
+    const p = page([block("a"), block("b")]);
+    expect(blocksForRender(p)).toBe(p.blocks);
+  });
+
+  it("renders partially positioned (legacy) pages fully in flow", () => {
+    const out = blocksForRender(page([block("a"), block("b", { x: 1, y: 300, width: 100, height: 50 }), block("c")]));
+    expect(out.map((x) => x.heading)).toEqual(["a", "b", "c"]);
+    expect(out.some((x) => x.layout)).toBe(false);
+  });
+
+  it("keeps fully positioned pages as arranged", () => {
+    const p = page([block("a", { x: 1, y: 1, width: 10, height: 10 }), block("b", { x: 1, y: 20, width: 10, height: 10 })]);
+    expect(blocksForRender(p)).toBe(p.blocks);
+  });
+});
+
+describe("clampLayoutToPage", () => {
+  it("keeps boxes that already fit unchanged", () => {
+    expect(clampLayoutToPage({ x: 44, y: 100, width: 200, height: 100 }, 595, 842)).toEqual({
+      x: 44,
+      y: 100,
+      width: 200,
+      height: 100,
+    });
+  });
+
+  it("pulls boxes that overflow the page back inside it", () => {
+    expect(clampLayoutToPage({ x: 500, y: 800, width: 507, height: 130 }, 595, 842)).toEqual({
+      x: 88,
+      y: 712,
+      width: 507,
+      height: 130,
+    });
+    expect(clampLayoutToPage({ x: -10, y: -5, width: 900, height: 2000 }, 595, 842)).toEqual({
+      x: 0,
+      y: 0,
+      width: 595,
+      height: 842,
+    });
   });
 });

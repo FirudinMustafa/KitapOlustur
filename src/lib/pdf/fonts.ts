@@ -52,3 +52,26 @@ export function registerBookFonts() {
   // breaks. Disable hyphenation everywhere (return the word unchanged).
   Font.registerHyphenationCallback((word) => [word]);
 }
+
+// QA fix (2026-10-06): fontkit font objects are cached on the registered
+// font sources and shared by every renderToBuffer call in the process. After
+// the first document, later documents rendered in the same process (e.g.
+// student_book then workbook in one assembly step, or any warm Fluid Compute
+// instance) silently lost glyphs from the bold variable-font instance -
+// digits vanished from headings ("2 - İki" printed as "- İki", "1-10" as
+// "1-1"). Font.reset() does not help (it nulls `data` but keeps the memoized
+// load promise, so nothing reloads) and Font.clear() also drops react-pdf's
+// built-in Helvetica registration, so only this app's own font sources are
+// reset - forcing a fresh fontkit object on the next load.
+type ResettableFontSource = { data: unknown; loadResultPromise: unknown };
+
+export function resetBookFonts() {
+  registerBookFonts();
+  const families = Font.getRegisteredFonts() as Record<string, { sources: ResettableFontSource[] }>;
+  for (const family of [NOTO_SANS, NOTO_SERIF]) {
+    for (const source of families[family]?.sources ?? []) {
+      source.data = null;
+      source.loadResultPromise = null;
+    }
+  }
+}

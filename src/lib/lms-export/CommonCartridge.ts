@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
+import { withUnitGlossary } from "@/lib/unit-glossary";
 import {
   VARIANT_LABELS,
   escapeXml,
@@ -51,7 +52,7 @@ export async function buildCommonCartridge(input: {
   const organizationItems: string[] = [];
 
   for (const unit of units) {
-    const pages = pagesForVariant(unit, variant);
+    const pages = withUnitGlossary(unit, pagesForVariant(unit, variant), variant);
     if (!pages.length) continue;
 
     const unitId = slug("unit", unit.unitNumber);

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { isUuid } from "@/lib/uuid";
 import { auth } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
 
@@ -18,6 +19,7 @@ export default async function ArrangementPage({ params }: { params: Promise<{ id
   const { id } = await params;
 
   const { userId } = await auth();
+  if (!isUuid(id)) notFound();
   const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!project || !userId || project.ownerId !== userId) {
     notFound();

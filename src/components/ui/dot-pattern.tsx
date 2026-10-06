@@ -102,8 +102,9 @@ export function DotPattern({
       return {
         x: col * width + cx + x,
         y: row * height + cy + y,
-        delay: Math.random() * 5,
-        duration: Math.random() * 3 + 2,
+        // Deterministic per-dot pseudo-random (render must stay pure)
+        delay: (((i * 9301 + 49297) % 233280) / 233280) * 5,
+        duration: (((i * 4271 + 1013) % 7919) / 7919) * 3 + 2,
       }
     }
   )

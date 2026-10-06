@@ -8,6 +8,7 @@ import { BookFlipViewer, type FlipPageEntry } from "@/components/book/BookFlipVi
 import { resolvePageImageUrl } from "@/lib/page-image";
 import { resolveLogoPositionStyle } from "@/lib/logo-position";
 import { derivePaletteFromColors } from "@/lib/pdf/derive-palette";
+import { withUnitGlossary } from "@/lib/unit-glossary";
 
 const VARIANT_LABELS: Record<Variant, string> = {
   student_book: "Student Book",
@@ -90,7 +91,7 @@ export function BookReader({
   const unmatchedAudio = current?.listeningAudio?.filter((a) => !matchedBlockRefs.has(a.blockRef)) ?? [];
 
   const flatPages: FlipPageEntry[] = unitsWithPages.flatMap((u) =>
-    pagesForVariant(u, variant).map((page, index) => ({ page, unitNumber: u.unitNumber, unitTitle: u.title, index })),
+    withUnitGlossary(u, pagesForVariant(u, variant), variant).map((page, index) => ({ page, unitNumber: u.unitNumber, unitTitle: u.title, index })),
   );
 
   return (

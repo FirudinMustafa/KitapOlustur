@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { savedReferenceImages } from "@/db/schema";
+import { isUuid } from "@/lib/uuid";
 
 // Faz "Gelişmiş Görsel Üretim Paneli": ownership checked inline (and(...))
 // rather than a shared requireXOwner helper - this is the only place a
@@ -11,6 +12,9 @@ import { savedReferenceImages } from "@/db/schema";
 // alongside requireProjectOwner/requireStoryProjectOwner (src/lib/auth.ts).
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "Referans görsel bulunamadı" }, { status: 404 });
+  }
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });
@@ -38,6 +42,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "Referans görsel bulunamadı" }, { status: 404 });
+  }
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });

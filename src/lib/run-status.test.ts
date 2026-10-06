@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatElapsedTurkish, getPipelineStageIndex, getPipelineNodeStates, PIPELINE_STAGES } from "./run-status";
+import {
+  AWAITING_STATUSES,
+  formatElapsedTurkish,
+  getPipelineStageIndex,
+  getPipelineNodeStates,
+  PIPELINE_STAGES,
+  STATUS_LABELS,
+} from "./run-status";
 
 describe("formatElapsedTurkish", () => {
   const now = new Date("2026-09-19T12:00:00Z");
@@ -64,5 +71,13 @@ describe("getPipelineNodeStates", () => {
 
   it("returns one state per declared stage", () => {
     expect(getPipelineNodeStates("generating")).toHaveLength(PIPELINE_STAGES.length);
+  });
+});
+
+describe("awaiting_logo_upload", () => {
+  it("is labelled, treated as a human wait state and placed on the approval stage", () => {
+    expect(STATUS_LABELS.awaiting_logo_upload).toBeTruthy();
+    expect(AWAITING_STATUSES.has("awaiting_logo_upload")).toBe(true);
+    expect(getPipelineStageIndex("awaiting_logo_upload")).toBe(1);
   });
 });

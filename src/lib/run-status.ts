@@ -4,6 +4,7 @@ export const STATUS_LABELS: Record<string, string> = {
   extracting: "Dizelge çıkarılıyor",
   analyzing: "Analiz ediliyor",
   awaiting_outline_approval: "Onay bekleniyor",
+  awaiting_logo_upload: "Logo onayı bekleniyor",
   awaiting_variant_selection: "Varyant seçimi bekleniyor",
   generating: "Üretiliyor",
   reviewing: "İnceleniyor",
@@ -25,6 +26,7 @@ export const STATUS_LABELS: Record<string, string> = {
 // project owner actually needs to notice and act on.
 export const AWAITING_STATUSES = new Set([
   "awaiting_outline_approval",
+  "awaiting_logo_upload",
   "awaiting_variant_selection",
   "awaiting_content_approval",
   "awaiting_image_review",
@@ -76,6 +78,7 @@ const STATUS_TO_STAGE_INDEX: Record<string, number> = {
   extracting: 0,
   analyzing: 0,
   awaiting_outline_approval: 1,
+  awaiting_logo_upload: 1,
   generating: 2,
   reviewing: 2,
   awaiting_content_approval: 2,

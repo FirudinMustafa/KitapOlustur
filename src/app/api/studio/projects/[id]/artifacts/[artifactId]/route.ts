@@ -4,6 +4,7 @@ import { put } from "@vercel/blob";
 
 import { db } from "@/db/client";
 import { storyArtifacts } from "@/db/schema";
+import { isUuid } from "@/lib/uuid";
 import { requireStoryProjectOwner } from "@/lib/auth";
 import { pollHiggsfieldStatus } from "@/lib/ai/higgsfield";
 
@@ -20,7 +21,9 @@ export async function GET(
   const ownerCheck = await requireStoryProjectOwner(id);
   if (ownerCheck instanceof NextResponse) return ownerCheck;
 
-  const artifact = await db.query.storyArtifacts.findFirst({ where: eq(storyArtifacts.id, artifactId) });
+  const artifact = isUuid(artifactId)
+    ? await db.query.storyArtifacts.findFirst({ where: eq(storyArtifacts.id, artifactId) })
+    : undefined;
   if (!artifact || artifact.storyProjectId !== id) {
     return NextResponse.json({ error: "Artifact bulunamadı" }, { status: 404 });
   }

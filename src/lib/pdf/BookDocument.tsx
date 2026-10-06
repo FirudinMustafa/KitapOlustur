@@ -9,6 +9,8 @@ import { resolvePageImageUrl } from "@/lib/page-image";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF } from "./fonts";
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { derivePaletteFromColors } from "./derive-palette";
+import { withUnitGlossary } from "@/lib/unit-glossary";
+import { blocksForRender, clampLayoutToPage } from "@/lib/layout-merge";
 
 registerBookFonts();
 
@@ -416,6 +418,15 @@ function BlockCard({ block, showAnswerKey, palette }: { block: ContentBlock; sho
   );
 }
 
+// Render-time block list: legacy partially-positioned pages get the same
+// default slots the editor shows (blocksForRender), and every positioned box
+// is kept inside the page (clampLayoutToPage) so react-pdf can't loop.
+function clampedBlocks(page: GeneratedPage, pageSize: { width: number; height: number }): ContentBlock[] {
+  return blocksForRender(page).map((b) =>
+    b.layout ? { ...b, layout: clampLayoutToPage(b.layout, pageSize.width, pageSize.height) } : b,
+  );
+}
+
 function Blocks({ blocks, showAnswerKey, palette }: { blocks: ContentBlock[]; showAnswerKey: boolean; palette: Palette }) {
   return (
     <>
@@ -498,12 +509,28 @@ function ImprintPage({
   );
 }
 
+// QA fix (2026-10-06): plain toUpperCase() is locale-blind, so Turkish
+// titles printed "NESNELERI" instead of "NESNELERİ" in running headers and
+// section kickers. Uppercase with the book's own language; when that isn't
+// known (older runs), fall back to Turkish rules only if the text itself has
+// Turkish-specific letters.
+const TURKISH_LETTERS = /[ıİşŞğĞ]/;
+
+export function upperFor(text: string, contentLanguage?: string): string {
+  const lang = contentLanguage?.trim() || (TURKISH_LETTERS.test(text) ? "tr" : undefined);
+  try {
+    return text.toLocaleUpperCase(lang);
+  } catch {
+    return text.toUpperCase();
+  }
+}
+
 function pagesForVariant(unit: GeneratedUnit, variant: Variant): GeneratedPage[] {
   switch (variant) {
     case "student_book":
-      return unit.studentBookPages;
+      return unit.studentBookPages ?? [];
     case "workbook":
-      return unit.workbookPages;
+      return unit.workbookPages ?? [];
     case "teacher_book":
       return unit.teacherBookPages ?? [];
     case "test_booklet":
@@ -523,6 +550,7 @@ export function BookDocument({
   isbn,
   trimSize = "a4",
   sourceStyle,
+  contentLanguage,
 }: {
   bookTitle: string;
   variant: Variant;
@@ -535,6 +563,8 @@ export function BookDocument({
   isbn?: string;
   trimSize?: TrimSizeId;
   sourceStyle?: BookDocumentSourceStyle;
+  /** BCP-47 code of the book content (outline.contentLanguage) - drives locale-correct uppercasing. */
+  contentLanguage?: string;
 }) {
   const variantLabel = VARIANT_LABELS[variant];
   // Falls back to the original fixed PALETTE[variant] whenever there's no
@@ -568,7 +598,7 @@ export function BookDocument({
               <Image src={sourceStyle.logoUrl} style={styles.coverLogo} />
             </View>
           )}
-          <Text style={styles.coverKicker}>{level.toUpperCase()}</Text>
+          <Text style={styles.coverKicker}>{upperFor(level, contentLanguage)}</Text>
           <Text style={styles.coverTitle}>{bookTitle}</Text>
           <Text style={styles.coverSubtitle}>{variantLabel}</Text>
         </View>
@@ -607,11 +637,11 @@ export function BookDocument({
       />
 
       {units.flatMap((unit) =>
-        pagesForVariant(unit, variant).map((page, idx) => (
+        withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((page, idx) => (
           <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={pageSize} style={styles.page} wrap>
             <View style={styles.runningHeader}>
               <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
-                UNIT {unit.unitNumber} · {unit.title.toUpperCase()}
+                UNIT {unit.unitNumber} · {upperFor(unit.title, contentLanguage)}
               </Text>
             </View>
 
@@ -640,13 +670,10 @@ export function BookDocument({
                     // positioning as BlockCard's `layout` field, see there
                     // for the pagination-reflow caveat.
                     page.imageLayout
-                      ? {
-                          position: "absolute" as const,
-                          left: page.imageLayout.x,
-                          top: page.imageLayout.y,
-                          width: page.imageLayout.width,
-                          height: page.imageLayout.height,
-                        }
+                      ? (() => {
+                          const box = clampLayoutToPage(page.imageLayout, pageSize.width, pageSize.height);
+                          return { position: "absolute" as const, left: box.x, top: box.y, width: box.width, height: box.height };
+                        })()
                       : {},
                   ]}
                 >
@@ -664,10 +691,10 @@ export function BookDocument({
 
             {page.sectionLabel && (
               <Text style={[styles.sectionKicker, { color: palette.primary }]}>
-                {page.sectionLabel.toUpperCase()}
+                {upperFor(page.sectionLabel, contentLanguage)}
               </Text>
             )}
-            <Blocks blocks={page.blocks} showAnswerKey={showAnswerKey} palette={palette} />
+            <Blocks blocks={clampedBlocks(page, pageSize)} showAnswerKey={showAnswerKey} palette={palette} />
             <GlossaryGrid glossary={page.glossary} palette={palette} />
 
             <Footer bookTitle={bookTitle} variantLabel={variantLabel} />

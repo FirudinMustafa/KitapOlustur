@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { projects, storyProjects } from "@/db/schema";
+import { isUuid } from "@/lib/uuid";
 
 // Faz G3: every project-scoped API route calls this before reading or
 // mutating anything. Returns the signed-in user's id on success, or a
@@ -19,6 +20,9 @@ export async function requireProjectOwner(projectId: string): Promise<string | N
     return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });
   }
 
+  if (!isUuid(projectId)) {
+    return NextResponse.json({ error: "Proje bulunamadı" }, { status: 404 });
+  }
   const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
   if (!project || project.ownerId !== userId) {
     return NextResponse.json({ error: "Proje bulunamadı" }, { status: 404 });
@@ -36,6 +40,9 @@ export async function requireStoryProjectOwner(storyProjectId: string): Promise<
     return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });
   }
 
+  if (!isUuid(storyProjectId)) {
+    return NextResponse.json({ error: "Hikaye bulunamadı" }, { status: 404 });
+  }
   const storyProject = await db.query.storyProjects.findFirst({ where: eq(storyProjects.id, storyProjectId) });
   if (!storyProject || storyProject.ownerId !== userId) {
     return NextResponse.json({ error: "Hikaye bulunamadı" }, { status: 404 });

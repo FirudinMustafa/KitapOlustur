@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,8 +18,11 @@ export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme();
   // next-themes only knows the stored theme on the client; rendering the
   // active state before mount would cause a hydration mismatch.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   const current = mounted ? (theme ?? "system") : null;
   const currentIndex = OPTIONS.findIndex((o) => o.value === current);

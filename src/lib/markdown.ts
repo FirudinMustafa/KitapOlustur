@@ -1,5 +1,6 @@
 import type { GeneratedUnit, GeneratedPage } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
+import { withUnitGlossary } from "@/lib/unit-glossary";
 
 const VARIANT_LABELS: Record<Variant, string> = {
   student_book: "Student Book",
@@ -11,9 +12,9 @@ const VARIANT_LABELS: Record<Variant, string> = {
 function pagesForVariant(unit: GeneratedUnit, variant: Variant): GeneratedPage[] {
   switch (variant) {
     case "student_book":
-      return unit.studentBookPages;
+      return unit.studentBookPages ?? [];
     case "workbook":
-      return unit.workbookPages;
+      return unit.workbookPages ?? [];
     case "teacher_book":
       return unit.teacherBookPages ?? [];
     case "test_booklet":
@@ -58,7 +59,7 @@ export function unitsToMarkdown(bookTitle: string, units: GeneratedUnit[], varia
   const body = units
     .map(
       (unit) =>
-        `## Unit ${unit.unitNumber}: ${unit.title}\n\n${renderPages(pagesForVariant(unit, variant), showAnswerKey)}`,
+        `## Unit ${unit.unitNumber}: ${unit.title}\n\n${renderPages(withUnitGlossary(unit, pagesForVariant(unit, variant), variant), showAnswerKey)}`,
     )
     .join("\n\n---\n\n");
 

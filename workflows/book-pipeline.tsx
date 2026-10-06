@@ -73,6 +73,7 @@ import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant, type BookDocumentSourceStyle } from "@/lib/pdf/BookDocument";
 import type { TrimSizeId } from "@/lib/pdf/page-geometry";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
+import { resetBookFonts } from "@/lib/pdf/fonts";
 import { buildEpub } from "@/lib/epub/BookEpub";
 
 type UnitOutline = BookOutline["units"][number];
@@ -1855,6 +1856,7 @@ async function assembleAndSaveBooks(
   isbn?: string | null,
   trimSize?: TrimSizeId,
   sourceStyle?: BookDocumentSourceStyle,
+  contentLanguage?: string,
 ) {
   "use step";
 
@@ -1869,6 +1871,8 @@ async function assembleAndSaveBooks(
 
   for (const variant of requestedVariants) {
     const markdown = unitsToMarkdown(bookTitle, units, variant);
+    // Fresh font objects per document - see resetBookFonts (src/lib/pdf/fonts.ts).
+    resetBookFonts();
     const pdfBuffer = await renderToBuffer(
       <BookDocument
         bookTitle={bookTitle}
@@ -1882,6 +1886,7 @@ async function assembleAndSaveBooks(
         isbn={isbn ?? undefined}
         trimSize={trimSize}
         sourceStyle={sourceStyle}
+        contentLanguage={contentLanguage}
       />,
     );
     // allowOverwrite: aynı gerekçe - bu step (assembleAndSaveBooks) birden
@@ -2123,6 +2128,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         assets.pageImages,
         ctx.project.isbn,
         ctx.project.trimSize,
+        undefined,
+        assets.outline.contentLanguage,
       );
       await setRunStatus(runId, "done", "Tamamlandı");
       return { runId, status: "done" as const };
@@ -2763,6 +2770,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       ctx.project.isbn,
       ctx.project.trimSize,
       sourceStyle,
+      outline.contentLanguage,
     );
 
     await setRunStatus(runId, "done", "Tamamlandı");
