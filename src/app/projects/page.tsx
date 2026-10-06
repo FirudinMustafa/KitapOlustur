@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
-import { desc, eq } from "drizzle-orm";
+import { LibraryBigIcon, PlusIcon } from "lucide-react";
 
-import { db } from "@/db/client";
-import { projects, generationRuns } from "@/db/schema";
-import { STATUS_LABELS, AWAITING_STATUSES, formatElapsedTurkish } from "@/lib/run-status";
+import { listProjectsWithLatestRun } from "@/lib/project-list";
+import { AWAITING_STATUSES } from "@/lib/run-status";
 import { Button } from "@/components/ui/button";
+import { PageContainer, PageHeader } from "@/components/app/page-header";
+import { ProjectCard } from "@/components/app/project-card";
+import { EmptyState } from "@/components/app/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -18,70 +20,49 @@ export default async function ProjectsPage() {
     return null;
   }
 
-  const allProjects = await db.query.projects.findMany({
-    where: eq(projects.ownerId, userId),
-    orderBy: [desc(projects.createdAt)],
-  });
-
-  const withRuns = await Promise.all(
-    allProjects.map(async (project) => {
-      const latestRun = await db.query.generationRuns.findFirst({
-        where: eq(generationRuns.projectId, project.id),
-        orderBy: [desc(generationRuns.createdAt)],
-      });
-      return { project, latestRun };
-    }),
-  );
+  const withRuns = await listProjectsWithLatestRun(userId);
+  const awaitingCount = withRuns.filter((r) => r.latestRun && AWAITING_STATUSES.has(r.latestRun.status)).length;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-12">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Projeler</h1>
-        <Button render={<Link href="/projects/new" />}>Yeni kitap yükle</Button>
-      </div>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Kütüphane"
+        title="Kitap projeleri"
+        description={
+          withRuns.length
+            ? `${withRuns.length} proje${awaitingCount ? ` · ${awaitingCount} tanesi onayını bekliyor` : ""}`
+            : "Ürettiğin tüm kitaplar burada listelenir."
+        }
+        actions={
+          <Button render={<Link href="/projects/new" />}>
+            <PlusIcon data-icon="inline-start" />
+            Yeni kitap
+          </Button>
+        }
+      />
 
-      {withRuns.length === 0 && (
-        <p className="mt-8 text-sm text-muted-foreground">Henüz bir proje yok. Başlamak için bir PDF yükle.</p>
+      {withRuns.length === 0 ? (
+        <EmptyState
+          className="mt-10"
+          icon={LibraryBigIcon}
+          title="Henüz bir proje yok"
+          description="Bir kaynak PDF yükle ya da sıfırdan bir kitap tasarla; orkestra gerisini halleder."
+          action={
+            <Button render={<Link href="/projects/new" />}>
+              <PlusIcon data-icon="inline-start" />
+              İlk kitabını oluştur
+            </Button>
+          }
+        />
+      ) : (
+        <ul className="mt-8 flex flex-col gap-2.5">
+          {withRuns.map((row) => (
+            <li key={row.project.id}>
+              <ProjectCard {...row} />
+            </li>
+          ))}
+        </ul>
       )}
-
-      <ul className="mt-8 flex flex-col gap-3">
-        {withRuns.map(({ project, latestRun }) => (
-          <li key={project.id}>
-            <Link
-              href={`/projects/${project.id}`}
-              className="flex items-center justify-between gap-4 rounded-xl bg-card p-4 text-card-foreground ring-1 ring-foreground/10 transition-colors hover:bg-accent hover:ring-primary/30"
-            >
-              <div>
-                <p className="font-medium text-foreground">{project.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {project.level ? `${project.level} · ` : ""}
-                  {new Date(project.createdAt).toLocaleString("tr-TR")}
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${
-                    latestRun?.status === "done"
-                      ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                      : latestRun?.status === "failed"
-                        ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-                        : latestRun && AWAITING_STATUSES.has(latestRun.status)
-                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                          : "bg-secondary text-secondary-foreground"
-                  }`}
-                >
-                  {latestRun ? STATUS_LABELS[latestRun.status] ?? latestRun.status : "—"}
-                </span>
-                {latestRun && AWAITING_STATUSES.has(latestRun.status) && (
-                  <span className="text-[10px] text-amber-700 dark:text-amber-400">
-                    {formatElapsedTurkish(new Date(latestRun.updatedAt))} bekliyor
-                  </span>
-                )}
-              </div>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
+    </PageContainer>
   );
 }

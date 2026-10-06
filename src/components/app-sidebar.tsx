@@ -5,6 +5,16 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
 import {
+  BookMarkedIcon,
+  BookOpenTextIcon,
+  ColumnsIcon,
+  LayoutDashboardIcon,
+  LibraryBigIcon,
+  PlusIcon,
+  SearchIcon,
+  SparklesIcon,
+} from "lucide-react";
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -18,7 +28,8 @@ import {
   SidebarMenuSkeleton,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { STATUS_LABELS, AWAITING_STATUSES } from "@/lib/run-status";
+import { StatusDot } from "@/components/app/status-badge";
+import { ThemeToggle } from "@/components/app/theme-toggle";
 
 // Faz "Arayüz yenileme" (2026-09-21, ROADMAP.md): a persistent, ChatGPT/
 // Claude-style sidebar - primary nav + a live "recents" list for both
@@ -35,9 +46,9 @@ import { STATUS_LABELS, AWAITING_STATUSES } from "@/lib/run-status";
 // SidebarMenuButton below uses `render={<Link .../>}`, not `asChild` +
 // nested children.
 const NAV_ITEMS = [
-  { href: "/projects", label: "Kitap Projeleri" },
-  { href: "/studio", label: "Hikaye Stüdyosu" },
-  { href: "/search", label: "Ara" },
+  { href: "/projects", label: "Kitap Projeleri", Icon: LibraryBigIcon },
+  { href: "/studio", label: "Hikaye Stüdyosu", Icon: SparklesIcon },
+  { href: "/search", label: "Ara", Icon: SearchIcon },
 ];
 
 type RecentProject = { id: string; name: string; latestRun: { status: string } | null };
@@ -82,11 +93,14 @@ export function AppSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="text-sidebar-primary" render={<Link href="/projects" />}>
-              <span className="flex size-6 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+            <SidebarMenuButton size="lg" tooltip="Kitap Orkestrası" render={<Link href="/" />}>
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sidebar-primary to-warm font-heading text-lg leading-none text-sidebar-primary-foreground shadow-sm">
                 K
               </span>
-              <span className="font-semibold">Kitap Orkestrası</span>
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate font-heading text-[15px] font-medium">Kitap Orkestrası</span>
+                <span className="truncate text-[11px] text-sidebar-foreground/60">AI kitap atölyesi</span>
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -96,24 +110,28 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => (
-                <SidebarMenuItem key={item.href}>
+              <SidebarMenuItem className="mb-1">
+                <SidebarMenuButton
+                  tooltip="Yeni kitap"
+                  className="bg-sidebar-primary text-sidebar-primary-foreground shadow-sm hover:bg-sidebar-primary/90 hover:text-sidebar-primary-foreground active:bg-sidebar-primary/90 active:text-sidebar-primary-foreground"
+                  render={<Link href="/projects/new" />}
+                >
+                  <PlusIcon />
+                  <span>Yeni kitap</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {NAV_ITEMS.map(({ href, label, Icon }) => (
+                <SidebarMenuItem key={href}>
                   <SidebarMenuButton
-                    isActive={pathname === item.href || pathname?.startsWith(item.href + "/")}
-                    render={<Link href={item.href} />}
+                    tooltip={label}
+                    isActive={(pathname === href || pathname?.startsWith(href + "/")) && pathname !== "/projects/new"}
+                    render={<Link href={href} />}
                   >
-                    {item.label}
+                    <Icon />
+                    <span>{label}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 hover:text-sidebar-primary-foreground"
-                  render={<Link href="/projects/new" />}
-                >
-                  + Yeni Kitap
-                </SidebarMenuButton>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -128,25 +146,31 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       isActive={pathname === `/projects/${currentProjectId}`}
+                      tooltip="Genel bakış"
                       render={<Link href={`/projects/${currentProjectId}`} />}
                     >
-                      Genel Bakış
+                      <LayoutDashboardIcon />
+                      <span>Genel bakış</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       isActive={pathname === `/projects/${currentProjectId}/dizilim`}
+                      tooltip="Dizilim"
                       render={<Link href={`/projects/${currentProjectId}/dizilim`} />}
                     >
-                      Dizilim
+                      <ColumnsIcon />
+                      <span>Dizilim</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       isActive={pathname?.startsWith(`/projects/${currentProjectId}/read/`) ?? false}
+                      tooltip="Oku"
                       render={<Link href={`/projects/${currentProjectId}/read/student_book`} />}
                     >
-                      Oku
+                      <BookOpenTextIcon />
+                      <span>Oku</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
@@ -157,8 +181,8 @@ export function AppSidebar() {
 
         <SidebarSeparator />
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Son Projeler</SidebarGroupLabel>
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel>Son projeler</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {recentProjects === null &&
@@ -178,12 +202,10 @@ export function AppSidebar() {
                     isActive={pathname === `/projects/${p.id}`}
                     render={<Link href={`/projects/${p.id}`} title={p.name} />}
                   >
+                    <BookMarkedIcon className="text-sidebar-foreground/50" />
                     <span className="truncate">{p.name}</span>
-                    {p.latestRun && AWAITING_STATUSES.has(p.latestRun.status) && (
-                      <span
-                        className="ml-auto size-1.5 shrink-0 rounded-full bg-amber-500"
-                        title={STATUS_LABELS[p.latestRun.status]}
-                      />
+                    {p.latestRun && p.latestRun.status !== "done" && (
+                      <StatusDot status={p.latestRun.status} className="ml-auto" />
                     )}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -192,8 +214,8 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Son Hikayeler</SidebarGroupLabel>
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel>Son hikayeler</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {recentStories === null &&
@@ -213,6 +235,7 @@ export function AppSidebar() {
                     isActive={pathname === `/studio/${s.id}`}
                     render={<Link href={`/studio/${s.id}`} title={s.title} />}
                   >
+                    <SparklesIcon className="text-sidebar-foreground/50" />
                     <span className="truncate">{s.title}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -222,10 +245,11 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="gap-2">
+        <ThemeToggle className="px-0.5 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center" />
         <SidebarMenu>
           <SidebarMenuItem>
-            <div className="flex items-center gap-2 px-2 py-1.5">
+            <div className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
               <UserButton />
               <span className="text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">Hesabım</span>
             </div>
