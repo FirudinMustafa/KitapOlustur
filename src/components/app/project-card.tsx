@@ -34,7 +34,7 @@ export function ProjectCard({ project, latestRun, className }: ProjectWithLatest
         className="flex h-12 w-9 shrink-0 items-end justify-center rounded-[3px_6px_6px_3px] pb-1.5 font-heading text-sm text-white shadow-sm ring-1 ring-black/5"
         style={{ background: `linear-gradient(135deg, oklch(0.6 0.12 ${hue}), oklch(0.45 0.11 ${(hue + 40) % 360}))` }}
       >
-        {project.name.trim().charAt(0).toLocaleUpperCase("tr-TR")}
+        {(project.name.match(/[p{L}p{N}]/u)?.[0] ?? "•").toLocaleUpperCase("tr-TR")}
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-heading text-base font-medium text-foreground">{project.name}</p>

@@ -1200,6 +1200,38 @@ async function archiveVariants(
   await db.update(generationRuns).set({ pendingVariants: null }).where(eq(generationRuns.id, runId));
 }
 
+// QA fix (2026-10-06): reviewers were handed internal bookkeeping - the
+// outline's sourcePageRange and every page's sourcePageNumber (synthetic
+// 1000+ counters in "sıfırdan" mode), plus layout/image-slot fields - and
+// flagged them as content problems ("Source page range mismatch: outline says
+// 1-10, content uses 1000-1003"). Those notes inflated issue counts and were
+// fed back to the writer as revision feedback. Reviewers now only see what a
+// reader would see.
+// JSON.stringify drops `undefined` values, so overriding a key with
+// undefined removes it from the prompt.
+function withoutPageBookkeeping(unit: GeneratedUnit) {
+  const strip = (pages: GeneratedUnit["studentBookPages"] | undefined) =>
+    pages?.map((page) => ({
+      ...page,
+      sourcePageNumber: undefined,
+      unitNumber: undefined,
+      imageLayout: undefined,
+      imageOverrideSourcePageNumber: undefined,
+      blocks: page.blocks.map((block) => ({ ...block, layout: undefined })),
+    }));
+  return {
+    ...unit,
+    studentBookPages: strip(unit.studentBookPages),
+    workbookPages: strip(unit.workbookPages),
+    teacherBookPages: strip(unit.teacherBookPages),
+    testBookletPages: strip(unit.testBookletPages),
+  };
+}
+
+function withoutOutlineBookkeeping(outlineUnit: UnitOutline) {
+  return { ...outlineUnit, sourcePageRange: undefined };
+}
+
 async function reviewUnit(runId: string, unitNumber: number, outlineUnit: UnitOutline, generated: GeneratedUnit) {
   "use step";
 
@@ -1211,8 +1243,8 @@ async function reviewUnit(runId: string, unitNumber: number, outlineUnit: UnitOu
       system:
         "You are a meticulous instructional editor. You check generated coursebook unit content against its planned outline and flag concrete structural and pedagogical problems.",
       prompt: [
-        `Planned unit outline (JSON):\n${JSON.stringify(outlineUnit)}`,
-        `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+        `Planned unit outline (JSON):\n${JSON.stringify(withoutOutlineBookkeeping(outlineUnit))}`,
+        `Generated unit content (JSON):\n${JSON.stringify(withoutPageBookkeeping(generated))}`,
         "Check: (1) content matches the outline's learning objectives and key terms, (2) the level is consistent throughout, (3) practice items are pedagogically sound with clear instructions, (4) the complementary side (student book vs workbook) is genuinely independent, distinct content, with a complete answer key where applicable. List concrete issues if any. Set passed=true only if there are no significant issues.",
       ].join("\n\n"),
     }),
@@ -1240,7 +1272,7 @@ async function reviewLanguageAccuracy(
         "You are a meticulous native-level proofreader and language editor. You check generated educational content strictly for language correctness - grammar, natural phrasing, spelling, punctuation, and terminology accuracy - not pedagogy or structure.",
       prompt: [
         `Content language (BCP-47): ${contentLanguage}`,
-        `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+        `Generated unit content (JSON):\n${JSON.stringify(withoutPageBookkeeping(generated))}`,
         "Read every heading, body text, practice item, answer key entry, and glossary entry - including any Teacher's Book pacing/lesson-plan notes and any Test Booklet exam questions/answer keys present in this unit's content. Flag any grammar mistakes, unnatural or awkward phrasing, spelling errors, or incorrect terminology. Be strict - this content will be printed in a real coursebook. Set passed=true only if the language is fully correct and natural throughout.",
       ].join("\n\n"),
     }),
@@ -1295,7 +1327,7 @@ async function reviewReadingLevel(
         "You are a curriculum specialist who checks whether a coursebook unit's actual difficulty matches its stated target level - vocabulary complexity, sentence length/structure, grammar concepts assumed, and how much scaffolding is given.",
       prompt: [
         `Target level: "${targetLevel}" (content language: ${contentLanguage})`,
-        `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+        `Generated unit content (JSON):\n${JSON.stringify(withoutPageBookkeeping(generated))}`,
         vocabularyEvidence,
         "Judge whether the reading/language difficulty of the explanations, examples, and practice items is appropriate for this level - not too advanced (assumes vocabulary/grammar a learner at this level wouldn't have yet) and not too simplistic (patronizing, or well below the stated level). List concrete issues (with the specific word/sentence/section) if the level doesn't match. Set passed=true only if the difficulty is genuinely appropriate throughout.",
       ]
@@ -1328,7 +1360,7 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
       system:
         "You are a content-safety reviewer for a children's/general-audience educational coursebook. You check generated text for anything unsafe or inappropriate for a school setting - you do not judge pedagogy, grammar, or level.",
       prompt: [
-        `Generated unit content (JSON):\n${JSON.stringify(generated)}`,
+        `Generated unit content (JSON):\n${JSON.stringify(withoutPageBookkeeping(generated))}`,
         "Check every heading, body text, practice item, example, and glossary entry - including any Teacher's Book pacing/lesson-plan notes and any Test Booklet exam questions/answer keys present in this unit's content - for: violence or gore, sexual content, hate speech or discriminatory content, references to drugs/alcohol/self-harm, and any other content unsuitable for a school-age audience. This is educational rewriting of a real textbook, so most content will be entirely fine - only flag genuine, concrete problems, not stylistic preferences. Set passed=true unless there is an actual safety issue.",
       ].join("\n\n"),
     }),
@@ -1363,7 +1395,7 @@ async function reviewSkillBalance(runId: string, unitNumber: number, generated: 
       system:
         "You are a curriculum specialist who checks whether a coursebook unit exercises a reasonable mix of the four language skills - reading, writing, listening, speaking. You are not grading quality or level here, only which skills are concretely present.",
       prompt: [
-        `Generated unit content (JSON, including any listeningAudio/dialogueLines - the clearest signal of listening/speaking content):\n${JSON.stringify(generated)}`,
+        `Generated unit content (JSON, including any listeningAudio/dialogueLines - the clearest signal of listening/speaking content):\n${JSON.stringify(withoutPageBookkeeping(generated))}`,
         "Classify which of reading, writing, listening, speaking are concretely exercised in this unit (a reading passage or comprehension exercise = reading; a written-response prompt or writing exercise = writing; listeningAudio/an audio script = listening; dialogueLines or a roleplay/conversation prompt meant to be spoken aloud = speaking). It is normal and acceptable for a real coursebook unit to focus on only two or three skills - do NOT fail a unit just for not covering all four. Set passed=false ONLY if the unit is genuinely lopsided: at most ONE skill is represented (e.g. it's all reading/explanation with nothing approaching writing, listening, or speaking). List which skill(s) are missing in issues, phrased concretely (e.g. \"Bu ünite hiç dinleme veya konuşma içeriği barındırmıyor\").",
       ].join("\n\n"),
     }),
