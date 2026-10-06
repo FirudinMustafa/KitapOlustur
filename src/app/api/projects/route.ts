@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { start } from "workflow/api";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
@@ -9,6 +9,7 @@ import { bookPipelineWorkflow } from "@workflows/book-pipeline";
 import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
 import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
 import { isOwnBlobUrl } from "@/lib/blob-url";
+import { listProjectsWithLatestRun } from "@/lib/project-list";
 
 const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
 // Denetim sonrası düzeltme (2026-09-23): variantCount'un 1-4 kelepçelemesiyle
@@ -24,22 +25,8 @@ export async function GET() {
     return NextResponse.json({ error: "Giriş yapmanız gerekiyor" }, { status: 401 });
   }
 
-  const rows = await db.query.projects.findMany({
-    where: eq(projects.ownerId, userId),
-    orderBy: [desc(projects.createdAt)],
-  });
-
-  const withRuns = await Promise.all(
-    rows.map(async (project) => {
-      const latestRun = await db.query.generationRuns.findFirst({
-        where: eq(generationRuns.projectId, project.id),
-        orderBy: [desc(generationRuns.createdAt)],
-      });
-      return { ...project, latestRun: latestRun ?? null };
-    }),
-  );
-
-  return NextResponse.json({ projects: withRuns });
+  const rows = await listProjectsWithLatestRun(userId);
+  return NextResponse.json({ projects: rows.map(({ project, latestRun }) => ({ ...project, latestRun })) });
 }
 
 export async function POST(request: Request) {
