@@ -14,6 +14,7 @@ import {
 import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
 import { resolvePageImageUrl } from "@/lib/page-image";
 import { withUnitGlossary } from "@/lib/unit-glossary";
+import { itemText } from "@/lib/item-text";
 
 // EPUB export - the digital/accessible sibling to BookDocument.tsx's PDF.
 // Deliberately hand-rolled with jszip rather than an epub-generation
@@ -201,7 +202,7 @@ th, td { border: 1px solid #d1d5db; padding: 0.4em; text-align: left; font-size:
           .map(
             (block) =>
               `<div class="answer-key"><p class="answer-key-label">${escapeXml(block.heading)}</p><ol>${block
-                .answerKey!.map((a) => `<li>${escapeXml(a)}</li>`)
+                .answerKey!.map((a) => `<li>${escapeXml(itemText(a))}</li>`)
                 .join("")}</ol></div>`,
           )
           .join("\n");

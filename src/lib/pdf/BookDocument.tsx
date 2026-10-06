@@ -11,6 +11,7 @@ import { BLOCK_COLORS } from "@/lib/block-colors";
 import { derivePaletteFromColors } from "./derive-palette";
 import { withUnitGlossary } from "@/lib/unit-glossary";
 import { blocksForRender, clampLayoutToPage } from "@/lib/layout-merge";
+import { itemText } from "@/lib/item-text";
 
 registerBookFonts();
 
@@ -398,7 +399,7 @@ function BlockCard({ block, showAnswerKey, palette }: { block: ContentBlock; sho
           </View>
           {block.items?.map((item, k) => (
             <Text style={styles.item} key={k}>
-              {k + 1}. {item}
+              {k + 1}. {itemText(item)}
             </Text>
           ))}
           <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />
@@ -407,7 +408,7 @@ function BlockCard({ block, showAnswerKey, palette }: { block: ContentBlock; sho
               <Text style={styles.answerKeyLabel}>ANSWER KEY</Text>
               {block.answerKey.map((answer, k) => (
                 <Text style={styles.item} key={k}>
-                  {k + 1}. {answer}
+                  {k + 1}. {itemText(answer)}
                 </Text>
               ))}
             </View>
@@ -720,7 +721,7 @@ export function BookDocument({
                     <Text style={styles.answerKeyLabel}>{block.heading}</Text>
                     {(block.answerKey ?? []).map((answer, j) => (
                       <Text style={styles.item} key={j}>
-                        {j + 1}. {answer}
+                        {j + 1}. {itemText(answer)}
                       </Text>
                     ))}
                   </View>

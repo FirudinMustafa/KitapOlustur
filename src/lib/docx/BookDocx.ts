@@ -17,6 +17,7 @@ import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { VARIANT_LABELS, pagesForVariant, seededShuffle, fetchAsset } from "@/lib/content-html";
 import { resolvePageImageUrl } from "@/lib/page-image";
 import { withUnitGlossary } from "@/lib/unit-glossary";
+import { itemText } from "@/lib/item-text";
 
 // DOCX export - the "editor can actually mark it up in Word/Google Docs"
 // format flagged as the top remaining gap in ROADMAP.md's project-wide
@@ -103,7 +104,7 @@ function renderBlockParagraphs(block: ContentBlock, showAnswerKey: boolean): (Pa
   }
   if (block.items?.length) {
     for (const [i, item] of block.items.entries()) {
-      out.push(new Paragraph({ text: `${i + 1}. ${item}` }));
+      out.push(new Paragraph({ text: `${i + 1}. ${itemText(item)}` }));
     }
   }
   out.push(...(renderInteractiveParagraphs(block, showAnswerKey) as (Paragraph | Table)[]));
@@ -112,7 +113,7 @@ function renderBlockParagraphs(block: ContentBlock, showAnswerKey: boolean): (Pa
       new Paragraph({ children: [new TextRun({ text: "ANSWER KEY", bold: true, size: 18 })], spacing: { before: 100 } }),
     );
     for (const [i, a] of block.answerKey.entries()) {
-      out.push(new Paragraph({ text: `${i + 1}. ${a}` }));
+      out.push(new Paragraph({ text: `${i + 1}. ${itemText(a)}` }));
     }
   }
   return out;

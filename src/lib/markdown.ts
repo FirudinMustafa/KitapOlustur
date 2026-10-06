@@ -1,6 +1,7 @@
 import type { GeneratedUnit, GeneratedPage } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { withUnitGlossary } from "@/lib/unit-glossary";
+import { itemText } from "@/lib/item-text";
 
 const VARIANT_LABELS: Record<Variant, string> = {
   student_book: "Student Book",
@@ -29,11 +30,11 @@ function renderPages(pages: GeneratedPage[], showAnswerKey: boolean): string {
         const parts = [`### ${block.heading}`, block.body];
         if (block.items?.length) {
           parts.push(`**${block.kind.toUpperCase()}**`);
-          parts.push(block.items.map((item, i) => `${i + 1}. ${item}`).join("\n"));
+          parts.push(block.items.map((item, i) => `${i + 1}. ${itemText(item)}`).join("\n"));
           if (showAnswerKey && block.answerKey?.length) {
             parts.push(
               `<details><summary>Answer key</summary>\n\n${block.answerKey
-                .map((a, i) => `${i + 1}. ${a}`)
+                .map((a, i) => `${i + 1}. ${itemText(a)}`)
                 .join("\n")}\n\n</details>`,
             );
           }

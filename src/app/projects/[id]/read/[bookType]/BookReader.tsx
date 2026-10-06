@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { GeneratedUnit, GeneratedPage } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
@@ -41,6 +42,8 @@ export function BookReader({
   bookTitle,
   level,
   variant,
+  projectId,
+  availableTypes,
   units,
   coverImageSrc,
   pageImages,
@@ -51,6 +54,8 @@ export function BookReader({
   bookTitle: string;
   level: string | null;
   variant: Variant;
+  projectId: string;
+  availableTypes: Variant[];
   units: GeneratedUnit[];
   coverImageSrc?: string | null;
   pageImages: Record<number, string>;
@@ -102,6 +107,26 @@ export function BookReader({
           {VARIANT_LABELS[variant]}
           {level ? ` · ${level}` : ""}
         </p>
+        {availableTypes.length > 1 && (
+          <div className="mt-3 flex flex-wrap gap-1">
+            {(["student_book", "workbook", "teacher_book", "test_booklet"] as Variant[])
+              .filter((t) => availableTypes.includes(t))
+              .map((t) => (
+                <Link
+                  key={t}
+                  href={`/projects/${projectId}/read/${t}`}
+                  aria-current={t === variant ? "page" : undefined}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                    t === variant
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  {VARIANT_LABELS[t]}
+                </Link>
+              ))}
+          </div>
+        )}
         <div className="mt-3 flex gap-1 rounded-md bg-muted p-0.5 text-xs">
           <button
             onClick={() => setViewMode("list")}

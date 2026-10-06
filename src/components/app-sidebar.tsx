@@ -167,7 +167,7 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={pathname?.startsWith(`/projects/${currentProjectId}/read/`) ?? false}
                       tooltip="Oku"
-                      render={<Link href={`/projects/${currentProjectId}/read/student_book`} />}
+                      render={<Link href={`/projects/${currentProjectId}/read`} />}
                     >
                       <BookOpenTextIcon />
                       <span>Oku</span>

@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import { isUuid } from "@/lib/uuid";
 import { auth } from "@clerk/nextjs/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { projects, generationRuns, generatedBooks, type BookType } from "@/db/schema";
+import { projects, generatedBooks, type BookType } from "@/db/schema";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { BookReader } from "./BookReader";
+import { latestDoneRun } from "@/lib/project-runs";
 
 export const dynamic = "force-dynamic";
 
@@ -41,10 +42,7 @@ export default async function BookReaderPage({
   }
   const variant = bookType as Variant;
 
-  const run = await db.query.generationRuns.findFirst({
-    where: eq(generationRuns.projectId, id),
-    orderBy: [desc(generationRuns.createdAt)],
-  });
+  const run = await latestDoneRun(id);
   if (!run) notFound();
 
   const book = await db.query.generatedBooks.findFirst({
@@ -53,11 +51,17 @@ export default async function BookReaderPage({
   });
   if (!book || !book.content) notFound();
 
+  const availableTypes = (await db.query.generatedBooks.findMany({ where: eq(generatedBooks.runId, run.id) }))
+    .filter((b) => b.content)
+    .map((b) => b.bookType as Variant);
+
   return (
     <BookReader
       bookTitle={project.name}
       level={project.level}
       variant={variant}
+      projectId={id}
+      availableTypes={Array.from(new Set(availableTypes))}
       units={book.content as GeneratedUnit[]}
       coverImageSrc={run.coverImageUrl}
       pageImages={(run.pageImageUrls as Record<number, string> | null) ?? {}}

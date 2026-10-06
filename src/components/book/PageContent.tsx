@@ -5,6 +5,7 @@ import type { ContentBlock, GeneratedPage, InteractiveExercise, ListeningAudio, 
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { blocksForRender } from "@/lib/layout-merge";
+import { itemText } from "@/lib/item-text";
 
 // Extracted from BookReader.tsx ("Dizilim → Gerçek Kitap") so the merged
 // Dizilim flip-book preview can render the exact same real content (all
@@ -236,7 +237,7 @@ function AnswerKeyToggle({ answerKey }: { answerKey: string[] }) {
       {open && (
         <ol className="mt-1 list-decimal pl-5 text-sm text-foreground/80">
           {answerKey.map((a, i) => (
-            <li key={i}>{a}</li>
+            <li key={i}>{itemText(a)}</li>
           ))}
         </ol>
       )}
@@ -292,7 +293,7 @@ export function BlockView({
       {!!block.items?.length && (
         <ol className="mt-2 list-decimal pl-5 text-sm text-foreground">
           {block.items.map((item, i) => (
-            <li key={i}>{item}</li>
+            <li key={i}>{itemText(item)}</li>
           ))}
         </ol>
       )}

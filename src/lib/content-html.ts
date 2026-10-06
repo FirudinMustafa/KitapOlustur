@@ -1,5 +1,6 @@
 import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
+import { itemText } from "@/lib/item-text";
 
 // Shared (X)HTML-rendering helpers for the two container formats that both
 // turn a GeneratedUnit[] into real HTML content: EPUB (src/lib/epub/BookEpub.ts)
@@ -114,12 +115,12 @@ function renderInteractiveHtml(block: ContentBlock, showAnswerKey: boolean): str
 // field existed.
 export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): string {
   const items = block.items?.length
-    ? `<ol class="items">${block.items.map((item) => `<li>${escapeXml(item)}</li>`).join("")}</ol>`
+    ? `<ol class="items">${block.items.map((item) => `<li>${escapeXml(itemText(item))}</li>`).join("")}</ol>`
     : "";
   const answerKey =
     showAnswerKey && block.answerKey?.length
       ? `<div class="answer-key"><p class="answer-key-label">ANSWER KEY</p><ol>${block.answerKey
-          .map((a) => `<li>${escapeXml(a)}</li>`)
+          .map((a) => `<li>${escapeXml(itemText(a))}</li>`)
           .join("")}</ol></div>`
       : "";
   return `<section class="block block-${block.kind}">
