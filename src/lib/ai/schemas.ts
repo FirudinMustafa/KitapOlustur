@@ -20,6 +20,53 @@ export const pageTypeEnum = z.enum([
 ]);
 export type PageType = z.infer<typeof pageTypeEnum>;
 
+// "Kaynağa görsel sadakat" (2026-09-28, ROADMAP.md): the source PDF is
+// already sent to the model as a `file` part (see extractPageMap in
+// book-pipeline.tsx), so the model can already see its visual design - this
+// schema just asks it to also report what it sees, so the generated book
+// can be reskinned with the source's actual color palette/logo/density
+// instead of always falling back to the pipeline's generic fixed template.
+// Deliberately scoped to only what BookDocument.tsx can safely reuse
+// without copying the source's actual design (border/frame pattern,
+// footer/header wording) - those are left out on purpose, per user
+// decision, to avoid replicating a copyrighted source's literal layout.
+export const sourceVisualStyleSchema = z.object({
+  dominantColors: z
+    .array(z.string())
+    .max(4)
+    .optional()
+    .describe("This page's dominant colors (background, accent bars, headings) - hex codes if legible, plain English color names otherwise"),
+  hasBrandMark: z.boolean().describe("Whether a logo/brand mark (not a content photo) appears on this page"),
+  brandMarkPosition: z
+    .enum(["top_left", "top_right", "bottom_left", "bottom_right", "top_center", "bottom_center", "other"])
+    .nullable()
+    .optional()
+    .describe("Roughly where the brand mark sits, if hasBrandMark is true"),
+  layoutDensity: z
+    .enum(["compact", "moderate", "spacious"])
+    .optional()
+    .describe("Compact worksheet-style page packing vs. spacious textbook-style whitespace"),
+  // Faz B ("kaynağa yakın bölge-tabanlı mirroring", 2026-09-28): a coarse,
+  // named "where does the image/text sit" template - not pixel coordinates.
+  // zone-layout.ts turns this into real block.layout/imageLayout coordinates
+  // deterministically, so the model only has to classify the shape it sees,
+  // never invent raw geometry (which models are bad at and which would risk
+  // copying the source's literal pixel layout too closely).
+  layoutZone: z
+    .enum([
+      "image_top_text_bottom",
+      "image_bottom_text_top",
+      "image_left_text_right",
+      "image_right_text_left",
+      "two_column",
+      "full_width_text",
+      "full_width_image",
+    ])
+    .optional()
+    .describe("This page's coarse image/text arrangement - the closest match, not a precise measurement"),
+});
+export type SourceVisualStyle = z.infer<typeof sourceVisualStyleSchema>;
+
 export const sourcePageSchema = z.object({
   pageNumber: z.number(),
   pageType: pageTypeEnum,
@@ -39,6 +86,7 @@ export const sourcePageSchema = z.object({
     .string()
     .optional()
     .describe("If hasImage is true: describe the photo/illustration - subject, scene, style"),
+  visualStyle: sourceVisualStyleSchema.optional(),
 });
 export type SourcePage = z.infer<typeof sourcePageSchema>;
 

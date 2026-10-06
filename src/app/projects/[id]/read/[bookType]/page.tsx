@@ -59,6 +59,9 @@ export default async function BookReaderPage({
       units={book.content as GeneratedUnit[]}
       coverImageSrc={run.coverImageUrl}
       pageImages={(run.pageImageUrls as Record<number, string> | null) ?? {}}
+      logoUrl={run.userLogoUrl}
+      logoPosition={run.logoPosition}
+      paletteColors={(run.paletteColors as string[] | null) ?? undefined}
     />
   );
 }

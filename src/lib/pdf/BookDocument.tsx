@@ -8,6 +8,7 @@ import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 import { resolvePageImageUrl } from "@/lib/page-image";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF } from "./fonts";
 import { BLOCK_COLORS } from "@/lib/block-colors";
+import { derivePaletteFromColors } from "./derive-palette";
 
 registerBookFonts();
 
@@ -45,6 +46,36 @@ export const PALETTE: Record<Variant, { primary: string; primaryDark: string; pr
   workbook: { primary: "#0d9488", primaryDark: "#115e59", primaryLight: "#f0fdfa", accent: "#f97316" },
   teacher_book: { primary: "#7c3aed", primaryDark: "#4c1d95", primaryLight: "#f5f3ff", accent: "#f59e0b" },
   test_booklet: { primary: "#dc2626", primaryDark: "#7f1d1d", primaryLight: "#fef2f2", accent: "#f59e0b" },
+};
+
+// "Kaynağa görsel sadakat" (2026-09-28, ROADMAP.md): the pipeline's
+// captured read on the uploaded source PDF's visual style - undefined (or
+// each field individually undefined/empty) means "no source to mirror" or
+// "nothing detected", and every consumer below falls back to the existing
+// fixed PALETTE/no-logo/default-density behavior, so a "sıfırdan" (no
+// source PDF) project's output is byte-for-byte unchanged from before this
+// existed.
+export type BrandMarkPosition = "top_left" | "top_right" | "bottom_left" | "bottom_right" | "top_center" | "bottom_center" | "other";
+export type BookDocumentSourceStyle = {
+  dominantColors?: string[];
+  logoUrl?: string | null;
+  logoPosition?: BrandMarkPosition | null;
+  density?: "compact" | "moderate" | "spacious";
+};
+
+// Fixed pixel offsets for the small cover-page logo, keyed by the detected
+// position - "other"/unset falls back to top_right, since that's the most
+// common real-world placement (matches the British Council source this
+// feature was built against) and a wrong guess here is harmless (a logo in
+// a slightly-off corner beats no logo at all).
+const LOGO_POSITION_STYLE: Record<BrandMarkPosition, { top?: number; bottom?: number; left?: number; right?: number }> = {
+  top_left: { top: 24, left: 24 },
+  top_right: { top: 24, right: 24 },
+  top_center: { top: 24, left: 0, right: 0 },
+  bottom_left: { bottom: 24, left: 24 },
+  bottom_right: { bottom: 24, right: 24 },
+  bottom_center: { bottom: 24, left: 0, right: 0 },
+  other: { top: 24, right: 24 },
 };
 
 const VARIANT_LABELS: Record<Variant, string> = {
@@ -143,7 +174,10 @@ const styles = StyleSheet.create({
   // the given width rather than stretching to fill the flex box.
   coverIllustration: { width: "100%", height: "100%", objectFit: "cover" },
   coverPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  pageIllustrationWrap: { borderRadius: 8, overflow: "hidden", marginBottom: 4, maxHeight: 170 },
+  // maxHeight deliberately omitted here - set inline per-render from
+  // sourceStyle.density (BookDocument's pageImageMaxHeight), defaulting to
+  // the original 170 when there's no density signal.
+  pageIllustrationWrap: { borderRadius: 8, overflow: "hidden", marginBottom: 4 },
   pageIllustration: { width: "100%", objectFit: "cover" },
   // @react-pdf/renderer's Image component has no `alt` prop - PDF/UA tagged
   // accessibility text isn't something this library supports (confirmed in
@@ -152,6 +186,17 @@ const styles = StyleSheet.create({
   // same prompt used to generate it. See ROADMAP.md's project-wide
   // assessment (2026-09-20).
   pageIllustrationCaption: { fontSize: 8, color: "#6b7280", fontStyle: "italic", marginBottom: 14 },
+  coverLogoBadge: {
+    position: "absolute",
+    width: 52,
+    height: 52,
+    backgroundColor: "#ffffff",
+    borderRadius: 8,
+    padding: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  coverLogo: { width: "100%", height: "100%", objectFit: "contain" },
   coverPill: {
     fontFamily: NOTO_SANS, fontWeight: 700,
     fontSize: 9,
@@ -477,6 +522,7 @@ export function BookDocument({
   generatedAt,
   isbn,
   trimSize = "a4",
+  sourceStyle,
 }: {
   bookTitle: string;
   variant: Variant;
@@ -488,9 +534,15 @@ export function BookDocument({
   generatedAt?: string;
   isbn?: string;
   trimSize?: TrimSizeId;
+  sourceStyle?: BookDocumentSourceStyle;
 }) {
   const variantLabel = VARIANT_LABELS[variant];
-  const palette = PALETTE[variant];
+  // Falls back to the original fixed PALETTE[variant] whenever there's no
+  // source to mirror (sıfırdan mode) or the source's colors didn't parse -
+  // see derivePaletteFromColors's own doc comment for the parsing rules.
+  const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? PALETTE[variant];
+  const logoStyle = sourceStyle?.logoUrl ? LOGO_POSITION_STYLE[sourceStyle.logoPosition ?? "top_right"] : null;
+  const pageImageMaxHeight = sourceStyle?.density === "compact" ? 120 : sourceStyle?.density === "spacious" ? 210 : 170;
   const pageSize = { width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt };
   // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
   // here despite generateTestBookletSide/generateCumulativeAssessment always
@@ -510,6 +562,12 @@ export function BookDocument({
             <Circle cx="110" cy="95" r="3" fill="#ffffff" opacity={0.5} />
             <Circle cx="60" cy="110" r="3" fill="#ffffff" opacity={0.5} />
           </Svg>
+          {logoStyle && sourceStyle?.logoUrl && (
+            <View style={[styles.coverLogoBadge, logoStyle]}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop, see pageIllustrationCaption's comment above */}
+              <Image src={sourceStyle.logoUrl} style={styles.coverLogo} />
+            </View>
+          )}
           <Text style={styles.coverKicker}>{level.toUpperCase()}</Text>
           <Text style={styles.coverTitle}>{bookTitle}</Text>
           <Text style={styles.coverSubtitle}>{variantLabel}</Text>
@@ -577,6 +635,7 @@ export function BookDocument({
                 <View
                   style={[
                     styles.pageIllustrationWrap,
+                    { maxHeight: pageImageMaxHeight },
                     // Faz "Sayfa Dizilimi Editörü": same opt-in absolute
                     // positioning as BlockCard's `layout` field, see there
                     // for the pagination-reflow caveat.

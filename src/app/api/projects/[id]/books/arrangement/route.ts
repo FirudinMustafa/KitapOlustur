@@ -10,6 +10,13 @@ import { generatedUnitSchema, type GeneratedUnit, type BookOutline } from "@/lib
 
 const patchBodySchema = z.object({
   units: z.array(generatedUnitSchema),
+  // Faz C2 ("kullanıcının kendi görselini ekleyebilmesi", 2026-09-28):
+  // optional partial update to generationRuns.pageImageUrls, keyed by
+  // sourcePageNumber - same "Record<number,string>" shape the pipeline's own
+  // generateUnitImages step already writes to. Merged (not replaced) into
+  // the run's existing pageImageUrls so uploading one page's image never
+  // drops every other page's AI-generated image.
+  pageImages: z.record(z.string(), z.string()).optional(),
 });
 
 async function loadLatestDoneRun(projectId: string) {
@@ -99,5 +106,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     .set({ outline: { ...outlineWrapper, outline: { ...outlineWrapper.outline, units: renumberedOutlineUnits } } })
     .where(eq(extractedOutlines.id, outlineRow.id));
 
-  return NextResponse.json({ ok: true, units: renumberedUnits });
+  let pageImages = (run.pageImageUrls as Record<string, string> | null) ?? {};
+  if (body.data.pageImages) {
+    pageImages = { ...pageImages, ...body.data.pageImages };
+    await db.update(generationRuns).set({ pageImageUrls: pageImages }).where(eq(generationRuns.id, run.id));
+  }
+
+  return NextResponse.json({ ok: true, units: renumberedUnits, pageImages });
 }

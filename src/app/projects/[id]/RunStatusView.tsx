@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { upload as uploadToBlob } from "@vercel/blob/client";
 import { BOOK_TYPE_LABELS, formatElapsedTurkish } from "@/lib/run-status";
 import type { UnitProgress } from "@/lib/unit-progress";
 import { PipelineStageTracker } from "./PipelineStageTracker";
@@ -216,6 +217,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const [rerunning, setRerunning] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approvalUnitLimit, setApprovalUnitLimit] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const [submittingLogo, setSubmittingLogo] = useState(false);
   const [assembleTypes, setAssembleTypes] = useState<Set<string>>(new Set());
   const [assembling, setAssembling] = useState(false);
   const [selectingVariant, setSelectingVariant] = useState(false);
@@ -301,7 +305,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
     submittingFeedback ||
     approvingContent ||
     submittingImageReview ||
-    approvingFinal;
+    approvingFinal ||
+    submittingLogo;
 
   async function refresh() {
     const fresh = await fetch(`/api/projects/${projectId}`);
@@ -335,6 +340,44 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       if (res.ok) await refresh();
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function handleLogoUpload() {
+    if (!logoFile) return;
+    setSubmittingLogo(true);
+    try {
+      const blob = await uploadToBlob(logoFile.name, logoFile, {
+        access: "public",
+        handleUploadUrl: "/api/blob/upload-logo",
+        contentType: logoFile.type,
+      });
+      const res = await fetch(`/api/projects/${projectId}/approve-logo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logoUrl: blob.url, skip: false }),
+      });
+      if (res.ok) {
+        setLogoFile(null);
+        setLogoPreviewUrl(null);
+        await refresh();
+      }
+    } finally {
+      setSubmittingLogo(false);
+    }
+  }
+
+  async function handleLogoSkip() {
+    setSubmittingLogo(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/approve-logo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logoUrl: null, skip: true }),
+      });
+      if (res.ok) await refresh();
+    } finally {
+      setSubmittingLogo(false);
     }
   }
 
@@ -737,6 +780,56 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               className="h-9 rounded-full px-4 text-xs"
             >
               Reddet
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {run?.status === "awaiting_logo_upload" && (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Kaynak PDF&apos;te bir logo tespit edildi
+            <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
+              ({formatElapsedTurkish(new Date(run.updatedAt))} bekliyor)
+            </span>
+          </h2>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            Kendi logonuzu yüklerseniz üretilen kitaba yerleştirilir. Yüklemezseniz logo alanı boş bırakılır.
+          </p>
+          <div className="mt-3 flex items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-amber-800 dark:text-amber-300">Logo dosyası (opsiyonel)</label>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setLogoFile(f);
+                  setLogoPreviewUrl(f ? URL.createObjectURL(f) : null);
+                }}
+                className="text-xs"
+              />
+            </div>
+            {logoPreviewUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoPreviewUrl} alt="Logo önizleme" className="h-9 w-9 rounded border border-border object-contain" />
+            )}
+            <Button
+              onClick={handleLogoUpload}
+              disabled={submittingLogo || !logoFile}
+              size="sm"
+              className="h-9 rounded-full bg-amber-600 px-4 text-xs text-white hover:bg-amber-700"
+            >
+              {submittingLogo ? "Gönderiliyor…" : "Yükle ve devam et"}
+            </Button>
+            <Button
+              onClick={handleLogoSkip}
+              disabled={submittingLogo}
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-full px-4 text-xs"
+            >
+              Logo yok / atla
             </Button>
           </div>
         </div>

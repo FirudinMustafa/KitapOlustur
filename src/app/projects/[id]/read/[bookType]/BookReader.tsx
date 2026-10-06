@@ -4,7 +4,10 @@ import { useState } from "react";
 import type { GeneratedUnit, GeneratedPage } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { KaraokeAudio, PageView } from "@/components/book/PageContent";
+import { BookFlipViewer, type FlipPageEntry } from "@/components/book/BookFlipViewer";
 import { resolvePageImageUrl } from "@/lib/page-image";
+import { resolveLogoPositionStyle } from "@/lib/logo-position";
+import { derivePaletteFromColors } from "@/lib/pdf/derive-palette";
 
 const VARIANT_LABELS: Record<Variant, string> = {
   student_book: "Student Book",
@@ -40,6 +43,9 @@ export function BookReader({
   units,
   coverImageSrc,
   pageImages,
+  logoUrl,
+  logoPosition,
+  paletteColors,
 }: {
   bookTitle: string;
   level: string | null;
@@ -47,9 +53,26 @@ export function BookReader({
   units: GeneratedUnit[];
   coverImageSrc?: string | null;
   pageImages: Record<number, string>;
+  // "Kaynağa görsel sadakat" web parity (2026-09-28): same source-derived
+  // logo/palette data BookDocument.tsx (PDF export) already renders - see
+  // generationRuns.userLogoUrl/logoPosition/paletteColors in schema.ts.
+  // Undefined/null on every field (a "sıfırdan" project, or a source PDF
+  // with no detected brand mark/palette) means the cover renders exactly as
+  // before this existed.
+  logoUrl?: string | null;
+  logoPosition?: string | null;
+  paletteColors?: string[];
 }) {
   const unitsWithPages = units.filter((u) => pagesForVariant(u, variant).length > 0);
+  const palette = derivePaletteFromColors(paletteColors);
+  const accentStyle = palette ? { borderColor: palette.primary } : undefined;
   const [activeUnit, setActiveUnit] = useState(unitsWithPages[0]?.unitNumber ?? null);
+  // Faz C1 ("gerçek sayfa-çevirmeli okuma deneyimi", 2026-09-28): the
+  // ArrangementEditor's flip-book preview (BookFlipViewer, react-pageflip)
+  // was previously only reachable from Dizilim, a post-hoc editor - readers
+  // never saw it. "Liste" (the pre-existing scroll-through-one-unit view)
+  // stays the default so nothing changes for anyone who doesn't switch modes.
+  const [viewMode, setViewMode] = useState<"list" | "flip">("list");
   // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
   // here despite always generating an answer key - it was silently dropped.
   const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
@@ -66,6 +89,10 @@ export function BookReader({
   );
   const unmatchedAudio = current?.listeningAudio?.filter((a) => !matchedBlockRefs.has(a.blockRef)) ?? [];
 
+  const flatPages: FlipPageEntry[] = unitsWithPages.flatMap((u) =>
+    pagesForVariant(u, variant).map((page, index) => ({ page, unitNumber: u.unitNumber, unitTitle: u.title, index })),
+  );
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8 lg:flex-row">
       <nav className="w-full shrink-0 lg:w-56">
@@ -74,14 +101,31 @@ export function BookReader({
           {VARIANT_LABELS[variant]}
           {level ? ` · ${level}` : ""}
         </p>
-        <ul className="mt-4 flex flex-col gap-1">
+        <div className="mt-3 flex gap-1 rounded-md bg-muted p-0.5 text-xs">
+          <button
+            onClick={() => setViewMode("list")}
+            className={`flex-1 rounded px-2 py-1 ${viewMode === "list" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground"}`}
+          >
+            Liste
+          </button>
+          <button
+            onClick={() => setViewMode("flip")}
+            className={`flex-1 rounded px-2 py-1 ${viewMode === "flip" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground"}`}
+          >
+            Sayfa çevir
+          </button>
+        </div>
+        <ul className={`mt-4 flex flex-col gap-1 ${viewMode === "flip" ? "opacity-50" : ""}`}>
           {unitsWithPages.map((unit) => (
             <li key={unit.unitNumber}>
               <button
                 onClick={() => setActiveUnit(unit.unitNumber)}
+                style={unit.unitNumber === activeUnit && palette ? { backgroundColor: palette.primary, color: "#fff" } : undefined}
                 className={`w-full rounded-md px-2 py-1.5 text-left text-sm ${
                   unit.unitNumber === activeUnit
-                    ? "bg-primary text-primary-foreground"
+                    ? palette
+                      ? ""
+                      : "bg-primary text-primary-foreground"
                     : "text-foreground/80 hover:bg-accent"
                 }`}
               >
@@ -95,13 +139,34 @@ export function BookReader({
       <main className="min-w-0 flex-1">
         {!current ? (
           <p className="text-sm text-muted-foreground">Bu kitap tipi için içerik bulunamadı.</p>
+        ) : viewMode === "flip" ? (
+          <BookFlipViewer
+            flatPages={flatPages}
+            pageImages={pageImages}
+            showAnswerKey={showAnswerKey}
+            listeningAudioByUnit={(unitNumber) => unitsWithPages.find((u) => u.unitNumber === unitNumber)?.listeningAudio}
+          />
         ) : (
           <>
             {current.unitNumber === unitsWithPages[0]?.unitNumber && coverImageSrc && (
-              // eslint-disable-next-line @next/next/no-img-element -- see PageView's comment above
-              <img src={coverImageSrc} alt="" className="mb-6 max-h-48 w-full rounded-lg object-cover" />
+              <div className="relative mb-6">
+                {/* eslint-disable-next-line @next/next/no-img-element -- see PageView's comment above */}
+                <img src={coverImageSrc} alt="" className="max-h-48 w-full rounded-lg object-cover" />
+                {logoUrl && (
+                  <div
+                    className="absolute flex h-11 w-11 items-center justify-center rounded-md bg-white p-1 shadow"
+                    style={resolveLogoPositionStyle(logoPosition)}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- see PageView's comment above */}
+                    <img src={logoUrl} alt="" className="h-full w-full object-contain" />
+                  </div>
+                )}
+              </div>
             )}
-            <h2 className="font-heading mb-4 text-xl font-semibold text-foreground">
+            <h2
+              className="font-heading mb-4 border-l-4 pl-3 text-xl font-semibold text-foreground"
+              style={accentStyle ?? { borderColor: "transparent" }}
+            >
               Unit {current.unitNumber}: {current.title}
             </h2>
             {!!unmatchedAudio.length && (

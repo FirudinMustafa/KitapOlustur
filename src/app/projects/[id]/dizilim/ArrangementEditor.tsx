@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
+import { upload as uploadToBlob } from "@vercel/blob/client";
 import {
   DndContext,
   PointerSensor,
@@ -27,16 +27,9 @@ import { moveAudio, moveBlock, moveImage, movePage, reorderUnits } from "@/lib/a
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
 import { resolvePageImageUrl } from "@/lib/page-image";
-import { PageView } from "@/components/book/PageContent";
 import { DraggableBox } from "@/components/book/DraggableBox";
+import { BookFlipViewer } from "@/components/book/BookFlipViewer";
 import { Button } from "@/components/ui/button";
-import "./flipbook.css";
-
-// react-pageflip touches the DOM directly (page-flip.js under the hood) -
-// same "use client"-only reasoning as the block canvas's framer-motion drag,
-// but this one also needs a dynamic import with ssr:false since it reads
-// `window` at module scope.
-const HTMLFlipBook = dynamic(() => import("react-pageflip"), { ssr: false });
 
 const PAGE_ARRAY_LABELS: Record<PageArrayField, string> = {
   studentBookPages: "Student Book",
@@ -51,15 +44,6 @@ const PAGE_ARRAY_TO_VARIANT: Record<PageArrayField, Variant> = {
   teacherBookPages: "teacher_book",
   testBookletPages: "test_booklet",
 };
-
-const FLIP_PAGE_WIDTH = 300;
-// Denetim sonrası düzeltme (2026-09-23): eskiden sabit bir sayıydı (420),
-// gerçek sayfa en-boy oranıyla (PAGE_HEIGHT_PT/PAGE_WIDTH_PT) uyuşmuyordu -
-// FLIP_SCALE ölçeklemesi bu ikisi tutarsızsa içeriği sessizce kırpıyordu.
-// Şimdi doğrudan gerçek orandan türetiliyor, uyuşmazlık yapısal olarak
-// imkansız.
-const FLIP_PAGE_HEIGHT = Math.round(FLIP_PAGE_WIDTH * (PAGE_HEIGHT_PT / PAGE_WIDTH_PT));
-const FLIP_SCALE = FLIP_PAGE_WIDTH / PAGE_WIDTH_PT;
 
 type PageDragData =
   | { kind: "page"; unitNumber: number; index: number }
@@ -85,7 +69,7 @@ export function ArrangementEditor({
   bookTitle,
   level,
   initialUnits,
-  pageImages,
+  pageImages: initialPageImages,
 }: {
   projectId: string;
   bookTitle: string;
@@ -100,7 +84,11 @@ export function ArrangementEditor({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [editingPage, setEditingPage] = useState<{ unitNumber: number; pageIndex: number } | null>(null);
-  const flipBookRef = useRef<{ pageFlip: () => { flipNext: () => void; flipPrev: () => void } } | null>(null);
+  // Faz C2 ("kullanıcının kendi görselini ekleyebilmesi", 2026-09-28): state
+  // (not just the initial prop) because handleImageUpload below needs to
+  // update it locally right after a successful upload, same as `units`.
+  const [pageImages, setPageImages] = useState(initialPageImages);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const editCanvasRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -278,6 +266,44 @@ export function ArrangementEditor({
     );
   }
 
+  // Faz C2 ("kullanıcının kendi görselini ekleyebilmesi", 2026-09-28): the
+  // page's own single image slot (imagePrompt/pageImages, the same slot
+  // generateUnitImages fills with an AI-generated image) can now also be set
+  // by the user directly - uploaded, then persisted immediately (not
+  // deferred to the "Kaydet" button, so a page refresh never loses it), and
+  // freely repositioned afterward via the existing imageLayout/DraggableBox
+  // mechanism below - no schema change needed, this reuses the exact same
+  // one-image-per-page slot every other renderer already reads.
+  async function handleImageUpload(file: File) {
+    if (!editingPage || !editingPageData) return;
+    setUploadingImage(true);
+    setError(null);
+    try {
+      const blob = await uploadToBlob(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/blob/upload-page-image",
+        contentType: file.type,
+      });
+      const key = editingPageData.imageOverrideSourcePageNumber ?? editingPageData.sourcePageNumber;
+      const nextPageImages = { ...pageImages, [key]: blob.url };
+      const res = await fetch(`/api/projects/${projectId}/books/arrangement`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ units, pageImages: nextPageImages }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Görsel yüklenemedi.");
+      }
+      setPageImages(nextPageImages);
+      setMessage("Görsel yüklendi.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Görsel yüklenemedi.");
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     setError(null);
@@ -412,81 +438,12 @@ export function ArrangementEditor({
 
         <aside className="flex flex-col items-center gap-3">
           <h2 className="self-start text-sm font-medium text-foreground">Dijital önizleme</h2>
-          {flatPages.length > 0 ? (
-            <>
-              {/* @ts-expect-error -- react-pageflip's IProps typing doesn't
-                  export cleanly through next/dynamic's inferred component type */}
-              <HTMLFlipBook
-                ref={flipBookRef}
-                width={FLIP_PAGE_WIDTH}
-                height={FLIP_PAGE_HEIGHT}
-                size="fixed"
-                minWidth={FLIP_PAGE_WIDTH}
-                maxWidth={FLIP_PAGE_WIDTH}
-                minHeight={FLIP_PAGE_HEIGHT}
-                maxHeight={FLIP_PAGE_HEIGHT}
-                showCover
-                drawShadow
-                flippingTime={500}
-                usePortrait
-                startZIndex={0}
-                autoSize={false}
-                maxShadowOpacity={0.5}
-                mobileScrollSupport
-                clickEventForward
-                useMouseEvents
-                swipeDistance={30}
-                showPageCorners
-                disableFlipByClick={false}
-                startPage={0}
-                className="rounded-lg shadow-lg"
-                style={{}}
-              >
-                {flatPages.map(({ page, unitNumber, unitTitle, index }) => {
-                  const unit = units.find((u) => u.unitNumber === unitNumber);
-                  return (
-                    <div
-                      key={`${unitNumber}-${page.sourcePageNumber}-${index}`}
-                      className="flex h-full w-full flex-col overflow-hidden border border-border bg-white text-zinc-900"
-                    >
-                      <span className="shrink-0 bg-indigo-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-600">
-                        Ünite {unitNumber} · {unitTitle}
-                        {page.sectionLabel && ` · ${page.sectionLabel}`}
-                      </span>
-                      <div className="min-h-0 flex-1 overflow-hidden">
-                        <div style={{ width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, transform: `scale(${FLIP_SCALE})`, transformOrigin: "top left" }}>
-                          <PageView
-                            page={page}
-                            showAnswerKey={showAnswerKey}
-                            imageUrl={resolvePageImageUrl(page, pageImages)}
-                            listeningAudio={unit?.listeningAudio}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </HTMLFlipBook>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => flipBookRef.current?.pageFlip().flipPrev()}
-                >
-                  ← Önceki
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => flipBookRef.current?.pageFlip().flipNext()}
-                >
-                  Sonraki →
-                </Button>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Bu kitap tipi için sayfa yok.</p>
-          )}
+          <BookFlipViewer
+            flatPages={flatPages}
+            pageImages={pageImages}
+            showAnswerKey={showAnswerKey}
+            listeningAudioByUnit={(unitNumber) => units.find((u) => u.unitNumber === unitNumber)?.listeningAudio}
+          />
         </aside>
       </div>
 
@@ -496,14 +453,31 @@ export function ArrangementEditor({
             <h2 className="text-sm font-medium text-foreground">
               Sayfa Konumlandırma — Ünite {editingPage.unitNumber}, Sayfa {editingPage.pageIndex + 1}
             </h2>
-            <Button variant="outline" size="sm" onClick={() => setEditingPage(null)}>
-              Kapat
-            </Button>
+            <div className="flex gap-2">
+              <label className="inline-flex cursor-pointer items-center rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent">
+                {uploadingImage ? "Yükleniyor…" : "Görsel yükle"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  disabled={uploadingImage}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void handleImageUpload(file);
+                  }}
+                />
+              </label>
+              <Button variant="outline" size="sm" onClick={() => setEditingPage(null)}>
+                Kapat
+              </Button>
+            </div>
           </div>
           <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
             Bir bloğu sürükleyerek taşı, sağ-alt köşesinden sürükleyerek yeniden boyutlandır. Kutu sınırlarını aşan
             içerik gerçek PDF&apos;te de görsel olarak kırpılır. Bu bloğu BAŞKA bir sayfaya taşımak için önce
-            kapatıp yukarıdaki sayfa kartındaki etiketi sürükleyin.
+            kapatıp yukarıdaki sayfa kartındaki etiketi sürükleyin. &quot;Görsel yükle&quot; ile bu sayfanın görselini
+            kendi fotoğrafınızla değiştirip yukarıdaki kutuyu sürükleyerek istediğiniz konum/boyuta getirebilirsiniz.
           </p>
           <div
             ref={editCanvasRef}

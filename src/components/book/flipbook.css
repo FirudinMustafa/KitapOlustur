@@ -1,0 +1,82 @@
+/* Shared by every react-pageflip consumer (ArrangementEditor.tsx's "Dijital
+   önizleme" panel and BookFlipViewer.tsx, used by BookReader.tsx's page-view
+   mode) - see ArrangementEditor's original copy of this file for why these
+   rules exist: react-pageflip (page-flip under the hood) does not auto-inject
+   its own stylesheet, and the one it ships at
+   node_modules/page-flip/src/Style/stPageFlip.css has a typo
+   (".sft__wrapper" instead of ".stf__wrapper") that leaves the page wrapper
+   collapsed to zero height - without these corrected rules, every page
+   renders at 0x0 and the flip-book appears blank. Copied from that file
+   with the typo fixed. */
+.stf__parent {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  transform: translateZ(0);
+  -ms-touch-action: pan-y;
+  touch-action: pan-y;
+}
+
+/* Verified live (2026-09-28): `width/height: 100%` on a position:relative
+   in-flow box depends on the ancestor chain resolving a "definite" height
+   for percentage purposes - .stf__parent's height only comes from a JS-set
+   inline `min-height` (never an explicit `height`), and whether that counts
+   as definite for this purpose turned out to differ by mount context: it
+   resolved fine inside ArrangementEditor's flip-book but collapsed to 0
+   height inside BookReader's, same component, same CSS, same flex
+   ancestor shape - a genuine browser quirk, not something traceable to our
+   own markup. `inset: 0` on an absolutely positioned box sizes against its
+   containing block's padding box directly (a different, more robust CSS
+   codepath than percentage resolution) and isn't sensitive to that
+   ambiguity - .stf__parent already establishes the containing block via
+   position:relative, so this reliably fills it either way. */
+.stf__wrapper {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+}
+
+.stf__parent canvas {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  left: 0;
+  top: 0;
+}
+
+.stf__block {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  perspective: 2000px;
+}
+
+.stf__item {
+  display: none;
+  position: absolute;
+  transform-style: preserve-3d;
+}
+
+.stf__outerShadow {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.stf__innerShadow {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.stf__hardShadow {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.stf__hardInnerShadow {
+  position: absolute;
+  left: 0;
+  top: 0;
+}

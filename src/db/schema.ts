@@ -34,6 +34,7 @@ export const runStatusEnum = pgEnum("run_status", [
   "extracting",
   "analyzing",
   "awaiting_outline_approval",
+  "awaiting_logo_upload",
   "awaiting_variant_selection",
   "generating",
   "reviewing",
@@ -194,6 +195,18 @@ export const generationRuns = pgTable("generation_runs", {
   // workflows/book-pipeline.tsx using src/lib/ai/pricing.ts's rates.
   costUsage: jsonb("cost_usage").$type<Record<string, number>>(),
   coverImageUrl: text("cover_image_url"),
+  // "Kaynağa görsel sadakat" (2026-09-28, ROADMAP.md): set once, after the
+  // awaiting_logo_upload hook resolves - null means either no logo was
+  // detected in the source or the user explicitly skipped uploading one.
+  // Persisted (not a pendingX scratch column) because BookDocument.tsx
+  // needs it at final assembly time, long after the hook itself resolved.
+  userLogoUrl: text("user_logo_url"),
+  // Same "Kaynağa görsel sadakat" feature as userLogoUrl above - persisted
+  // alongside it so the web reader (BookReader.tsx) can render the same
+  // logo placement/palette the PDF export already uses, instead of only
+  // BookDocument.tsx seeing this data as a transient pageMap-derived value.
+  logoPosition: text("logo_position"),
+  paletteColors: jsonb("palette_colors").$type<string[]>(),
   pageImageUrls: jsonb("page_image_urls").$type<Record<number, string>>(),
   pendingVariants: jsonb("pending_variants"),
   // Scratch columns for the two new batch approval gates - same pattern as

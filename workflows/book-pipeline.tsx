@@ -70,7 +70,7 @@ import { generateImageWithCloudflare } from "@/lib/ai/cloudflare-image";
 import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { translateAiError } from "@/lib/ai/error-messages";
 import { unitsToMarkdown } from "@/lib/markdown";
-import { BookDocument, type Variant } from "@/lib/pdf/BookDocument";
+import { BookDocument, type Variant, type BookDocumentSourceStyle } from "@/lib/pdf/BookDocument";
 import type { TrimSizeId } from "@/lib/pdf/page-geometry";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { buildEpub } from "@/lib/epub/BookEpub";
@@ -312,6 +312,41 @@ async function setRunStatus(runId: string, status: RunStatus, stage?: string, er
     .where(eq(generationRuns.id, runId));
 }
 
+// "Kaynağa görsel sadakat" (2026-09-28, ROADMAP.md): the userLogoUrl write
+// after the awaiting_logo_upload hook resolves was originally a bare
+// db.update() call directly in bookPipelineWorkflow's ("use workflow")
+// body, not wrapped in its own "use step" function like every other DB
+// write in this file (setRunStatus above, savePageImages, etc.) - that's
+// the one pattern break that caused a real, reproducible failure: "Failed
+// query: update generation_runs set user_logo_url" right after a real
+// logo upload in a live run (confirmed live, 2026-09-28) - a durable
+// workflow's own body must stay side-effect-free/replay-safe; side effects
+// belong in "use step" functions only, exactly like every other write here
+// already does.
+async function saveUserLogoUrl(runId: string, userLogoUrl: string | null) {
+  "use step";
+
+  await db.update(generationRuns).set({ userLogoUrl }).where(eq(generationRuns.id, runId));
+}
+
+// Faz A ("Oku sayfası görsel parity", 2026-09-28): logoPosition/paletteColors
+// were previously only computed transiently in-workflow for BookDocument.tsx
+// (the PDF renderer) to consume - the web reader (BookReader.tsx) had no way
+// to reproduce the same logo placement/palette because nothing persisted
+// them. Same "use step" requirement as saveUserLogoUrl above applies here.
+async function saveSourceStyleMeta(
+  runId: string,
+  logoPosition: string | null,
+  paletteColors: string[] | null,
+) {
+  "use step";
+
+  await db
+    .update(generationRuns)
+    .set({ logoPosition, paletteColors })
+    .where(eq(generationRuns.id, runId));
+}
+
 async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
   "use step";
 
@@ -329,7 +364,7 @@ async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
           content: [
             {
               type: "text",
-              text: "Go through this PDF page by page, in order, and classify EVERY page (cover, contents, unit_opener, content, exercise, glossary, review, answer_key, assessment, back_cover, or other). For each page, note which unit number it belongs to (or null if it isn't part of a unit), summarize what's on it, and if it carries a photo or illustration, describe it precisely - subject, scene, style - so it could be reimagined later as new artwork. Also transcribe the page's substantive running text into sourceText (headings, body copy, exercise prompts, dialogue) as closely to verbatim as practical - this is reference material for a later originality check, not a paraphrase; omit it only for pages with no real body text. Do not skip any pages: totalPages must equal the number of page entries you return.",
+              text: "Go through this PDF page by page, in order, and classify EVERY page (cover, contents, unit_opener, content, exercise, glossary, review, answer_key, assessment, back_cover, or other). For each page, note which unit number it belongs to (or null if it isn't part of a unit), summarize what's on it, and if it carries a photo or illustration, describe it precisely - subject, scene, style - so it could be reimagined later as new artwork. Also transcribe the page's substantive running text into sourceText (headings, body copy, exercise prompts, dialogue) as closely to verbatim as practical - this is reference material for a later originality check, not a paraphrase; omit it only for pages with no real body text. Additionally, fill in visualStyle for each page from what you can actually see: the page's dominant colors, whether a logo/brand mark (distinct from a content photo) is present and roughly where, whether the page reads as compact/dense or spacious, and its coarse layoutZone (image_top_text_bottom, image_bottom_text_top, image_left_text_right, image_right_text_left, two_column, full_width_text, or full_width_image - pick the closest match, this is a shape classification, not a measurement) - this is used only to pick a color palette, layout density, and rough block arrangement for the new book, never to copy the source's actual design pixel-for-pixel. Do not skip any pages: totalPages must equal the number of page entries you return.",
             },
             { type: "file", mediaType: "application/pdf", data: new URL(pdfUrl) },
           ],
@@ -555,7 +590,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
     input.feedback?.length
       ? `A previous draft of this unit had these issues - fix them:\n${input.feedback.map((f) => `- ${f}`).join("\n")}`
       : "",
-    `For a "practice" or "assessment" block whose exercise naturally fits one of these three shapes, ALSO fill in that block's "interactive" field so the digital reader can render it as a real, auto-checkable activity (in addition to "items"/"answerKey", which still print in the PDF/EPUB/LMS export): multiple_choice (one question, 2+ options, correctIndex), fill_blank (a "template" string with each blank marked as exactly "___", and "blanks" holding the correct answer for each one in order), or matching (2+ left/right pairs). Only use this when the exercise genuinely is one of these three shapes - most explanation/narrative/reference blocks should leave "interactive" unset.`,
+    `For a "practice" or "assessment" block whose exercise naturally fits one of these three shapes, ALSO fill in that block's "interactive" field so the digital reader can render it as a real, auto-checkable activity (in addition to "items"/"answerKey", which still print in the PDF/EPUB/LMS export): multiple_choice (one question, 2+ options, correctIndex), fill_blank (a "template" string with each blank marked as exactly "___", and "blanks" holding the correct answer for each one in order), or matching (2+ left/right pairs). Only use this when the exercise genuinely is one of these three shapes - most explanation/narrative/reference blocks should leave "interactive" unset. "interactive.type" MUST be exactly one of these three literal strings ("multiple_choice", "fill_blank", "matching") - there is no fourth type. A true/false exercise (e.g. mirroring a source's "True or false?" activity) is NOT its own type: model it as multiple_choice with exactly two options, "True" and "False", and correctIndex pointing at the right one.`,
     `If any block's body or items text refers to an image the learner should look at (e.g. "Resim:", "Picture:", "look at the image", a counting/matching exercise with objects), you MUST set that page's imagePrompt describing exactly that image - never write an exercise that depends on an image without providing one.`,
   ];
 }
@@ -579,6 +614,14 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
         `The uploaded source book was the "${input.sourceBookType}". Here is the page-by-page blueprint of THIS unit's pages from that source:\n${JSON.stringify(input.unitSourcePages)}`,
         `Produce "pages" with exactly one generated page per source page listed above, in the same order, using the same sourcePageNumber and the same pageType. Write entirely new, original content for each page, inspired by (never copied from) its summary and topic.`,
         "For any page that should carry a photo or illustration (mirroring one that had an image in the source, or wherever it naturally helps), set imagePrompt to a vivid description of a NEW, original image reimagining that scene - never a copy of the source image.",
+        // Faz B ("kaynağa yakın bölge-tabanlı mirroring", 2026-09-28): the
+        // source page's own visualStyle.layoutZone is already included
+        // verbatim in the unitSourcePages JSON above - this line just tells
+        // the model what to do with it (block count/order/emphasis), since
+        // deterministically computing real pixel coordinates for an
+        // arbitrary number of generated blocks isn't reliable without
+        // knowing their rendered text height in advance.
+        "Each source page's visualStyle.layoutZone (if present) describes its coarse image/text arrangement (e.g. image_left_text_right, two_column, full_width_image). Let it guide how many blocks you write and how much weight text vs. image gets on that generated page - a full_width_image source page should get a short, light generated page dominated by its image; a two_column source page should get content that reads naturally as two short, parallel blocks rather than one long block. This shapes the generated page's feel to match the source's rhythm; it does not mean positioning anything at exact coordinates.",
         "If content includes a dialogue, story, or a listening/read-aloud passage, also add a matching entry to listeningAudio with the exact text to be read aloud. If it's a dialogue between two or more named speakers, also fill dialogueLines with each turn broken out by speaker, in order - this lets each character be voiced distinctly instead of one narrator reading every line. Leave dialogueLines empty for a single-narrator passage.",
         "Provide a unit-level glossary of key terms with definitions and examples.",
       ]
@@ -1811,6 +1854,7 @@ async function assembleAndSaveBooks(
   pageImages: Record<number, string>,
   isbn?: string | null,
   trimSize?: TrimSizeId,
+  sourceStyle?: BookDocumentSourceStyle,
 ) {
   "use step";
 
@@ -1837,6 +1881,7 @@ async function assembleAndSaveBooks(
         generatedAt={generatedAt}
         isbn={isbn ?? undefined}
         trimSize={trimSize}
+        sourceStyle={sourceStyle}
       />,
     );
     // allowOverwrite: aynı gerekçe - bu step (assembleAndSaveBooks) birden
@@ -2140,6 +2185,47 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       throw new FatalError("Kullanıcı dizelgeyi onaylamadı, üretim iptal edildi.");
     }
     const effectiveUnitLimit = approval.unitLimit !== undefined ? approval.unitLimit : ctx.run.unitLimit;
+
+    // "Kaynağa görsel sadakat" (2026-09-28, ROADMAP.md): only fires when a
+    // real source PDF was uploaded (pageMap.pages is empty in "sıfırdan"
+    // mode, so .find() naturally finds nothing there - no source to mirror,
+    // so no reason to ask) AND the model actually reported a brand mark on
+    // some page. "Skip" is a normal, non-fatal answer here (unlike outline
+    // rejection) - a missing logo shouldn't block the whole run. Hoisted to
+    // the outer scope (not const inside the if) because assembleAndSaveBooks
+    // needs it much later, after every unit/image step in between.
+    let userLogoUrl: string | null = null;
+    const detectedBrandPage = pageMap.pages.find((p) => p.visualStyle?.hasBrandMark);
+    if (detectedBrandPage) {
+      await setRunStatus(runId, "awaiting_logo_upload", "Kaynak PDF'te logo tespit edildi, onay bekleniyor");
+      const logoHook = createHook<{ logoUrl: string | null; skip: boolean }>({
+        token: `logo-upload:${runId}`,
+      });
+      const logoDecision = await logoHook;
+      userLogoUrl = logoDecision.skip ? null : logoDecision.logoUrl;
+      await saveUserLogoUrl(runId, userLogoUrl);
+    }
+    // Palette/density source: the same page the brand mark was found on if
+    // there was one (a cover/unit-opener page's colors are the most
+    // representative of the book's "brand"), otherwise the first page that
+    // reported any dominantColors at all. Undefined (sıfırdan mode, or a
+    // source PDF the model didn't report style for) means BookDocument.tsx
+    // falls back to its existing fixed PALETTE - unchanged behavior.
+    const paletteSourcePage = detectedBrandPage ?? pageMap.pages.find((p) => p.visualStyle?.dominantColors?.length);
+    const resolvedLogoPosition = detectedBrandPage?.visualStyle?.brandMarkPosition ?? null;
+    const resolvedPaletteColors = paletteSourcePage?.visualStyle?.dominantColors ?? null;
+    const sourceStyle: BookDocumentSourceStyle | undefined =
+      paletteSourcePage || userLogoUrl
+        ? {
+            dominantColors: resolvedPaletteColors ?? undefined,
+            logoUrl: userLogoUrl,
+            logoPosition: resolvedLogoPosition,
+            density: paletteSourcePage?.visualStyle?.layoutDensity,
+          }
+        : undefined;
+    if (userLogoUrl || resolvedPaletteColors?.length) {
+      await saveSourceStyleMeta(runId, resolvedLogoPosition, resolvedPaletteColors);
+    }
 
     const styleBible = await buildStyleBible(runId, outline, ctx.styleProfile?.promptGuidance);
     const variantCount = Math.max(1, Math.min(4, ctx.run.variantCount || 1));
@@ -2676,6 +2762,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       pageImages,
       ctx.project.isbn,
       ctx.project.trimSize,
+      sourceStyle,
     );
 
     await setRunStatus(runId, "done", "Tamamlandı");
