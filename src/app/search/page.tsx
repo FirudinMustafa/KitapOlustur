@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
+import { networkErrorMessage, responseErrorMessage } from "@/lib/api-error";
 import Link from "next/link";
 import { BOOK_TYPE_LABELS } from "@/lib/run-status";
 import type { SearchResult } from "@/lib/search";
@@ -28,7 +30,11 @@ export default function SearchPage() {
       if (res.ok) {
         const data = await res.json();
         setResults(data.results);
+      } else {
+        toast.error(await responseErrorMessage(res, "Arama yapılamadı"));
       }
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -62,7 +68,7 @@ export default function SearchPage() {
               {results.map((r, i) => (
                 <li key={i}>
                   <Link
-                    href={`/projects/${r.projectId}`}
+                    href={`/projects/${r.projectId}/read/${r.bookType}`}
                     className="block rounded-xl bg-card p-3 text-card-foreground ring-1 ring-foreground/10 transition-colors hover:bg-accent hover:ring-primary/30"
                   >
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
