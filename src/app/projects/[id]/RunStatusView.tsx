@@ -238,15 +238,30 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   useEffect(() => {
     if (!data.run || TERMINAL_STATUSES.has(data.run.status)) return;
 
-    const interval = setInterval(async () => {
-      const res = await fetch(`/api/projects/${projectId}`);
-      if (res.ok) {
-        const next: ProjectData = await res.json();
-        setData(next);
+    // QA fix (2026-10-06): this used setInterval(3000) while the status
+    // endpoint itself takes ~3s, so requests piled up (several in flight at
+    // once) - the next poll is now scheduled only after the previous one
+    // finished. Network errors are ignored; the next tick retries.
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}`);
+        if (res.ok && !cancelled) {
+          const next: ProjectData = await res.json();
+          if (!cancelled) setData(next);
+        }
+      } catch {
+        // transient - retried on the next tick
       }
-    }, 3000);
+      if (!cancelled) timer = setTimeout(poll, 3000);
+    };
+    timer = setTimeout(poll, 3000);
 
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [projectId, data.run]);
 
   const {
@@ -755,7 +770,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
             {outlineData.bookTitle} · {outlineData.subject}
           </p>
-          {!!unitCount && (
+          {!!unitCount && !isFreeTierRun && (
             <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
               Tahmini metin üretim maliyeti ({unitCount} ünite): ~${estimatedPreRunCostMin.toFixed(2)}–$
               {estimatedPreRunCostMax.toFixed(2)}
@@ -1282,7 +1297,10 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
-      {upload && (
+      {/* Rerun only once the current run has stopped - offering it while a
+          run is still working or waiting for approval started a second,
+          parallel run (QA fix, 2026-10-06). */}
+      {upload && (!run || TERMINAL_STATUSES.has(run.status)) && (
         <div className="mt-4 flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
           <div className="flex items-end gap-3">
             <div className="flex flex-col gap-1">

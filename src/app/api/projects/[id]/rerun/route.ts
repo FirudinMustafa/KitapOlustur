@@ -26,6 +26,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     orderBy: [desc(generationRuns.createdAt)],
   });
 
+  // Never start a second run while one is still working or waiting on an
+  // approval - both would write to the same project concurrently (QA fix,
+  // 2026-10-06).
+  if (previousRun && !["done", "failed", "changes_requested"].includes(previousRun.status)) {
+    return NextResponse.json(
+      { error: "Bu projede devam eden bir üretim var - bitmesini ya da onay adımını bekle." },
+      { status: 409 },
+    );
+  }
+
   const body = await request.json().catch(() => ({}));
   // "Sıfırdan Kitap" modu: unitLimit doubles as "how many units" for a
   // from-scratch run - falling back to the previous run's value (instead of
