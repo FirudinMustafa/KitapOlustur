@@ -3,9 +3,12 @@ import { start } from "workflow/api";
 import { and, desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { sourceUploads, generationRuns, extractedOutlines } from "@/db/schema";
+import { sourceUploads, generationRuns, extractedOutlines, generatedBooks } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
 import { requireProjectOwner } from "@/lib/auth";
+import { bookTypesWithContent, type ContentBookType } from "@/lib/content-book-types";
+import { BOOK_TYPE_LABELS } from "@/lib/run-status";
+import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
@@ -67,6 +70,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
   }
   if (bookTypes && assembleSource) {
+    const sourceBook = await db.query.generatedBooks.findFirst({
+      where: eq(generatedBooks.runId, assembleSource.id),
+      columns: { content: true },
+    });
+    const available = bookTypesWithContent(sourceBook?.content as GeneratedUnit[] | null);
+    const missing = bookTypes.filter((t) => !available.includes(t as ContentBookType));
+    if (missing.length) {
+      return NextResponse.json(
+        {
+          error: `Bu kitap tipleri için içerik üretilmemiş: ${missing.map((t) => BOOK_TYPE_LABELS[t] ?? t).join(", ")}. Bunları eklemek için projeyi bu tiplerle yeniden üretmek gerekir.`,
+        },
+        { status: 400 },
+      );
+    }
+
     const [assembleRun] = await db
       .insert(generationRuns)
       .values({

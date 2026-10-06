@@ -26,6 +26,8 @@ import {
 } from "./RunStatusView";
 import { computeUnitProgress } from "@/lib/unit-progress";
 import { fetchCoverDimensions } from "@/lib/cover-dimensions";
+import { bookTypesWithContent } from "@/lib/content-book-types";
+import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +118,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       initial={{
         project: { id: project.id, name: project.name, level: project.level, isbn: project.isbn },
         coverDimensions,
+        contentBookTypes: bookTypesWithContent(books[0]?.content as GeneratedUnit[] | null),
         upload: upload ? { filename: upload.filename, bookType: upload.bookType } : null,
         run: run
           ? {

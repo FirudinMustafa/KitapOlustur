@@ -151,6 +151,8 @@ type ProjectData = {
   // Faz "ISBN/baskıya hazırlık": server-fetched (see page.tsx) so there's no
   // client-side cross-origin fetch to the Blob host.
   coverDimensions?: { width: number; height: number } | null;
+  // Book types the generated content has pages for (see bookTypesWithContent).
+  contentBookTypes?: string[];
   // Faz "Onay Zinciri Görünürlüğü": zaten kalıcı olan unitReviews'dan türetilen
   // persona rozetleri (bkz. src/lib/personas.ts) - içerik onayı ekranında
   // her ünitenin altında "✓ Dil Denetçisi" gibi sign-off'lar göstermek için.
@@ -1237,17 +1239,26 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             AI çağrısı yapmadan, mevcut içerikten ek kitap tipi derle
           </p>
           <div className="mt-2 flex flex-wrap gap-3">
-            {Object.entries(BOOK_TYPE_LABELS).map(([type, label]) => (
-              <label key={type} className="flex items-center gap-1.5 text-sm text-foreground">
-                <input
-                  type="checkbox"
-                  checked={assembleTypes.has(type)}
-                  onChange={() => toggleAssembleType(type)}
-                  className="accent-primary"
-                />
-                {label}
-              </label>
-            ))}
+            {Object.entries(BOOK_TYPE_LABELS).map(([type, label]) => {
+              const hasContent = !data.contentBookTypes || data.contentBookTypes.includes(type);
+              return (
+                <label
+                  key={type}
+                  className={`flex items-center gap-1.5 text-sm ${hasContent ? "text-foreground" : "text-muted-foreground"}`}
+                  title={hasContent ? undefined : "Bu tip için içerik üretilmedi - eklemek için projeyi bu tiple yeniden üretmek gerekir"}
+                >
+                  <input
+                    type="checkbox"
+                    checked={assembleTypes.has(type)}
+                    disabled={!hasContent}
+                    onChange={() => toggleAssembleType(type)}
+                    className="accent-primary"
+                  />
+                  {label}
+                  {!hasContent && <span className="text-xs">(içerik yok)</span>}
+                </label>
+              );
+            })}
           </div>
           <Button
             onClick={handleAssembleOnly}

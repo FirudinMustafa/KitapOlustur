@@ -19,6 +19,8 @@ import { computeUnitProgress } from "@/lib/unit-progress";
 import { summarizeUnitReviewsForPersona } from "@/lib/personas";
 import type { OutlineDocument } from "@/app/projects/[id]/RunStatusView";
 import { fetchCoverDimensions } from "@/lib/cover-dimensions";
+import { bookTypesWithContent } from "@/lib/content-book-types";
+import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -125,6 +127,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     unitProgress,
     unitReviewSummary,
     coverDimensions: await fetchCoverDimensions(run?.coverImageUrl),
+    contentBookTypes: bookTypesWithContent(books[0]?.content as GeneratedUnit[] | null),
   });
 }
 
