@@ -180,8 +180,19 @@ const styles = StyleSheet.create({
   // maxHeight deliberately omitted here - set inline per-render from
   // sourceStyle.density (BookDocument's pageImageMaxHeight), defaulting to
   // the original 170 when there's no density signal.
-  pageIllustrationWrap: { borderRadius: 8, overflow: "hidden", marginBottom: 4 },
-  pageIllustration: { width: "100%", objectFit: "cover" },
+  // QA fix (2026-10-06): the image used to be width:100% with no height
+  // inside a maxHeight+overflow:hidden box - a square 1024px illustration was
+  // laid out ~507pt tall and clipped to a 170pt band, so only a strip of it
+  // printed (objects cut in half). The box now has a fixed height and the
+  // image is contained in it whole (letterboxed, never cropped).
+  pageIllustrationWrap: {
+    borderRadius: 8,
+    overflow: "hidden",
+    marginBottom: 4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pageIllustration: { width: "100%", height: "100%", objectFit: "contain" },
   // @react-pdf/renderer's Image component has no `alt` prop - PDF/UA tagged
   // accessibility text isn't something this library supports (confirmed in
   // its type definitions). This caption is the closest practical
@@ -573,7 +584,7 @@ export function BookDocument({
   // see derivePaletteFromColors's own doc comment for the parsing rules.
   const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? PALETTE[variant];
   const logoStyle = sourceStyle?.logoUrl ? LOGO_POSITION_STYLE[sourceStyle.logoPosition ?? "top_right"] : null;
-  const pageImageMaxHeight = sourceStyle?.density === "compact" ? 120 : sourceStyle?.density === "spacious" ? 210 : 170;
+  const pageImageMaxHeight = sourceStyle?.density === "compact" ? 180 : sourceStyle?.density === "spacious" ? 280 : 230;
   const pageSize = { width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt };
   // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
   // here despite generateTestBookletSide/generateCumulativeAssessment always
@@ -661,34 +672,45 @@ export function BookDocument({
               </View>
             )}
 
-            {resolvePageImageUrl(page, pageImages) && (
-              <>
-                <View
-                  style={[
-                    styles.pageIllustrationWrap,
-                    { maxHeight: pageImageMaxHeight },
-                    // Faz "Sayfa Dizilimi Editörü": same opt-in absolute
-                    // positioning as BlockCard's `layout` field, see there
-                    // for the pagination-reflow caveat.
-                    page.imageLayout
-                      ? (() => {
-                          const box = clampLayoutToPage(page.imageLayout, pageSize.width, pageSize.height);
-                          return { position: "absolute" as const, left: box.x, top: box.y, width: box.width, height: box.height };
-                        })()
-                      : {},
-                  ]}
-                >
-                  {/* eslint-disable-next-line jsx-a11y/alt-text -- this is @react-pdf/renderer's
-                      Image (print-layout component), not an HTML <img> - it has no `alt` prop
-                      to give (see the pageIllustrationCaption style comment above for the
-                      caption text that stands in for it). */}
-                  <Image src={resolvePageImageUrl(page, pageImages)} style={styles.pageIllustration} />
+            {resolvePageImageUrl(page, pageImages) &&
+              (page.imageLayout ? (
+                // Faz "Sayfa Dizilimi Editörü": same opt-in absolute
+                // positioning as BlockCard's `layout` field, see there for
+                // the pagination-reflow caveat. Rendered directly under the
+                // Page (no wrapper) so its coordinates stay page-relative.
+                (() => {
+                  const box = clampLayoutToPage(page.imageLayout, pageSize.width, pageSize.height);
+                  return (
+                    <View
+                      style={[
+                        styles.pageIllustrationWrap,
+                        { position: "absolute", left: box.x, top: box.y, width: box.width, height: box.height },
+                      ]}
+                    >
+                      {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
+                      <Image src={resolvePageImageUrl(page, pageImages)} style={styles.pageIllustration} />
+                    </View>
+                  );
+                })()
+              ) : (
+                // wrap={false}: the illustration and its caption move to the
+                // next page as a whole instead of being split across two.
+                <View wrap={false}>
+                  <View
+                    style={[
+                      styles.pageIllustrationWrap,
+                      { height: pageImageMaxHeight, backgroundColor: palette.primaryLight },
+                    ]}
+                  >
+                    {/* eslint-disable-next-line jsx-a11y/alt-text -- this is @react-pdf/renderer's
+                        Image (print-layout component), not an HTML <img> - it has no `alt` prop
+                        to give (see the pageIllustrationCaption style comment above for the
+                        caption text that stands in for it). */}
+                    <Image src={resolvePageImageUrl(page, pageImages)} style={styles.pageIllustration} />
+                  </View>
+                  {page.imagePrompt && <Text style={styles.pageIllustrationCaption}>{page.imagePrompt}</Text>}
                 </View>
-                {page.imagePrompt && !page.imageLayout && (
-                  <Text style={styles.pageIllustrationCaption}>{page.imagePrompt}</Text>
-                )}
-              </>
-            )}
+              ))}
 
             {page.sectionLabel && (
               <Text style={[styles.sectionKicker, { color: palette.primary }]}>

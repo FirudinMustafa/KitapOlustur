@@ -387,7 +387,7 @@ export function PositionedPage({
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image */}
-            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={imageUrl} alt="" className="h-full w-full object-contain" />
           </div>
         )}
         {imageUrl && !page.imageLayout && (
@@ -396,7 +396,7 @@ export function PositionedPage({
             style={{ left: PAGE_PADDING.left, top: PAGE_PADDING.top, right: PAGE_PADDING.right, height: 170 }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image */}
-            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={imageUrl} alt="" className="h-full w-full object-contain" />
           </div>
         )}
         {positionedBlocks.map((block, i) => {
@@ -463,7 +463,7 @@ export function PageView({
       {imageUrl && (
         <figure className="mb-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image, no build-time optimization to gain */}
-          <img src={imageUrl} alt="" className="max-h-64 w-full rounded-md object-cover" />
+          <img src={imageUrl} alt="" className="h-64 w-full rounded-md bg-muted/40 object-contain" />
           {page.imagePrompt && (
             <figcaption className="mt-1 text-xs italic text-muted-foreground">{page.imagePrompt}</figcaption>
           )}
