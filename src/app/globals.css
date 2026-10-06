@@ -206,6 +206,36 @@
   --sidebar-ring: oklch(0.72 0.15 279.5);
 }
 
+/* A printed page always looks like paper, even in dark mode: book pages in
+   the flip-book preview pin the light-theme tokens for everything inside
+   them (QA fix, 2026-10-06 - they rendered light-mode text on a white page
+   in dark mode, i.e. unreadable). */
+.paper {
+  --background: oklch(0.995 0.003 85);
+  --foreground: oklch(0.21 0.012 60);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.012 60);
+  --muted: oklch(0.955 0.011 80);
+  --muted-foreground: oklch(0.52 0.018 65);
+  --secondary: oklch(0.955 0.011 80);
+  --secondary-foreground: oklch(0.26 0.015 60);
+  --accent: oklch(0.94 0.035 279.5);
+  --accent-foreground: oklch(0.34 0.14 279.5);
+  --primary: oklch(0.511 0.2 279.5);
+  --primary-foreground: oklch(0.985 0.005 85);
+  --border: oklch(0.905 0.013 80);
+  --input: oklch(0.89 0.014 80);
+  --success-soft: oklch(0.95 0.035 155);
+  --success-soft-foreground: oklch(0.38 0.09 155);
+  --warning-soft: oklch(0.96 0.045 85);
+  --warning-soft-foreground: oklch(0.45 0.1 60);
+  --danger-soft: oklch(0.95 0.03 25);
+  --danger-soft-foreground: oklch(0.45 0.16 27);
+  --info-soft: oklch(0.95 0.025 240);
+  --info-soft-foreground: oklch(0.4 0.1 245);
+  color-scheme: light;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

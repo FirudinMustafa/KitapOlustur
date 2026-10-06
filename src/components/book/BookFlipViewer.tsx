@@ -118,9 +118,9 @@ export function BookFlipViewer({
         {flatPages.map(({ page, unitNumber, unitTitle, index }) => (
           <div
             key={`${unitNumber}-${page.sourcePageNumber}-${index}`}
-            className="flex h-full w-full flex-col overflow-hidden border border-border bg-white text-zinc-900"
+            className="paper flex h-full w-full flex-col overflow-hidden border border-border bg-background text-foreground"
           >
-            <span className="shrink-0 bg-indigo-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-600">
+            <span className="shrink-0 bg-accent px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-accent-foreground">
               Ünite {unitNumber} · {unitTitle}
               {page.sectionLabel && ` · ${page.sectionLabel}`}
             </span>

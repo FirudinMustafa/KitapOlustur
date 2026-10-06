@@ -326,6 +326,15 @@ async function setRunStatus(runId: string, status: RunStatus, stage?: string, er
 // workflow's own body must stay side-effect-free/replay-safe; side effects
 // belong in "use step" functions only, exactly like every other write here
 // already does.
+async function loadRunLogoUrl(runId: string): Promise<string | null> {
+  "use step";
+  const run = await db.query.generationRuns.findFirst({
+    where: eq(generationRuns.id, runId),
+    columns: { userLogoUrl: true },
+  });
+  return run?.userLogoUrl ?? null;
+}
+
 async function saveUserLogoUrl(runId: string, userLogoUrl: string | null) {
   "use step";
 
@@ -2294,7 +2303,13 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     // needs it much later, after every unit/image step in between.
     let userLogoUrl: string | null = null;
     const detectedBrandPage = pageMap.pages.find((p) => p.visualStyle?.hasBrandMark);
-    if (detectedBrandPage) {
+    // QA fix (2026-10-06): a rerun used to ask for the logo again even though
+    // the previous run already had one uploaded; reuse it instead.
+    const previousLogoUrl = detectedBrandPage && resumeFromRunId ? await loadRunLogoUrl(resumeFromRunId) : null;
+    if (previousLogoUrl) {
+      userLogoUrl = previousLogoUrl;
+      await saveUserLogoUrl(runId, userLogoUrl);
+    } else if (detectedBrandPage) {
       await setRunStatus(runId, "awaiting_logo_upload", "Kaynak PDF'te logo tespit edildi, onay bekleniyor");
       const logoHook = createHook<{ logoUrl: string | null; skip: boolean }>({
         token: `logo-upload:${runId}`,

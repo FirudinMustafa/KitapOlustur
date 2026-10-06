@@ -49,9 +49,9 @@ function MultipleChoiceExercise({ exercise }: { exercise: Extract<InteractiveExe
               disabled={showFeedback}
               className={`rounded-md border px-3 py-1.5 text-left text-sm ${
                 showFeedback && isCorrect
-                  ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
+                  ? "border-success bg-success-soft text-success-soft-foreground"
                   : showFeedback && isSelected
-                    ? "border-red-500 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-200"
+                    ? "border-danger bg-danger-soft text-danger-soft-foreground"
                     : "border-input text-foreground/80 hover:bg-accent"
               }`}
             >
@@ -94,8 +94,8 @@ function FillBlankExercise({ exercise }: { exercise: Extract<InteractiveExercise
                 className={`mx-1 w-24 rounded border px-1.5 py-0.5 text-sm ${
                   checked
                     ? isCorrect(i)
-                      ? "border-green-500 bg-green-50 dark:bg-green-950"
-                      : "border-red-500 bg-red-50 dark:bg-red-950"
+                      ? "border-success bg-success-soft"
+                      : "border-danger bg-danger-soft"
                     : "border-input bg-background"
                 }`}
               />
@@ -141,7 +141,7 @@ function MatchingExercise({ exercise }: { exercise: Extract<InteractiveExercise,
             disabled={solved.has(i)}
             className={`rounded-md border px-2 py-1.5 text-left text-sm ${
               solved.has(i)
-                ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
+                ? "border-success bg-success-soft text-success-soft-foreground"
                 : selectedLeft === i
                   ? "border-primary bg-primary/10"
                   : "border-input text-foreground/80 hover:bg-accent"
@@ -161,9 +161,9 @@ function MatchingExercise({ exercise }: { exercise: Extract<InteractiveExercise,
               disabled={solvedHere}
               className={`rounded-md border px-2 py-1.5 text-left text-sm ${
                 solvedHere
-                  ? "border-green-500 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200"
+                  ? "border-success bg-success-soft text-success-soft-foreground"
                   : wrongFlash === i
-                    ? "border-red-500 bg-red-50 dark:bg-red-950"
+                    ? "border-danger bg-danger-soft"
                     : "border-input text-foreground/80 hover:bg-accent"
               }`}
             >
@@ -212,7 +212,7 @@ export function KaraokeAudio({ audioUrl, wordTimestamps }: { audioUrl: string; w
             key={i}
             className={
               i === activeIndex
-                ? "rounded bg-yellow-300 px-0.5 text-zinc-950 dark:bg-yellow-500"
+                ? "rounded bg-warning/60 px-0.5 text-foreground"
                 : "text-foreground/80"
             }
           >
@@ -315,13 +315,13 @@ export function BlockView({
 export function GlossarySection({ glossary }: { glossary: GeneratedPage["glossary"] }) {
   if (!glossary?.length) return null;
   return (
-    <section className="mt-4 rounded-lg bg-amber-50 p-4 dark:bg-amber-950">
-      <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200">Glossary</h4>
+    <section className="mt-4 rounded-xl border border-warning/30 bg-warning-soft p-4">
+      <h4 className="font-heading text-base font-medium text-warning-soft-foreground">Glossary</h4>
       <dl className="mt-2 flex flex-col gap-2">
         {glossary.map((entry, i) => (
           <div key={i}>
-            <dt className="text-sm font-medium text-amber-900 dark:text-amber-200">{entry.term}</dt>
-            <dd className="text-sm text-amber-800 dark:text-amber-300">
+            <dt className="text-sm font-medium text-foreground">{entry.term}</dt>
+            <dd className="text-sm text-muted-foreground">
               {entry.definition}
               {entry.example && <span className="italic"> · e.g. {entry.example}</span>}
             </dd>

@@ -539,7 +539,7 @@ export function ArrangementEditor({
       )}
 
       {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
-      {message && <p className="mt-4 text-sm text-green-700 dark:text-green-400">{message}</p>}
+      {message && <p className="mt-4 text-sm text-success">{message}</p>}
 
       <div className="mt-6 flex gap-3">
         <Button onClick={handleSave} disabled={saving}>
@@ -749,7 +749,7 @@ function DraggableImageChip({ unitNumber, pageIndex }: { unitNumber: number; pag
       {...listeners}
       type="button"
       title="Görseli başka bir sayfaya sürükle"
-      className={`${CHIP_BASE_CLASS} border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 ${isDragging ? "opacity-40" : ""}`}
+      className={`${CHIP_BASE_CLASS} border-warning/40 bg-warning-soft text-warning-soft-foreground ${isDragging ? "opacity-40" : ""}`}
     >
       <span aria-hidden>🖼</span>
       <span className="truncate">Görsel</span>
@@ -782,7 +782,7 @@ function DraggableAudioChip({
       {...listeners}
       type="button"
       title="Başka bir üniteye sürükle"
-      className={`${CHIP_BASE_CLASS} w-auto max-w-28 border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-200 ${isDragging ? "opacity-40" : ""}`}
+      className={`${CHIP_BASE_CLASS} w-auto max-w-28 border-info/40 bg-info-soft text-info-soft-foreground ${isDragging ? "opacity-40" : ""}`}
     >
       <span aria-hidden>🔊</span>
       <span className="truncate">{blockRef}</span>
