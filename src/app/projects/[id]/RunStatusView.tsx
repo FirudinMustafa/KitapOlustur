@@ -24,6 +24,8 @@ import dynamic from "next/dynamic";
 const Book3DMockup = dynamic(() => import("@/components/book/Book3DMockup"), { ssr: false });
 import { CharacterApproval } from "./CharacterApproval";
 import { DesignQualityPanel } from "./DesignQualityPanel";
+import { ProcessLogPanel } from "./ProcessLogPanel";
+import type { ProcessLog } from "@/lib/process-log";
 import type { DesignReviewSummary } from "@/lib/design/design-summary";
 import { resolveDesignTheme, type DesignThemeId } from "@/lib/design/themes";
 
@@ -178,6 +180,8 @@ type ProjectData = {
   unitReviewSummary?: PersonaReviewSummary[];
   // Faz 3: art-director grades of the typeset pages (page_design_reviews).
   designReview?: DesignReviewSummary | null;
+  // Süreç Günlüğü (src/lib/process-log.ts).
+  processLog?: ProcessLog | null;
 };
 
 const TERMINAL_STATUSES = new Set(["done", "failed", "changes_requested"]);
@@ -651,6 +655,8 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
           unitProgress={unitProgress}
         />
       </div>
+
+      {data.processLog && <ProcessLogPanel log={data.processLog} />}
 
       {coherenceReview && (
         <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">

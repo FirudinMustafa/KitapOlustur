@@ -408,6 +408,23 @@ export const variantHistory = pgTable("variant_history", {
 // single, coarse, run-level rating/comment left after the fact) - this
 // captures the actual back-and-forth ("regenerate unit 3, the dialogue felt
 // unnatural") that drives a real regeneration, one round at a time.
+// Süreç Günlüğü: an append-only history of a run - every status change the
+// pipeline makes (setRunStatus) and every decision the human takes at an
+// approval gate. generation_runs only holds the CURRENT status, so without
+// this the path a run took (and how long each stage took) was lost.
+export const runEvents = pgTable("run_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id")
+    .notNull()
+    .references(() => generationRuns.id, { onDelete: "cascade" }),
+  // "status" (pipeline) or "human" (an approval decision).
+  kind: text("kind").notNull(),
+  status: text("status").notNull(),
+  message: text("message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type RunEventRow = typeof runEvents.$inferSelect;
+
 export const unitFeedback = pgTable("unit_feedback", {
   id: uuid("id").primaryKey().defaultRandom(),
   runId: uuid("run_id")

@@ -22,6 +22,7 @@ import type { OutlineDocument } from "@/app/projects/[id]/RunStatusView";
 import { fetchCoverDimensions } from "@/lib/cover-dimensions";
 import { bookTypesWithContent } from "@/lib/content-book-types";
 import { summarizeDesignReviews } from "@/lib/design/design-summary";
+import { loadProcessLog } from "@/lib/process-log-data";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -106,6 +107,12 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     }
   }
 
+  // Süreç Günlüğü
+  const designRows = await designRowsPromise;
+  const processLog = run
+    ? await loadProcessLog(run, { unitReviews: allUnitReviews, imageReviews: reviews, designReviews: designRows })
+    : null;
+
   return NextResponse.json({
     project,
     upload,
@@ -121,7 +128,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     unitReviewSummary,
     coverDimensions,
     contentBookTypes: bookTypesWithContent(books[0]?.content as GeneratedUnit[] | null),
-    designReview: summarizeDesignReviews(await designRowsPromise),
+    designReview: summarizeDesignReviews(designRows),
+    processLog,
   });
 }
 

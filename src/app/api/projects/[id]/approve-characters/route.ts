@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
+import { logHumanDecision } from "@/lib/run-events";
 
 // Faz 2 "Karakter tutarlılığı": resumes the character-sheet approval gate.
 // `approved: true` continues the run with the current sheets; otherwise the
@@ -46,6 +47,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   } catch {
     return NextResponse.json({ error: "Onay gönderilemedi (token geçersiz veya süresi doldu)" }, { status: 404 });
   }
+
+  await logHumanDecision(run.id, `awaiting_character_approval`, approved ? "Karakterler onaylandı" : `Yeniden çizim istendi: ${redraw.map((r) => (r.note ? `${r.id} ("${r.note}")` : r.id)).join(", ")}`);
 
   return NextResponse.json({ success: true });
 }

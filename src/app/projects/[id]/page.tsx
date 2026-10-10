@@ -29,6 +29,7 @@ import { computeUnitProgress } from "@/lib/unit-progress";
 import { fetchCoverDimensions } from "@/lib/cover-dimensions";
 import { bookTypesWithContent } from "@/lib/content-book-types";
 import { summarizeDesignReviews } from "@/lib/design/design-summary";
+import { loadProcessLog } from "@/lib/process-log-data";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +104,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     }
   }
 
+  // Süreç Günlüğü
+  const designRows = await designRowsPromise;
+  const processLog = run
+    ? await loadProcessLog(run, { unitReviews: allUnitReviews, imageReviews: reviews, designReviews: designRows })
+    : null;
+
   return (
     <RunStatusView
       projectId={project.id}
@@ -110,7 +117,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         project: { id: project.id, name: project.name, level: project.level, isbn: project.isbn },
         coverDimensions,
         contentBookTypes: bookTypesWithContent(books[0]?.content as GeneratedUnit[] | null),
-        designReview: summarizeDesignReviews(await designRowsPromise),
+        designReview: summarizeDesignReviews(designRows),
+        processLog,
         upload: upload ? { filename: upload.filename, bookType: upload.bookType } : null,
         run: run
           ? {

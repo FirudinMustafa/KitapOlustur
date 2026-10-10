@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
+import { logHumanDecision } from "@/lib/run-events";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
@@ -36,6 +37,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   } catch {
     return NextResponse.json({ error: "Seçim gönderilemedi (token geçersiz veya süresi doldu)" }, { status: 404 });
   }
+
+  await logHumanDecision(run.id, `awaiting_variant_selection`, `Ünite ${unitNumber} için ${selectedIndex + 1}. varyant seçildi`);
 
   return NextResponse.json({ success: true });
 }

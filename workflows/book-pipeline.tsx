@@ -30,6 +30,7 @@ import {
   unitFeedback,
   teacherFeedback,
   pageDesignReviews,
+  runEvents,
   type RunStatus,
 } from "@/db/schema";
 import { ngramJaccardSimilarity } from "@/lib/originality";
@@ -343,6 +344,8 @@ async function setRunStatus(runId: string, status: RunStatus, stage?: string, er
     .update(generationRuns)
     .set({ status, currentStage: stage ?? null, errorMessage: errorMessage ?? null, updatedAt: new Date() })
     .where(eq(generationRuns.id, runId));
+  // Süreç Günlüğü: keep the history, not just the latest status.
+  await db.insert(runEvents).values({ runId, kind: "status", status, message: errorMessage ?? stage ?? null });
 }
 
 // "Kaynağa görsel sadakat" (2026-09-28, ROADMAP.md): the userLogoUrl write

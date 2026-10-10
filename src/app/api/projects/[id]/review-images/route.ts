@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
+import { logHumanDecision } from "@/lib/run-events";
 
 type Decision = { unitNumber: number; pageNumber: number; action: "accept" | "regenerate" };
 
@@ -46,6 +47,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   } catch {
     return NextResponse.json({ error: "Onay gönderilemedi (token geçersiz veya süresi doldu)" }, { status: 404 });
   }
+
+  await logHumanDecision(run.id, `awaiting_image_review`, `Görsel incelemesi: ${decisions.filter((d) => d.action === "regenerate").length} yeniden üretilecek, ${decisions.filter((d) => d.action === "accept").length} kabul edildi`);
 
   return NextResponse.json({ success: true });
 }
