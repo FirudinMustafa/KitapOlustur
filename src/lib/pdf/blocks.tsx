@@ -7,7 +7,7 @@ import { BLOCK_COLORS } from "@/lib/block-colors";
 import { itemText } from "@/lib/item-text";
 import { isChecklistBlock } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, speakerColorMap, type DesignTheme, type ThemePalette } from "@/lib/design/themes";
-import { NOTO_SANS, NOTO_SERIF } from "./fonts";
+import { NOTO_SANS, NOTO_SERIF, pdfFontFamily } from "./fonts";
 
 // Faz 1 "Tasarım sistemi": the per-block print pieces, split out of
 // BookDocument.tsx so the page templates (./templates.tsx) and the original
@@ -27,8 +27,8 @@ export function makeLook(theme: DesignTheme, palette: ThemePalette): Look {
   return {
     theme,
     palette,
-    headingFont: theme.headingFont === "serif" ? NOTO_SERIF : NOTO_SANS,
-    bodyFont: theme.bodyFont === "serif" ? NOTO_SERIF : NOTO_SANS,
+    headingFont: pdfFontFamily(theme.headingFont),
+    bodyFont: pdfFontFamily(theme.bodyFont),
   };
 }
 

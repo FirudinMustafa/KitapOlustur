@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { ContentBlock, GeneratedPage, ListeningAudio } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
 import { isExerciseBlock, type LayoutTemplateId } from "@/lib/design/layouts";
-import type { DesignTheme, ThemePalette } from "@/lib/design/themes";
+import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
 
 // Faz 1 "Tasarım sistemi": web twin of src/lib/pdf/templates.tsx. Draws a
 // templated page on an A4-proportioned sheet (pt used directly as CSS px,
@@ -19,10 +19,20 @@ export type RenderBlock = (block: ContentBlock, opts: { frameless?: boolean }) =
 const SERIF = 'ui-serif, Georgia, "Noto Serif", serif';
 const SANS = 'ui-sans-serif, system-ui, "Noto Sans", sans-serif';
 
+// Same typefaces as the PDF (src/lib/pdf/fonts.ts), served from
+// public/fonts via the @font-face rules in globals.css.
+const ROLE_STACK: Record<FontRole, string> = {
+  sans: SANS,
+  serif: SERIF,
+  rounded: `"Baloo 2", ${SANS}`,
+  reading: `Andika, ${SANS}`,
+  friendly: `Nunito, ${SANS}`,
+};
+
 export function lookFonts(look: WebLook) {
   return {
-    heading: look.theme.headingFont === "serif" ? SERIF : SANS,
-    body: look.theme.bodyFont === "serif" ? SERIF : SANS,
+    heading: ROLE_STACK[look.theme.headingFont] ?? SANS,
+    body: ROLE_STACK[look.theme.bodyFont] ?? SANS,
   };
 }
 

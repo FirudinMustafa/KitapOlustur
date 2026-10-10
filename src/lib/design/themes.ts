@@ -13,12 +13,19 @@ export type ThemePalette = { primary: string; primaryDark: string; primaryLight:
 
 export type DesignThemeId = "classic" | "modern-elt" | "playful-kids" | "academic" | "storybook";
 
+// Typeface roles a theme can pick. Every family behind them is OFL and
+// covers Turkish (checked glyph by glyph before it was added - Fredoka was
+// rejected for missing ı/ş/ğ): sans/serif = Noto, rounded = Baloo 2
+// (display headings), reading = Andika (SIL's typeface for early readers:
+// single-storey a and g), friendly = Nunito.
+export type FontRole = "sans" | "serif" | "rounded" | "reading" | "friendly";
+
 export type DesignTheme = {
   id: DesignThemeId;
   label: string;
   description: string;
-  headingFont: "sans" | "serif";
-  bodyFont: "sans" | "serif";
+  headingFont: FontRole;
+  bodyFont: FontRole;
   /** Body text size in pt (PDF) - younger audiences get larger type. */
   bodySize: number;
   /** Corner radius in pt for cards, boxes and images. */
@@ -54,7 +61,7 @@ export const DESIGN_THEMES: Record<DesignThemeId, DesignTheme> = {
     id: "modern-elt",
     label: "Modern ELT",
     description: "Yayınevi ders kitabı havası: tam sayfa kapak görseli, renkli kutular, iki sütunlu düzen.",
-    headingFont: "sans",
+    headingFont: "friendly",
     bodyFont: "sans",
     bodySize: 10,
     radius: 10,
@@ -71,8 +78,8 @@ export const DESIGN_THEMES: Record<DesignThemeId, DesignTheme> = {
     id: "playful-kids",
     label: "Çocuk / Eğlenceli",
     description: "Büyük punto, yuvarlak köşeler, canlı renkler; ilkokul seviyesi için.",
-    headingFont: "sans",
-    bodyFont: "sans",
+    headingFont: "rounded",
+    bodyFont: "reading",
     bodySize: 12.5,
     radius: 16,
     cardStyle: "tinted",

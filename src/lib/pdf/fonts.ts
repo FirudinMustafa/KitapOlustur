@@ -1,5 +1,6 @@
 import path from "node:path";
 import { Font } from "@react-pdf/renderer";
+import type { FontRole } from "@/lib/design/themes";
 
 // "Site QA" (2026-09-23): the standard-14 PDF fonts (Times-Roman,
 // Helvetica*) use WinAnsiEncoding, which has NO glyphs for Turkish ı/İ,
@@ -9,19 +10,36 @@ import { Font } from "@react-pdf/renderer";
 // which is almost certainly the dominant cause of the "characters look
 // wrong" complaint - not just the separate Markdown-leak bug found earlier.
 // Fixed by registering real Unicode fonts with full Turkish (Latin
-// Extended-A) coverage instead. Noto Sans/Noto Serif's *variable* font
-// files are used (not a per-weight static download) because Google Fonts'
-// per-weight CDN delivery is subsetted by script (a "latin" file has ı but
-// not ş/ğ; "latin-ext" has ş/ğ but not ı) - no single subsetted file covers
-// Turkish. The variable font source files are NOT subsetted, so they carry
-// every glyph in one file; @react-pdf/renderer's fontkit picks the right
-// weight instance out of the variable font when multiple `fontWeight`
-// entries point at the same file (documented react-pdf variable-font
-// support), so one file per family/style still gives real regular+bold.
+// Extended-A) coverage instead.
+//
+// 2026-10-10: every family is now a set of STATIC per-weight files. The
+// variable Noto files used before printed bold text in the regular weight -
+// react-pdf ignores fontWeight on a variable font and always draws its
+// default instance, so no heading in any book had ever been bold (checked
+// by rendering 400 vs 700 side by side). The static files are Google
+// Fonts' full, unsubsetted per-weight TTFs (the css2 API serves those to a
+// client without a browser user agent); each was checked glyph by glyph for
+// ı/İ, ş/Ş, ğ/Ğ, ç, ö, ü and â/î/û before being added. Licences:
+// public/fonts/OFL-*.txt.
 const FONTS_DIR = path.join(process.cwd(), "public", "fonts");
 
 export const NOTO_SANS = "Noto Sans";
 export const NOTO_SERIF = "Noto Serif";
+export const BALOO = "Baloo 2";
+export const ANDIKA = "Andika";
+export const NUNITO = "Nunito";
+
+const ROLE_FAMILY: Record<FontRole, string> = {
+  sans: NOTO_SANS,
+  serif: NOTO_SERIF,
+  rounded: BALOO,
+  reading: ANDIKA,
+  friendly: NUNITO,
+};
+
+export function pdfFontFamily(role: FontRole): string {
+  return ROLE_FAMILY[role] ?? NOTO_SANS;
+}
 
 let registered = false;
 
@@ -32,18 +50,48 @@ export function registerBookFonts() {
   Font.register({
     family: NOTO_SANS,
     fonts: [
-      { src: path.join(FONTS_DIR, "NotoSans-Variable.ttf"), fontWeight: 400 },
-      { src: path.join(FONTS_DIR, "NotoSans-Variable.ttf"), fontWeight: 700 },
-      { src: path.join(FONTS_DIR, "NotoSans-Italic-Variable.ttf"), fontStyle: "italic", fontWeight: 400 },
+      { src: path.join(FONTS_DIR, "NotoSans-Regular.ttf"), fontWeight: 400 },
+      { src: path.join(FONTS_DIR, "NotoSans-Bold.ttf"), fontWeight: 700 },
+      { src: path.join(FONTS_DIR, "NotoSans-Italic.ttf"), fontStyle: "italic", fontWeight: 400 },
     ],
   });
 
   Font.register({
     family: NOTO_SERIF,
     fonts: [
-      { src: path.join(FONTS_DIR, "NotoSerif-Variable.ttf"), fontWeight: 400 },
-      { src: path.join(FONTS_DIR, "NotoSerif-Variable.ttf"), fontWeight: 700 },
-      { src: path.join(FONTS_DIR, "NotoSerif-Italic-Variable.ttf"), fontStyle: "italic", fontWeight: 400 },
+      { src: path.join(FONTS_DIR, "NotoSerif-Regular.ttf"), fontWeight: 400 },
+      { src: path.join(FONTS_DIR, "NotoSerif-Bold.ttf"), fontWeight: 700 },
+      { src: path.join(FONTS_DIR, "NotoSerif-Italic.ttf"), fontStyle: "italic", fontWeight: 400 },
+    ],
+  });
+
+  // Theme typefaces (see FontRole in src/lib/design/themes.ts). Static
+  // per-weight files on purpose: react-pdf ignores fontWeight on a
+  // variable font (it prints the default instance - Nunito came out
+  // ExtraLight, Baloo never bold). Italic falls back to the upright face -
+  // none of these themes sets body text in italic.
+  Font.register({
+    family: BALOO,
+    fonts: [
+      { src: path.join(FONTS_DIR, "Baloo2-Medium.ttf"), fontWeight: 400 },
+      { src: path.join(FONTS_DIR, "Baloo2-Bold.ttf"), fontWeight: 700 },
+      { src: path.join(FONTS_DIR, "Baloo2-Medium.ttf"), fontStyle: "italic", fontWeight: 400 },
+    ],
+  });
+  Font.register({
+    family: ANDIKA,
+    fonts: [
+      { src: path.join(FONTS_DIR, "Andika-Regular.ttf"), fontWeight: 400 },
+      { src: path.join(FONTS_DIR, "Andika-Bold.ttf"), fontWeight: 700 },
+      { src: path.join(FONTS_DIR, "Andika-Regular.ttf"), fontStyle: "italic", fontWeight: 400 },
+    ],
+  });
+  Font.register({
+    family: NUNITO,
+    fonts: [
+      { src: path.join(FONTS_DIR, "Nunito-Regular.ttf"), fontWeight: 400 },
+      { src: path.join(FONTS_DIR, "Nunito-Bold.ttf"), fontWeight: 700 },
+      { src: path.join(FONTS_DIR, "Nunito-Regular.ttf"), fontStyle: "italic", fontWeight: 400 },
     ],
   });
 
@@ -68,7 +116,7 @@ type ResettableFontSource = { data: unknown; loadResultPromise: unknown };
 export function resetBookFonts() {
   registerBookFonts();
   const families = Font.getRegisteredFonts() as Record<string, { sources: ResettableFontSource[] }>;
-  for (const family of [NOTO_SANS, NOTO_SERIF]) {
+  for (const family of [NOTO_SANS, NOTO_SERIF, BALOO, ANDIKA, NUNITO]) {
     for (const source of families[family]?.sources ?? []) {
       source.data = null;
       source.loadResultPromise = null;
