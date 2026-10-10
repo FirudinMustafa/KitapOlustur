@@ -1,3 +1,4 @@
+import { activityHeight, type Activity } from "@/lib/activities";
 // Faz 1 "Tasarım sistemi": named page-layout templates. The writer model
 // picks one per page (generatedPageSchema.layoutTemplate) and every renderer
 // (BookDocument.tsx for PDF, PageContent.tsx for the web reader/Dizilim)
@@ -97,6 +98,7 @@ type BlockLike = {
   table?: { headers: string[]; rows: string[][] };
   callout?: string;
   layout?: unknown;
+  activity?: Activity;
 };
 
 type PageLike = {
@@ -117,7 +119,7 @@ export function isChecklistBlock(b: { kind: string; items?: string[] }): boolean
 }
 
 export function isExerciseBlock(b: BlockLike): boolean {
-  return (!!b.items?.length || !!b.interactive) && !isChecklistBlock(b);
+  return (!!b.items?.length || !!b.interactive || !!b.activity) && !isChecklistBlock(b);
 }
 
 // ---- Height estimate ----
@@ -159,9 +161,11 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number): 
   }
   if (isChecklistBlock(b)) {
     h += (b.items ?? []).reduce((n, i) => n + textHeight(i, inner - 20, size) + 6, 0);
-  } else if (b.items?.length || b.interactive) {
+  } else if (b.items?.length || b.interactive || b.activity) {
     h += 44;
-    for (const i of b.items ?? []) h += textHeight(i, inner - 24, size) + 3;
+    const act = activityHeight(b, inner - 24, size);
+    h += act.extra;
+    if (!act.replacesItems) for (const i of b.items ?? []) h += textHeight(i, inner - 24, size) + 3;
     const it = b.interactive;
     if (it?.type === "multiple_choice") h += (it.options.length + 1) * size * LINE + 6;
     if (it?.type === "matching") h += it.pairs.length * size * LINE + 6;

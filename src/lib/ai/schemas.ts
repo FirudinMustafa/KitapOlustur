@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ACTIVITY_TYPES } from "@/lib/activities";
 import { LAYOUT_TEMPLATE_IDS } from "@/lib/design/layouts";
 
 // ---- Source page map ----
@@ -268,6 +269,27 @@ export const contentBlockSchema = z.object({
     .optional()
     .describe(
       "For grammar/conjugation/comparison content that is naturally a table (e.g. subject | verb | example). Each row has exactly one cell per header.",
+    ),
+  // Print-workbook activity formats (src/lib/activities.ts). Additive:
+  // a block without it prints as the numbered list it always did.
+  activity: z
+    .object({
+      type: z.enum(ACTIVITY_TYPES),
+      words: z.array(z.string()).optional().describe("Word bank: the words printed in a box for learners to choose from."),
+      pictures: z
+        .array(
+          z.object({
+            label: z.string().describe("What the picture shows, in a few plain words."),
+            emoji: z.string().optional().describe("ONE emoji character that depicts it, e.g. 📚 - used to draw the picture."),
+          }),
+        )
+        .optional()
+        .describe("picture_label / picture_match: one picture per item."),
+      lines: z.number().int().min(1).max(12).optional().describe("write_lines: ruled lines per item (or for a free-writing task); draw_box: frame height in lines."),
+    })
+    .optional()
+    .describe(
+      "Optional workbook activity format: picture_label, picture_match, word_bank, write_lines or draw_box. Leave unset for a plain numbered exercise.",
     ),
 });
 export type ContentBlock = z.infer<typeof contentBlockSchema>;

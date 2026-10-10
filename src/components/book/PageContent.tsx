@@ -6,6 +6,7 @@ import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geom
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { blocksForRender } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
+import { letterFor, type ActivityPicture } from "@/lib/activities";
 import { isChecklistBlock, resolvePageTemplate } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, DESIGN_THEMES, speakerColorMap } from "@/lib/design/themes";
 import { TemplatedPage, lookFonts, type WebLook } from "./TemplatedPage";
@@ -327,6 +328,96 @@ function BlockTable({ table, primary, light }: { table: NonNullable<ContentBlock
   );
 }
 
+// Workbook activity formats (src/lib/activities.ts) - the screen twin of
+// the PDF drawing in src/lib/pdf/blocks.tsx.
+function ActivityPictureBox({ picture, fallback, light }: { picture?: ActivityPicture; fallback: string; light: string }) {
+  return (
+    <div className="flex h-16 items-center justify-center rounded-lg border bg-white p-1 text-center" style={{ borderColor: light }}>
+      {picture?.emoji ? (
+        <span className="text-4xl leading-none" role="img" aria-label={picture.label}>
+          {picture.emoji}
+        </span>
+      ) : (
+        <span className="text-[10px] leading-tight text-muted-foreground">{fallback}</span>
+      )}
+    </div>
+  );
+}
+
+function RuledLines({ count }: { count: number }) {
+  return (
+    <div aria-hidden>
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="h-6 border-b border-gray-400" />
+      ))}
+    </div>
+  );
+}
+
+function ActivityView({ block, primary, light }: { block: ContentBlock; primary: string; light: string }) {
+  const a = block.activity!;
+  const items = block.items ?? [];
+  const pictures = a.pictures ?? [];
+  return (
+    <div className="mt-2 text-sm">
+      {!!a.words?.length && (
+        <div className="mb-3 flex flex-wrap justify-center gap-x-4 gap-y-1 rounded-md border border-dashed bg-white px-3 py-2 font-bold" style={{ borderColor: primary, color: primary }}>
+          {a.words.map((w, i) => (
+            <span key={i}>{w}</span>
+          ))}
+        </div>
+      )}
+      {a.type === "picture_label" ? (
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+          {items.map((item, i) => (
+            <div key={i}>
+              <ActivityPictureBox picture={pictures[i]} fallback={itemText(item)} light={light} />
+              <div className="mt-1 flex items-end gap-1">
+                <span className="text-xs font-bold" style={{ color: primary }}>
+                  {i + 1}
+                </span>
+                <span className="mb-1 h-0 flex-1 border-b border-gray-400" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : a.type === "picture_match" ? (
+        <div className="flex flex-col gap-2">
+          {items.map((item, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="flex-1">
+                {i + 1}. {itemText(item)}
+              </span>
+              <span className="h-2 w-2 rounded-full" style={{ background: primary }} />
+              <span className="w-10 sm:w-16" />
+              <span className="h-2 w-2 rounded-full" style={{ background: primary }} />
+              <span className="text-xs font-bold" style={{ color: primary }}>
+                {letterFor(i)}
+              </span>
+              <div className="w-20">
+                <ActivityPictureBox picture={pictures[i]} fallback={pictures[i]?.label ?? ""} light={light} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <ol className="list-decimal pl-5">
+            {items.map((item, i) => (
+              <li key={i}>
+                {itemText(item)}
+                {a.type === "write_lines" && <RuledLines count={a.lines ?? 1} />}
+              </li>
+            ))}
+          </ol>
+          {a.type === "write_lines" && !items.length && <RuledLines count={a.lines ?? 5} />}
+          {a.type === "draw_box" && <div className="mt-2 rounded-lg border bg-white" style={{ borderColor: primary, height: (a.lines ?? 8) * 18 }} />}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function BlockView({
   block,
   showAnswerKey,
@@ -401,6 +492,8 @@ export function BlockView({
             </li>
           ))}
         </ul>
+      ) : block.activity ? (
+        <ActivityView block={block} primary={primary} light={light} />
       ) : (
         !!block.items?.length && (
           <ol className={look ? "mt-2 list-decimal pl-5" : "mt-2 list-decimal pl-5 text-sm text-foreground"}>

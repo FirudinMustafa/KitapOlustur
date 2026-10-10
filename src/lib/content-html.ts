@@ -114,9 +114,20 @@ function renderInteractiveHtml(block: ContentBlock, showAnswerKey: boolean): str
 // always render every block in plain reading order, same as before this
 // field existed.
 export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): string {
+  // Workbook activities (src/lib/activities.ts) reflow as text: the word
+  // bank as a line, pictures as their emoji (e-readers draw them natively).
+  const a = block.activity;
+  const pictures = a?.pictures ?? [];
+  const wordBank = a?.words?.length ? `<p class="word-bank"><strong>${a.words.map(escapeXml).join(" · ")}</strong></p>` : "";
+  const itemLabel = (item: string, i: number) =>
+    a?.type === "picture_label" && pictures[i]?.emoji ? `${pictures[i].emoji} ${itemText(item)}` : itemText(item);
   const items = block.items?.length
-    ? `<ol class="items">${block.items.map((item) => `<li>${escapeXml(itemText(item))}</li>`).join("")}</ol>`
+    ? `<ol class="items">${block.items.map((item, i) => `<li>${escapeXml(itemLabel(item, i))}</li>`).join("")}</ol>`
     : "";
+  const matchPictures =
+    a?.type === "picture_match" && pictures.length
+      ? `<ol class="items" type="a">${pictures.map((pic) => `<li>${escapeXml(pic.emoji ? `${pic.emoji} ${pic.label}` : pic.label)}</li>`).join("")}</ol>`
+      : "";
   const answerKey =
     showAnswerKey && block.answerKey?.length
       ? `<div class="answer-key"><p class="answer-key-label">ANSWER KEY</p><ol>${block.answerKey
@@ -126,7 +137,9 @@ export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): st
   return `<section class="block block-${block.kind}">
     <h3>${escapeXml(block.heading)}</h3>
     ${paragraphs(block.body)}
+    ${wordBank}
     ${items}
+    ${matchPictures}
     ${renderInteractiveHtml(block, showAnswerKey)}
     ${answerKey}
   </section>`;

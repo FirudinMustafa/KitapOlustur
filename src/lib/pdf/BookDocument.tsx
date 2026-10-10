@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   answerKeyTitleBand: { paddingVertical: 20, marginBottom: 18, borderRadius: 8, alignItems: "center" },
   answerKeyTitle: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 18, color: "#ffffff" },
   answerKeyUnitHeading: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 11.5, marginTop: 14, marginBottom: 6 },
-  answerKeyEntry: { marginBottom: 8, padding: 8, backgroundColor: "#f9fafb", borderRadius: 4 },
+  answerKeyEntry: { marginBottom: 6, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: "#f9fafb", borderRadius: 4 },
 });
 
 // Render-time block list: legacy partially-positioned pages get the same
@@ -580,7 +580,11 @@ export function BookDocument({
   const pageStyle = [styles.page, { fontFamily: look.bodyFont, fontSize: theme.bodySize }, bleedPadding(bleed)];
   // Faz "Teacher's Book/Test Booklet Genişletme": every book type except the
   // student book prints its answer key.
-  const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
+  // A Teacher's Book prints each answer under its exercise; a Workbook or
+  // Test prints them only on the answer-key pages at the back - answers
+  // right under the questions would give them away to the learner.
+  const inlineAnswers = variant === "teacher_book";
+  const showAnswerKey = variant === "workbook" || variant === "test_booklet";
 
   return (
     <Document title={`${bookTitle} - ${variantLabel}`}>
@@ -654,7 +658,7 @@ export function BookDocument({
                   isUnitFirstPage={idx === 0 && !isPictureBook}
                   imageSrc={imageSrc}
                   look={look}
-                  showAnswerKey={showAnswerKey}
+                  showAnswerKey={inlineAnswers}
                   pageSize={pageSize}
                   imageHeight={pageImageHeight}
                   sectionKicker={sectionKicker}
@@ -668,7 +672,7 @@ export function BookDocument({
                   isUnitFirstPage={idx === 0 && !isPictureBook}
                   imageSrc={imageSrc}
                   look={look}
-                  showAnswerKey={showAnswerKey}
+                  showAnswerKey={inlineAnswers}
                   pageSize={pageSize}
                   unitKicker={`UNIT ${unit.unitNumber}`}
                   bleed={bleed}
@@ -697,13 +701,20 @@ export function BookDocument({
                 .flatMap((page) => page.blocks)
                 .filter((block) => block.answerKey?.length)
                 .map((block, i) => (
+                  // Set inline, the way printed answer keys are
+                  // ("1 library  2 park ..."): one answer per line ran a
+                  // short unit's key over several pages.
                   <View key={i} style={styles.answerKeyEntry} wrap={false}>
-                    <Text style={styles.answerKeyLabel}>{block.heading}</Text>
-                    {(block.answerKey ?? []).map((answer, j) => (
-                      <Text style={styles.item} key={j}>
-                        {j + 1}. {itemText(answer)}
-                      </Text>
-                    ))}
+                    <Text style={[styles.answerKeyLabel, { color: palette.primaryDark }]}>{block.heading}</Text>
+                    <Text style={{ lineHeight: 1.5 }}>
+                      {(block.answerKey ?? []).map((answer, j) => (
+                        <Text key={j}>
+                          <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, color: palette.primary }}>{`${j + 1} `}</Text>
+                          {itemText(answer)}
+                          {j < (block.answerKey?.length ?? 0) - 1 ? "    " : ""}
+                        </Text>
+                      ))}
+                    </Text>
                   </View>
                 ))}
             </View>

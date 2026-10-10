@@ -1,4 +1,5 @@
-import { Text, View, Svg, Path, Rect, Circle, Line } from "@react-pdf/renderer";
+import { Text, View, Svg, Path, Rect, Circle, Line, Image } from "@react-pdf/renderer";
+import { DRAW_LINE, MATCH_ROW, PICTURE_CELL, RULE_GAP, letterFor, type ActivityPicture } from "@/lib/activities";
 import type { ContentBlock, ContentBlockKind, GeneratedPage } from "@/lib/ai/schemas";
 import { seededShuffle } from "@/lib/content-html";
 import { BLOCK_COLORS } from "@/lib/block-colors";
@@ -17,6 +18,8 @@ export type Look = {
   palette: ThemePalette;
   headingFont: string;
   bodyFont: string;
+  /** emoji -> image src for activity pictures (filled by the book renderer when icons are available). */
+  pictureSrc?: Record<string, string>;
 };
 
 export function makeLook(theme: DesignTheme, palette: ThemePalette): Look {
@@ -177,6 +180,171 @@ function ChecklistItems({ items, look }: { items: string[]; look: Look }) {
   );
 }
 
+// ---- Workbook activity formats (src/lib/activities.ts) ----
+
+function WordBank({ words, look }: { words: string[]; look: Look }) {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        flexWrap: "wrap",
+        justifyContent: "center",
+        borderWidth: 1,
+        borderStyle: "dashed",
+        borderColor: look.palette.primary,
+        borderRadius: Math.max(4, look.theme.radius / 2),
+        paddingVertical: 6,
+        paddingHorizontal: 8,
+        marginBottom: 8,
+        backgroundColor: "#ffffff",
+      }}
+      wrap={false}
+    >
+      {words.map((w, i) => (
+        <Text key={i} style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9.5, color: look.palette.primaryDark, marginHorizontal: 7, marginVertical: 2 }}>
+          {w}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+function RuledLines({ count }: { count: number }) {
+  return (
+    <View>
+      {Array.from({ length: count }, (_, i) => (
+        <View key={i} style={{ height: RULE_GAP, borderBottomWidth: 0.75, borderBottomColor: "#9ca3af" }} />
+      ))}
+    </View>
+  );
+}
+
+// A picture for an activity: the icon when the renderer has one for this
+// emoji, otherwise a soft frame with a short description so the exercise
+// still reads.
+function PictureFrame({ picture, fallback, height, look }: { picture?: ActivityPicture; fallback: string; height: number; look: Look }) {
+  const src = picture?.emoji ? look.pictureSrc?.[picture.emoji] : undefined;
+  return (
+    <View
+      style={{
+        height,
+        borderRadius: Math.max(6, look.theme.radius),
+        backgroundColor: "#ffffff",
+        borderWidth: 1,
+        borderColor: look.palette.primaryLight,
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 4,
+      }}
+    >
+      {src ? (
+        // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop
+        <Image src={src} style={{ height: height - 14, width: height - 14, objectFit: "contain" }} />
+      ) : (
+        <Text style={{ fontSize: 7.5, color: "#6b7280", textAlign: "center", lineHeight: 1.3 }}>{fallback}</Text>
+      )}
+    </View>
+  );
+}
+
+function PictureLabelGrid({ block, look, columns }: { block: ContentBlock; look: Look; columns: number }) {
+  const items = block.items ?? [];
+  const pictures = block.activity?.pictures ?? [];
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+      {items.map((item, i) => (
+        <View key={i} style={{ width: `${100 / columns}%`, paddingHorizontal: 4, marginBottom: 8 }} wrap={false}>
+          <PictureFrame picture={pictures[i]} fallback={itemText(item)} height={PICTURE_CELL - 30} look={look} />
+          <View style={{ flexDirection: "row", alignItems: "flex-end", height: 22 }}>
+            <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9, color: look.palette.primary, marginRight: 4 }}>{i + 1}</Text>
+            <View style={{ flex: 1, borderBottomWidth: 0.75, borderBottomColor: "#9ca3af", marginBottom: 3 }} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function Dot({ color }: { color: string }) {
+  return (
+    <Svg viewBox="0 0 10 10" style={{ width: 7, height: 7, marginHorizontal: 6 }}>
+      <Circle cx="5" cy="5" r="4" fill={color} />
+    </Svg>
+  );
+}
+
+// Words on the left, lettered pictures on the right (already in mixed
+// order), a dot on each side to draw the line between.
+function PictureMatch({ block, look }: { block: ContentBlock; look: Look }) {
+  const items = block.items ?? [];
+  const pictures = block.activity?.pictures ?? [];
+  const frame = MATCH_ROW - 8;
+  return (
+    <View>
+      {items.map((item, i) => (
+        <View key={i} style={{ flexDirection: "row", alignItems: "center", height: MATCH_ROW }} wrap={false}>
+          <Text style={{ flex: 1, lineHeight: 1.3 }}>
+            {i + 1}. {itemText(item)}
+          </Text>
+          <Dot color={look.palette.primary} />
+          <View style={{ width: "8%" }} />
+          <Dot color={look.palette.primary} />
+          <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9, color: look.palette.primary, marginRight: 4 }}>{letterFor(i)}</Text>
+          <View style={{ width: frame * 1.3 }}>
+            <PictureFrame picture={pictures[i]} fallback={pictures[i]?.label ?? ""} height={frame} look={look} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ItemList({ block, look }: { block: ContentBlock; look: Look }) {
+  const a = block.activity;
+  const lines = a?.type === "write_lines" ? (a.lines ?? 1) : 0;
+  return (
+    <>
+      {block.items?.map((item, k) => (
+        <View key={k} wrap={false}>
+          <Text style={s.item}>
+            {k + 1}. {itemText(item)}
+          </Text>
+          {lines > 0 && <RuledLines count={lines} />}
+        </View>
+      ))}
+      {a?.type === "write_lines" && !block.items?.length && <RuledLines count={a.lines ?? 5} />}
+      {a?.type === "draw_box" && (
+        <View
+          style={{
+            height: (a.lines ?? 8) * DRAW_LINE,
+            marginTop: 6,
+            borderWidth: 1,
+            borderColor: look.palette.primary,
+            borderRadius: Math.max(6, look.theme.radius),
+            backgroundColor: "#ffffff",
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function ActivityItems({ block, look, columns }: { block: ContentBlock; look: Look; columns: number }) {
+  const a = block.activity;
+  return (
+    <>
+      {!!a?.words?.length && <WordBank words={a.words} look={look} />}
+      {a?.type === "picture_label" ? (
+        <PictureLabelGrid block={block} look={look} columns={columns} />
+      ) : a?.type === "picture_match" ? (
+        <PictureMatch block={block} look={look} />
+      ) : (
+        <ItemList block={block} look={look} />
+      )}
+    </>
+  );
+}
+
 function ExerciseBox({
   block,
   showAnswerKey,
@@ -188,18 +356,14 @@ function ExerciseBox({
   look: Look;
   plain?: boolean;
 }) {
-  if (!block.items?.length && !block.interactive) return null;
+  if (!block.items?.length && !block.interactive && !block.activity) return null;
   if (isChecklistBlock(block)) return <ChecklistItems items={block.items ?? []} look={look} />;
   // Inside an exercise-grid card the card itself is the frame - a second
   // tinted box with a kind badge inside it read as clutter.
   if (plain) {
     return (
       <View style={{ marginTop: 2 }}>
-        {block.items?.map((item, k) => (
-          <Text style={s.item} key={k}>
-            {k + 1}. {itemText(item)}
-          </Text>
-        ))}
+        <ActivityItems block={block} look={look} columns={3} />
         <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />
         <AnswerKey block={block} show={showAnswerKey} />
       </View>
@@ -214,11 +378,7 @@ function ExerciseBox({
         </View>
         <Text style={[s.badgeLabel, { backgroundColor: colors.text }]}>{block.kind.toUpperCase()}</Text>
       </View>
-      {block.items?.map((item, k) => (
-        <Text style={s.item} key={k}>
-          {k + 1}. {itemText(item)}
-        </Text>
-      ))}
+      <ActivityItems block={block} look={look} columns={4} />
       <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />
       <AnswerKey block={block} show={showAnswerKey} />
     </View>
@@ -346,7 +506,8 @@ export function blockLines(block: ContentBlock): number {
     (block.items?.length ?? 0) +
     (block.answerKey?.length ? block.answerKey.length + 1 : 0) +
     (block.dialogue?.length ?? 0) * 2 +
-    (block.table ? block.table.rows.length + 1 : 0)
+    (block.table ? block.table.rows.length + 1 : 0) +
+    (block.activity ? 6 : 0)
   );
 }
 
