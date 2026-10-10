@@ -3112,7 +3112,14 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     } else if (cast.length) {
       await setRunStatus(runId, "generating_images", `${cast.length} karakter için referans çizimleri üretiliyor`);
       for (const [i, c] of cast.entries()) {
-        characterSheets.push(await generateCharacterSheet(runId, { ...c, id: c.id || `c${i + 1}` }, artStyle, ctx.run.qualityMode, 1));
+        const character = { ...c, id: c.id || `c${i + 1}` };
+        // An undrawable sheet (e.g. image quota exhausted) leaves the
+        // character described in words only instead of failing the run.
+        try {
+          characterSheets.push(await generateCharacterSheet(runId, character, artStyle, ctx.run.qualityMode, 1));
+        } catch {
+          characterSheets.push({ ...character, imageUrl: null });
+        }
       }
       for (let round = 2; ; round++) {
         await saveCharacterSheets(runId, characterSheets, round);
@@ -3130,7 +3137,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           const revised = note
             ? { ...current, visualDescription: `${current.visualDescription} (Art director's correction: ${note})` }
             : current;
-          characterSheets[idx] = await generateCharacterSheet(runId, revised, artStyle, ctx.run.qualityMode, round);
+          try {
+            characterSheets[idx] = await generateCharacterSheet(runId, revised, artStyle, ctx.run.qualityMode, round);
+          } catch {
+            characterSheets[idx] = { ...revised, imageUrl: null };
+          }
         }
       }
       await saveCharacterSheets(runId, characterSheets);

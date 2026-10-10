@@ -180,12 +180,37 @@ function glossaryHeight(page: PageLike, columns: number): number {
 }
 
 /** Content height a template needs vs. what the page offers, both in pt. */
+// Measured against real renders (live E2E 2026-10-09/10, 27 pages from two
+// books): the raw model underestimates multi-column arrangements - narrow
+// columns wrap far more than an average glyph width predicts. These factors
+// make "needed > available" match "actually spilled" on that sample.
+const TEMPLATE_SAFETY: Partial<Record<ResolvedTemplate, number>> = {
+  "two-column": 1.25,
+  "reading-with-sidebar": 1.12,
+  "image-left-text-right": 1.12,
+  "exercise-grid": 1.08,
+  // Plain flow stacks a picture, unit heading and every block full-width;
+  // in the sample it spilled from an estimated 73%.
+  standard: 1.4,
+};
+
 export function estimateTemplateFit(
   page: PageLike,
   template: ResolvedTemplate,
   hasImage: boolean,
   isUnitFirstPage: boolean,
   m: PageMetrics = A4_METRICS,
+): { needed: number; available: number } {
+  const raw = rawTemplateFit(page, template, hasImage, isUnitFirstPage, m);
+  return { needed: raw.needed * (TEMPLATE_SAFETY[template] ?? 1), available: raw.available };
+}
+
+function rawTemplateFit(
+  page: PageLike,
+  template: ResolvedTemplate,
+  hasImage: boolean,
+  isUnitFirstPage: boolean,
+  m: PageMetrics,
 ): { needed: number; available: number } {
   const cw = m.width - MARGIN_X * 2;
   const size = m.bodySize;
