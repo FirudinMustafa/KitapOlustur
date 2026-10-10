@@ -54,3 +54,18 @@ describe("formatDuration", () => {
     expect(formatDuration(3_900_000)).toBe("1 sa 5 dk");
   });
 });
+
+describe("warnings", () => {
+  it("surfaces steps that failed without stopping the run", () => {
+    const log = buildProcessLog({
+      ...base,
+      events: [...base.events, { kind: "warning", status: "warning", message: "Kapak görseli üretilemedi - kota doldu", createdAt: t(13) }],
+      status: "awaiting_content_approval",
+      currentStage: null,
+      updatedAt: t(12),
+      now: t(15),
+    });
+    expect(log.warnings).toEqual(["Kapak görseli üretilemedi - kota doldu"]);
+    expect(log.timeline.some((e) => e.tone === "fail" && e.title.includes("Kapak"))).toBe(true);
+  });
+});

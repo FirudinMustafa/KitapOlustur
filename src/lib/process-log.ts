@@ -36,6 +36,8 @@ export type ProcessLog = {
   timings: StageTiming[];
   machineMs: number;
   humanMs: number;
+  /** Things that went wrong without stopping the run (e.g. pictures that could not be made). */
+  warnings: string[];
 };
 
 type EventIn = { kind: string; status: string; message: string | null; createdAt: Date | string };
@@ -83,6 +85,10 @@ export function buildProcessLog(input: {
   // -- status history + human decisions --
   let lastLine = "";
   for (const e of events) {
+    if (e.kind === "warning") {
+      timeline.push({ at: iso(e.createdAt), actor: "gorsel_tasarimci", actorLabel: label("gorsel_tasarimci"), tone: "fail", title: e.message ?? "Bir adım tamamlanamadı" });
+      continue;
+    }
     if (e.kind === "human") {
       timeline.push({ at: iso(e.createdAt), actor: "sen", actorLabel: "Sen", tone: "human", title: e.message ?? "Karar verildi" });
       continue;
@@ -252,5 +258,6 @@ export function buildProcessLog(input: {
             since: iso(input.updatedAt),
           };
 
-  return { now: nowBlock, agents, timeline, timings, machineMs, humanMs };
+  const warnings = [...new Set(events.filter((e) => e.kind === "warning" && e.message).map((e) => e.message as string))];
+  return { now: nowBlock, agents, timeline, timings, machineMs, humanMs, warnings };
 }

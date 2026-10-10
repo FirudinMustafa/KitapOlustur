@@ -72,7 +72,7 @@ import {
   type StudioImageSizeId,
 } from "@/lib/ai/model";
 import { synthesizeWithElevenLabs } from "@/lib/ai/elevenlabs";
-import { generateImageWithCloudflare } from "@/lib/ai/cloudflare-image";
+import { generateImageWithCloudflare, lastCloudflareImageFailure } from "@/lib/ai/cloudflare-image";
 import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { translateAiError } from "@/lib/ai/error-messages";
 import { unitsToMarkdown } from "@/lib/markdown";
@@ -335,6 +335,17 @@ async function fetchRunContext(runId: string) {
   await db.update(generationRuns).set({ modelVersion: textModel }).where(eq(generationRuns.id, runId));
 
   return { run, project, upload, niceToHave, styleProfile, textModel };
+}
+
+// Süreç Günlüğü: something the human must know about even though the run
+// carried on (e.g. pictures that could not be generated).
+async function logRunWarning(runId: string, message: string) {
+  "use step";
+  await db.insert(runEvents).values({ runId, kind: "warning", status: "warning", message });
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 async function setRunStatus(runId: string, status: RunStatus, stage?: string, errorMessage?: string) {
@@ -1763,7 +1774,7 @@ async function generateReviewedImage(
       // No reference-image support here - the written character
       // descriptions in fullPrompt() are all the consistency it gets.
       const result = await generateImageWithCloudflare(compactImagePrompt(prompt, characters, styleSuffix, size));
-      if (!result) throw new Error("Cloudflare Workers AI görüntü döndürmedi.");
+      if (!result) throw new Error(lastCloudflareImageFailure());
       image = result;
     } else {
       imageModel = resolveImageModel(qualityMode);
@@ -1863,10 +1874,13 @@ async function generateUnitImages(
   // whole Student Books. A coursebook page without pictures looks unfinished,
   // so a Student Book page that has none gets one derived from its content.
   const studentPages = new Set(unit.studentBookPages);
+  const failures: string[] = [];
+  let attempted = 0;
 
   for (const original of allPages) {
     const page = original.imagePrompt || !studentPages.has(original) ? original : { ...original, imagePrompt: fallbackImagePrompt(original, characterSheets) };
     if (!page.imagePrompt || images[page.sourcePageNumber]) continue;
+    attempted++;
     if (reuse[page.sourcePageNumber]) {
       images[page.sourcePageNumber] = reuse[page.sourcePageNumber];
       continue;
@@ -1888,7 +1902,18 @@ async function generateUnitImages(
       );
     } catch (err) {
       console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: image skipped -`, err instanceof Error ? err.message : err);
+      failures.push(errorText(err));
     }
+  }
+
+  if (failures.length) {
+    const reasons = [...new Set(failures)].join(" / ");
+    await db.insert(runEvents).values({
+      runId,
+      kind: "warning",
+      status: "warning",
+      message: `Ünite ${unit.unitNumber}: ${failures.length}/${attempted} görsel üretilemedi - ${reasons}`,
+    });
   }
 
   return images;
@@ -3120,8 +3145,9 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // character described in words only instead of failing the run.
         try {
           characterSheets.push(await generateCharacterSheet(runId, character, artStyle, ctx.run.qualityMode, 1));
-        } catch {
+        } catch (err) {
           characterSheets.push({ ...character, imageUrl: null });
+          await logRunWarning(runId, `${character.name} karakter çizimi üretilemedi - yazılı tarifiyle devam ediliyor. ${errorText(err)}`);
         }
       }
       for (let round = 2; ; round++) {
@@ -3184,8 +3210,9 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           artStyle,
           characterSheets,
         );
-      } catch {
+      } catch (err) {
         coverImageSrc = "";
+        await logRunWarning(runId, `Kapak görseli üretilemedi - kitap görselsiz tasarım kapakla devam ediyor. ${errorText(err)}`);
       }
     }
 

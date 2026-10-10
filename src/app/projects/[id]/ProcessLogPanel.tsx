@@ -286,6 +286,19 @@ export function ProcessLogPanel({ log, status }: { log: ProcessLog; status?: str
         <NowHero log={log} done={done} failed={failed} />
       </div>
 
+      {log.warnings.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger-soft-foreground">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertTriangleIcon className="size-4" /> Bu üretimde eksik kalanlar
+          </div>
+          <ul className="mt-1.5 list-disc space-y-1 pl-6 text-xs">
+            {log.warnings.slice(0, 6).map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Team log={log} filter={filter} onFilter={setFilter} />
       <Time log={log} />
 

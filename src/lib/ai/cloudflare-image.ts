@@ -23,6 +23,22 @@ export function isCloudflareImageConfigured(): boolean {
   return Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN);
 }
 
+// Why the last call returned nothing, in plain Turkish - callers that need
+// to tell the user (the book pipeline's warnings) read it after a miss.
+let lastFailure: string | null = null;
+
+export function lastCloudflareImageFailure(): string {
+  return lastFailure ?? "Görsel servisi yanıt vermedi.";
+}
+
+function describeFailure(status: number, body: string): string {
+  if (status === 429 || /neurons|daily free allocation/i.test(body)) {
+    return "Görsel servisinin (Cloudflare) günlük ücretsiz kotası doldu - kota sıfırlanınca ya da ücretli görsel modeliyle yeniden çalıştırın.";
+  }
+  if (/must be <= 2048/i.test(body)) return "Görsel tarifi servisin uzunluk sınırını aştı.";
+  return `Görsel servisi hata verdi (${status}).`;
+}
+
 export async function generateImageWithCloudflare(
   prompt: string,
 ): Promise<{ uint8Array: Uint8Array; mediaType: string } | undefined> {
@@ -42,12 +58,14 @@ export async function generateImageWithCloudflare(
     );
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      lastFailure = describeFailure(res.status, body);
       throw new Error(`Cloudflare Workers AI hatası (${res.status}): ${body.slice(0, 300)}`);
     }
     const data = (await res.json()) as { result?: { image?: string }; success?: boolean; errors?: unknown[] };
     if (!data.result?.image) {
       throw new Error(`Cloudflare Workers AI yanıtında görsel yok: ${JSON.stringify(data.errors ?? data).slice(0, 300)}`);
     }
+    lastFailure = null;
     return { uint8Array: Uint8Array.from(Buffer.from(data.result.image, "base64")), mediaType: "image/jpeg" };
   } catch (err) {
     console.error("Cloudflare image generation failed:", err instanceof Error ? err.message : String(err));
