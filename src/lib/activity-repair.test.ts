@@ -65,3 +65,25 @@ describe("preposition backstop", () => {
     expect(fixed.answerKey).toEqual(["between", "behind"]);
   });
 });
+
+describe("activity checks from the live run", () => {
+  it("flag word-bank answers that are not in the box and match keys that are not letters", async () => {
+    const { activityIssues } = await import("./activities");
+    expect(
+      activityIssues({
+        heading: "Building Names",
+        items: ["A place for football: ___"],
+        answerKey: ["stadium"],
+        activity: { type: "picture_label", words: ["sports centre"], pictures: [{ label: "stadium", emoji: "⚽" }] },
+      }),
+    ).toEqual([expect.stringContaining('"stadium"')]);
+    expect(
+      activityIssues({
+        heading: "Where is it?",
+        items: ["behind"],
+        answerKey: ["at the back of"],
+        activity: { type: "picture_match", pictures: [{ label: "ball behind box", emoji: "📦" }] },
+      }),
+    ).toEqual([expect.stringContaining("letter")]);
+  });
+});

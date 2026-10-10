@@ -112,6 +112,8 @@ import { renderBookFitted } from "@/lib/pdf/render-fitted";
 import { activityEmojis, loadEmojiIcons } from "@/lib/pdf/emoji-icons";
 import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
+import { fixMapAnswers } from "@/lib/map-answers";
+import { mergePageRewrite } from "@/lib/design/merge-rewrite";
 import { ACTIVITY_PROMPT, activityIssues } from "@/lib/activities";
 import { DIAGRAM_PROMPT, diagramIssues, fixPrepositionItems } from "@/lib/diagrams";
 import { buildEpub } from "@/lib/epub/BookEpub";
@@ -2320,10 +2322,12 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 
 // Faz 1 "Tasarım sistemi": deterministic design clean-up after generation -
 // breaks up runs of the same template (diversifyTemplates). No model call.
-// Deterministic backstop for preposition exercises the writer still wrote
-// without their gap (see fixPrepositionItems).
+// Deterministic backstops for diagrams: preposition items the writer still
+// wrote without their gap (fixPrepositionItems), and map questions whose
+// answers contradict the drawn map (fixMapAnswers).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
-  const fix = (pages?: GeneratedPage[]) => pages?.map((page) => ({ ...page, blocks: page.blocks.map(fixPrepositionItems) }));
+  const fix = (pages?: GeneratedPage[]) =>
+    pages?.map((page) => fixMapAnswers({ ...page, blocks: page.blocks.map(fixPrepositionItems) }).page);
   return {
     ...unit,
     studentBookPages: fix(unit.studentBookPages) ?? unit.studentBookPages,
@@ -2532,7 +2536,9 @@ async function rewritePageToFit(
   );
   await recordUsage(runId, "designFix", usage);
 
-  return {
+  // The exercises themselves come from the reviewed page, whatever the
+  // rewrite did to them (see mergePageRewrite).
+  return mergePageRewrite(page, {
     ...object,
     sourcePageNumber: page.sourcePageNumber,
     pageType: page.pageType,
@@ -2544,7 +2550,7 @@ async function rewritePageToFit(
     imageOverrideSourcePageNumber: page.imageOverrideSourcePageNumber,
     // Strip any coordinates the model invents (same rule as unit generation).
     blocks: object.blocks.map((b) => ({ ...b, layout: undefined })),
-  };
+  });
 }
 
 // Reference pages for the design review: the user's uploaded sample pages

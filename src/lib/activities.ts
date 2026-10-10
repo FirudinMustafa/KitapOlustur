@@ -21,12 +21,12 @@ export type Activity = {
   lines?: number;
 };
 
-type ActivityBlock = { heading: string; items?: string[]; activity?: Activity };
+type ActivityBlock = { heading: string; items?: string[]; answerKey?: string[]; activity?: Activity };
 
 export const ACTIVITY_PROMPT = [
   `Workbook activity formats - set a block's "activity" field when an exercise is naturally one of these (a printed workbook uses them on most pages; a plain numbered list is the fallback, not the default):`,
-  `- picture_label: learners write the word under each picture. "items" = a short description of each picture (e.g. "a building with books"), "answerKey" = the word, "activity.pictures" = one entry per item in the same order: {label: what the picture shows, emoji: ONE emoji that depicts it}. Add "activity.words" for a word bank when the level needs one.`,
-  `- picture_match: learners match words/sentences to lettered pictures. "items" = the words/sentences, "activity.pictures" = one picture per item in a DIFFERENT (mixed) order, lettered a, b, c...; "answerKey" = the matching letter for each item ("c").`,
+  `- picture_label: learners write the word under each picture. "items" = a short description of each picture (e.g. "a building with books"), "answerKey" = the word, "activity.pictures" = one entry per item in the same order: {label: what the picture shows, emoji: ONE emoji that depicts it}. Add "activity.words" for a word bank when the level needs one - every answer must then be one of its words, spelt the same.`,
+  `- picture_match: learners match words/sentences to lettered pictures. "items" = the words/sentences, "activity.pictures" = one picture per item in a DIFFERENT (mixed) order, lettered a, b, c...; "answerKey" = the matching letter for each item ("c"). Pictures show concrete things (animals, objects, places) - never arrows or symbols; to match prepositions use the "prepositions" diagram instead.`,
   `- word_bank: gap-fill or choose-the-word items whose answers come from a box of words. "activity.words" = the words in the box (mixed order, may include one extra distractor).`,
   `- write_lines: learners write full answers or a short text. "activity.lines" = ruled lines per item (1-3), or the number of lines for one free-writing task when there are no items. Open items get a model answer starting "e.g." in answerKey.`,
   `- draw_box: "draw and write" tasks - prints an empty frame to draw in. "activity.lines" = frame height in lines (6-10).`,
@@ -44,6 +44,20 @@ export function activityIssues(block: ActivityBlock): string[] {
   }
   if (a.type === "word_bank" && !a.words?.length) {
     issues.push(`${where}: activity "word_bank" needs the box's words in activity.words.`);
+  }
+  // Live E2E 2026-10-10: the box offered "sports centre", the key said
+  // "stadium" - a learner can't find the answer in the box.
+  if (a.type === "picture_label" && a.words?.length && block.answerKey?.length) {
+    const box = new Set(a.words.map((w) => w.trim().toLowerCase()));
+    const missing = block.answerKey.filter((ans) => !box.has(ans.trim().toLowerCase()));
+    if (missing.length) {
+      issues.push(`${where}: every answer must be one of the word-bank words (activity.words); not in the box: ${missing.map((m) => `"${m}"`).join(", ")}.`);
+    }
+  }
+  // ...and a picture match came back answered with phrases ("at the back
+  // of") instead of the letters of its pictures.
+  if (a.type === "picture_match" && block.answerKey?.some((ans) => !/^\s*[a-z]\s*$/i.test(ans))) {
+    issues.push(`${where}: a picture_match answerKey holds the letter of the matching picture for each item ("a", "b", ...), nothing else.`);
   }
   return issues;
 }
