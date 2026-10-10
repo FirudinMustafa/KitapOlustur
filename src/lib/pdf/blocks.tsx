@@ -334,6 +334,22 @@ function BlockInner({ block, showAnswerKey, look, plain }: { block: ContentBlock
   );
 }
 
+// A card short enough to sit on one page is never split: split cards left
+// a near-empty page holding only the tail of a box (its bottom padding and
+// border). Longer cards still flow across pages.
+const UNSPLIT_MAX_LINES = 16;
+export function blockLines(block: ContentBlock): number {
+  const text = (v: unknown) => Math.ceil(String(v ?? '').length / 85);
+  return (
+    1 +
+    text(block.body) +
+    (block.items?.length ?? 0) +
+    (block.answerKey?.length ? block.answerKey.length + 1 : 0) +
+    (block.dialogue?.length ?? 0) * 2 +
+    (block.table ? block.table.rows.length + 1 : 0)
+  );
+}
+
 // Absolute positioning (Dizilim's manual `layout`) is applied here so it
 // stays page-relative - see BookDocument.tsx's notes on the coordinate
 // space and the reflow caveat.
@@ -374,7 +390,7 @@ export function BlockCard({
   }
 
   return (
-    <View style={[frameless ? { marginBottom: 12 } : cardFrame(look), layoutStyle]}>
+    <View style={[frameless ? { marginBottom: 12 } : cardFrame(look), layoutStyle]} wrap={blockLines(block) > UNSPLIT_MAX_LINES}>
       <Text style={[s.heading, { fontFamily: look.headingFont, color: look.theme.cardStyle === "accent-bar" ? "#1f2937" : look.palette.primaryDark }]}>
         {block.heading}
       </Text>

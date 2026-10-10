@@ -536,7 +536,10 @@ export function BookDocument({
   bleed = 0,
   includeCover = true,
   bookKind,
+  forcePlain,
 }: {
+  /** "<unitNumber>:<pageIndex>" keys of pages to print in plain flow - set by renderBookFitted after a measured spill. */
+  forcePlain?: ReadonlySet<string>;
   /** Faz 6: "picturebook" drops the coursebook furniture (units, contents, book-type labels). */
   bookKind?: string | null;
   /** Faz 4: the print interior goes to the printer without its cover (the cover is a separate wrap). */
@@ -625,10 +628,12 @@ export function BookDocument({
       {units.flatMap((unit) =>
         withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((page, idx) => {
           const imageSrc = resolvePageImageUrl(page, pageImages);
-          const template = resolvePageTemplate(page, !!imageSrc, {
-            isUnitFirstPage: idx === 0,
-            metrics: { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
-          });
+          const template = forcePlain?.has(`${unit.unitNumber}:${idx}`)
+            ? "standard"
+            : resolvePageTemplate(page, !!imageSrc, {
+                isUnitFirstPage: idx === 0,
+                metrics: { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
+              });
           const edgeToEdge = template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template);
           const sectionKicker = page.sectionLabel ? upperFor(page.sectionLabel, contentLanguage) : undefined;
           return (
@@ -677,7 +682,7 @@ export function BookDocument({
         }),
       )}
 
-      {showAnswerKey && (
+      {showAnswerKey && units.some((u) => pagesForVariant(u, variant).some((pg) => pg.blocks.some((b) => b.answerKey?.length))) && (
         <Page size={sheetSize} style={pageStyle} wrap>
           <PageMarker id="answer_key" onPageStart={onPageStart} />
           <View style={[styles.answerKeyTitleBand, { backgroundColor: palette.primaryDark, borderRadius: theme.radius }]}>

@@ -7,6 +7,7 @@ import {
   type LanguageModelUsage,
   type RepairTextFunction,
 } from "ai";
+import { z } from "zod";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { put } from "@vercel/blob";
 import { renderToBuffer } from "@react-pdf/renderer";
@@ -107,6 +108,8 @@ import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeC
 import type { CharacterSheet } from "@/db/schema";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { resetBookFonts } from "@/lib/pdf/fonts";
+import { renderBookFitted } from "@/lib/pdf/render-fitted";
+import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { buildEpub } from "@/lib/epub/BookEpub";
 
 type UnitOutline = BookOutline["units"][number];
@@ -1574,6 +1577,40 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
 // heavy unit, another listening+speaking-heavy), so this only catches units
 // that are genuinely lopsided (stuck on a single skill), not every unit that
 // isn't a perfect four-skill mix.
+// Last resort for exercises still printing without answers after the
+// structural retries: answer just those blocks in one small call. Answers
+// are applied only where there is exactly one per item (applyAnswerKeys).
+async function fillMissingAnswerKeys(runId: string, unit: GeneratedUnit, contentLanguage: string): Promise<GeneratedUnit> {
+  "use step";
+
+  const gaps = findAnswerKeyGaps(unit);
+  if (!gaps.length) return unit;
+  try {
+    const { object, usage } = await withObjectDiagnostics(() =>
+      generateObject({
+        model: toTextModel(resolveFinalTextModel()),
+        schema: z.object({
+          answers: z.array(z.object({ id: z.string(), answerKey: z.array(z.string()) })),
+        }),
+        system:
+          "You are the answer-key editor of an English language coursebook. You write the correct answer for every exercise item, briefly, the way a printed answer key does.",
+        prompt: [
+          `Exercises (JSON):\n${JSON.stringify(gaps)}`,
+          `For each exercise return its id and an answerKey with exactly one answer per item, in the same order as items. Answers are short (a word, a phrase or the completed sentence). For open or personal items (e.g. "Write about your town") give a model answer starting with "e.g.". Write in ${contentLanguage}.`,
+        ].join("\n\n"),
+      }),
+    );
+    await recordUsage(runId, "review", usage);
+    const filled = applyAnswerKeys(unit, object.answers);
+    const left = findAnswerKeyGaps(filled).length;
+    if (left) await logRunWarning(runId, `Ünite ${unit.unitNumber}: ${left} alıştırmanın cevap anahtarı tamamlanamadı.`);
+    return filled;
+  } catch (err) {
+    await logRunWarning(runId, `Ünite ${unit.unitNumber}: ${gaps.length} alıştırmanın cevap anahtarı eksik kaldı - ${errorText(err)}`);
+    return unit;
+  }
+}
+
 async function reviewSkillBalance(runId: string, unitNumber: number, generated: GeneratedUnit) {
   "use step";
 
@@ -2561,25 +2598,24 @@ async function assembleAndSaveBooks(
   for (const variant of requestedVariants) {
     const markdown = unitsToMarkdown(bookTitle, units, variant);
     // Fresh font objects per document - see resetBookFonts (src/lib/pdf/fonts.ts).
-    resetBookFonts();
-    const pdfBuffer = await renderToBuffer(
-      <BookDocument
-        bookTitle={bookTitle}
-        variant={variant}
-        units={units}
-        level={level}
-        contentsUnits={contentsUnits}
-        coverImageSrc={coverImageSrc}
-        pageImages={pageImages}
-        generatedAt={generatedAt}
-        isbn={isbn ?? undefined}
-        trimSize={trimSize}
-        sourceStyle={sourceStyle}
-        contentLanguage={contentLanguage}
-        designTheme={designTheme}
-        bookKind={bookKind}
-      />,
-    );
+    // Measured fit pass: any designed page that still spills prints in
+    // plain flow instead of leaving a blank page (renderBookFitted).
+    const { pdf: pdfBuffer } = await renderBookFitted({
+      bookTitle,
+      variant,
+      units,
+      level,
+      contentsUnits,
+      coverImageSrc,
+      pageImages,
+      generatedAt,
+      isbn: isbn ?? undefined,
+      trimSize,
+      sourceStyle,
+      contentLanguage,
+      designTheme,
+      bookKind,
+    });
     // allowOverwrite: aynı gerekçe - bu step (assembleAndSaveBooks) birden
     // fazla variant için döngü halinde çalışıyor; bir variant'ın PDF'i
     // yazıldıktan sonra döngüde ilerideki bir hata yüzünden step yeniden
@@ -2627,27 +2663,24 @@ async function assembleAndSaveBooks(
     let coverMockup: CoverMockup | null = null;
     let pageRenderUrls: string[] | null = null;
     try {
-      resetBookFonts();
-      const printPdf = await renderToBuffer(
-        <BookDocument
-          bookTitle={bookTitle}
-          variant={variant}
-          units={units}
-          level={level}
-          contentsUnits={contentsUnits}
-          coverImageSrc={printCoverSrc}
-          pageImages={printPageImages}
-          generatedAt={generatedAt}
-          isbn={isbn ?? undefined}
-          trimSize={trimSize}
-          sourceStyle={sourceStyle}
-          contentLanguage={contentLanguage}
-          designTheme={designTheme}
-          bookKind={bookKind}
-          bleed={BLEED_PT}
-          includeCover={false}
-        />,
-      );
+      const { pdf: printPdf } = await renderBookFitted({
+        bookTitle,
+        variant,
+        units,
+        level,
+        contentsUnits,
+        coverImageSrc: printCoverSrc,
+        pageImages: printPageImages,
+        generatedAt,
+        isbn: isbn ?? undefined,
+        trimSize,
+        sourceStyle,
+        contentLanguage,
+        designTheme,
+        bookKind,
+        bleed: BLEED_PT,
+        includeCover: false,
+      });
       const pageCount = await countPdfPages(new Uint8Array(printPdf));
       const printBlob = await put(`generated/${runId}/${variant}-print.pdf`, printPdf, {
         access: "public",
@@ -3413,6 +3446,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // gap deterministically rather than shipping a page whose exercise
         // needs a picture it will never get.
         generated = normalizeLayoutTemplates(applyFallbackImagePrompts(generated));
+        if (!isPictureBook) generated = await fillMissingAnswerKeys(runId, generated, outline.contentLanguage);
       } else {
         await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: ${variantCount} varyant üretiliyor`);
 
@@ -3432,6 +3466,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               unit = await buildUnit(remainingIssues);
             }
             unit = normalizeLayoutTemplates(applyFallbackImagePrompts(unit));
+            unit = await fillMissingAnswerKeys(runId, unit, outline.contentLanguage);
             const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
               reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),
@@ -3782,7 +3817,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           // A suggested template the renderer would refuse for this content
           // (live E2E: one-block pages switched to a sidebar layout printed an
           // empty sidebar) is not applied - the page gets more content instead.
-          if (action === "switch_template" && (!grade.suggestedTemplate || resolvePageTemplate({ ...target, layoutTemplate: grade.suggestedTemplate }, hasImage) !== grade.suggestedTemplate)) {
+          // resolvePageTemplate also refuses a template the content doesn't
+          // fit (measured against this book's trim size), so a switch can't
+          // push the page onto a second sheet.
+          const fitOptions = { isUnitFirstPage: proofPage.pageIndex === 0, metrics: layoutMetrics };
+          if (action === "switch_template" && (!grade.suggestedTemplate || resolvePageTemplate({ ...target, layoutTemplate: grade.suggestedTemplate }, hasImage, fitOptions) !== grade.suggestedTemplate)) {
             action = "enrich_content";
           }
           if (action === "switch_template" && grade.suggestedTemplate) {
@@ -3792,7 +3831,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               next = await rewritePageToFit(runId, target, grade.issues.map((i) => i.description), outline.contentLanguage, "enrich");
               // Live E2E 2026-10-09: enriched pages with pictures ran onto a
               // second page. Only keep a rewrite that still fits.
-              const fit = estimateTemplateFit(next, resolvePageTemplate(next, hasImage, { isUnitFirstPage: proofPage.pageIndex === 0, metrics: layoutMetrics }), hasImage, proofPage.pageIndex === 0, layoutMetrics);
+              const fit = estimateTemplateFit(next, resolvePageTemplate(next, hasImage, fitOptions), hasImage, proofPage.pageIndex === 0, layoutMetrics);
               if (fit.needed > fit.available) continue;
             } catch {
               continue;
