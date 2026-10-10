@@ -96,6 +96,14 @@ export function officeAgents(status: string, currentStage: string | null): Offic
 
 // The agent whose desk a pipeline status belongs to (character drawing,
 // which runs under generating_images, belongs to the art director).
+export const AGENT_COLORS: Record<PersonaKey, string> = Object.fromEntries(
+  DESKS.map((d) => [d.key, d.color]),
+) as Record<PersonaKey, string>;
+
+// Colours for the reviewers that only appear through their review records.
+AGENT_COLORS.icerik_guvenligi ??= "#0f766e";
+AGENT_COLORS.beceri_dengesi_uzmani ??= "#ca8a04";
+
 export function agentForStatus(status: string, stage: string | null): PersonaKey | null {
   if (status === "generating_images" && /karakter/i.test(stage ?? "")) return "sanat_yonetmeni";
   if (status === "reviewing") return "dil_denetcisi";

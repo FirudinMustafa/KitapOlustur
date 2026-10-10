@@ -656,7 +656,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         />
       </div>
 
-      {data.processLog && <ProcessLogPanel log={data.processLog} />}
+      {data.processLog && <ProcessLogPanel log={data.processLog} status={run?.status} />}
 
       {coherenceReview && (
         <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
@@ -830,7 +830,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_outline_approval" && outlineData && (
-        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+        <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Üretime başlamadan önce dizelgeyi onayla
             <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
@@ -921,7 +921,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_logo_upload" && (
-        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+        <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Kaynak PDF&apos;te bir logo tespit edildi
             <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
@@ -969,7 +969,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_variant_selection" && run.pendingVariants && (
-        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+        <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Ünite {run.pendingVariants.unitNumber} için bir varyant seç
             <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
@@ -1030,7 +1030,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_content_approval" && pendingContentApproval && (
-        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+        <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Görsel üretimine geçmeden önce tüm ünitelerin içeriğini onayla
             <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
@@ -1169,7 +1169,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_image_review" && pendingImageReview && (
-        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+        <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Otomatik kalite kontrolünden geçemeyen görseller
             <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">
@@ -1248,7 +1248,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       )}
 
       {run?.status === "awaiting_final_approval" && (
-        <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+        <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Nihai onay - kitaplar henüz derlenmedi
             <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">

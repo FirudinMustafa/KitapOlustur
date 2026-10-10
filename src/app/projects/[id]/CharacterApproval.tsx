@@ -49,7 +49,7 @@ export function CharacterApproval({
   }
 
   return (
-    <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
+    <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
       <h2 className="font-heading text-lg font-medium text-foreground">
         Karakterleri onayla
         <span className="ml-2 font-sans text-xs font-normal text-warning-soft-foreground">

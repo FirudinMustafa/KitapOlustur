@@ -20,7 +20,7 @@ export type ProcessEntry = {
   details?: string[];
 };
 
-export type StageTiming = { status: string; label: string; actorLabel: string; ms: number; human: boolean };
+export type StageTiming = { status: string; label: string; actor: LogActor | null; actorLabel: string; ms: number; human: boolean };
 
 export type AgentCard = {
   key: PersonaKey;
@@ -30,7 +30,7 @@ export type AgentCard = {
 };
 
 export type ProcessLog = {
-  now: { actorLabel: string; text: string; waitingForYou: boolean; since: string | null };
+  now: { actor: LogActor | null; state: OfficeAgentState | null; actorLabel: string; text: string; waitingForYou: boolean; since: string | null };
   agents: AgentCard[];
   timeline: ProcessEntry[];
   timings: StageTiming[];
@@ -181,7 +181,7 @@ export function buildProcessLog(input: {
     .filter(([status]) => !["done", "failed", "changes_requested"].includes(status))
     .map(([status, t]) => {
       const actor = agentForStatus(status, null);
-      return { status, label: STATUS_LABELS[status] ?? status, actorLabel: actor ? label(actor) : "Sistem", ms: t, human: status.startsWith("awaiting_") };
+      return { status, label: STATUS_LABELS[status] ?? status, actor, actorLabel: actor ? label(actor) : "Sistem", ms: t, human: status.startsWith("awaiting_") };
     })
     .sort((a, b) => b.ms - a.ms);
   const humanMs = timings.filter((t) => t.human).reduce((n, t) => n + t.ms, 0);
@@ -240,10 +240,12 @@ export function buildProcessLog(input: {
   const lastStatusEvent = statusEvents[statusEvents.length - 1];
   const nowBlock =
     input.status === "done"
-      ? { actorLabel: "Ekip", text: "Kitap tamamlandı.", waitingForYou: false, since: lastStatusEvent ? iso(lastStatusEvent.createdAt) : null }
+      ? { actor: null, state: null, actorLabel: "Ekip", text: "Kitap tamamlandı.", waitingForYou: false, since: lastStatusEvent ? iso(lastStatusEvent.createdAt) : null }
       : input.status === "failed"
-        ? { actorLabel: "Sistem", text: "Üretim bir hatayla durdu.", waitingForYou: false, since: lastStatusEvent ? iso(lastStatusEvent.createdAt) : null }
+        ? { actor: null, state: null, actorLabel: "Sistem", text: "Üretim bir hatayla durdu.", waitingForYou: false, since: lastStatusEvent ? iso(lastStatusEvent.createdAt) : null }
         : {
+            actor: active?.key ?? null,
+            state: active?.state ?? null,
             actorLabel: active?.label ?? "Sistem",
             text: active?.speech ?? input.currentStage ?? STATUS_LABELS[input.status] ?? input.status,
             waitingForYou: input.status.startsWith("awaiting_"),
