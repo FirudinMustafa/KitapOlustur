@@ -22,7 +22,7 @@ type DiagramBlock = { heading: string; items?: string[]; diagram?: Diagram };
 
 export const DIAGRAM_PROMPT = [
   `Diagrams drawn exactly by the book's software - set a block's "diagram" field instead of asking for an image when an exercise needs one of these:`,
-  `- prepositions: one small picture per item showing a red ball and a box (a table for "under"). "diagram.scenes" = one of ${PREPOSITIONS.map((p) => `"${p}"`).join(", ")} per item, in item order. Write the items about "the ball" and "the box" (or "the table" for under; "the boxes" for between), e.g. "The ball is ___ the box." with the preposition in answerKey.`,
+  `- prepositions: one small picture per item showing a red ball and a box (a table for "under"). "diagram.scenes" = one of ${PREPOSITIONS.map((p) => `"${p}"`).join(", ")} per item, in item order. Write the items about "the ball" and "the box" (or "the table" for under; "the boxes" for between), e.g. "The ball is ___ the box." with the preposition in answerKey. Every item MUST have the gap "___" where the preposition goes - never write the preposition or a paraphrase of it ("in the middle of", "beside") in the item, or the picture has nothing left to ask.`,
   `- map: a simple town map on a street grid of up to 3 rows x 4 columns. "diagram.places" = 4-12 places, each {name, emoji, row 1-3, col 1-4}, one place per cell. Places in the same row with consecutive columns are "next to" each other; a place with a neighbour on each side in its row is "between" them; the same column in rows 1 and 3 (row 2 empty or the street between) are "opposite". Every question and answer about the map MUST agree with these positions.`,
 ].join("\n");
 
@@ -36,6 +36,13 @@ export function diagramIssues(block: DiagramBlock): string[] {
   const issues: string[] = [];
   if (d.type === "prepositions" && (d.scenes?.length ?? 0) !== (block.items?.length ?? 0)) {
     issues.push(`${where}: diagram "prepositions" needs exactly one entry in diagram.scenes per item (${block.items?.length ?? 0} items, ${d.scenes?.length ?? 0} scenes).`);
+  }
+  // Live E2E 2026-10-10: items came back as "The ball is in the middle of
+  // two boxes." - the answer already given, nothing left to fill in.
+  if (d.type === "prepositions" && block.items?.some((item) => !item.includes("___"))) {
+    issues.push(
+      `${where}: every preposition item needs the gap "___" where the preposition goes (e.g. "The ball is ___ the box.") - do not write the preposition or a paraphrase of it in the item.`,
+    );
   }
   if (d.type === "map") {
     const places = d.places ?? [];
@@ -186,4 +193,31 @@ export function sceneSvgMarkup(shapes: Shape[], width: number): string {
     })
     .join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SCENE_W} ${SCENE_H}" width="${width}" height="${Math.round((width * SCENE_H) / SCENE_W)}">${body}</svg>`;
+}
+
+const SCENE_OBJECT: Record<Preposition, string> = {
+  in: "the box",
+  on: "the box",
+  under: "the table",
+  next_to: "the box",
+  behind: "the box",
+  in_front_of: "the box",
+  between: "the boxes",
+  above: "the box",
+  opposite: "the box",
+};
+
+export function prepositionWords(p: Preposition): string {
+  return p.replace(/_/g, " ");
+}
+
+// Backstop after the writer's retries: a preposition item without its gap
+// is rewritten from the scene it sits next to (the drawing is the truth),
+// and its answer is the scene's preposition.
+export function fixPrepositionItems<B extends DiagramBlock & { answerKey?: string[] }>(block: B): B {
+  const scenes = block.diagram?.type === "prepositions" ? block.diagram.scenes : undefined;
+  if (!scenes?.length || !block.items?.length || block.items.every((i) => i.includes("___"))) return block;
+  const items = block.items.map((item, i) => (item.includes("___") || !scenes[i] ? item : `The ball is ___ ${SCENE_OBJECT[scenes[i]]}.`));
+  const answerKey = block.items.map((item, i) => (item.includes("___") || !scenes[i] ? (block.answerKey?.[i] ?? "") : prepositionWords(scenes[i])));
+  return { ...block, items, answerKey };
 }

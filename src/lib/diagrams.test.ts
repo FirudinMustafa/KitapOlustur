@@ -22,7 +22,8 @@ describe("diagrams", () => {
     });
     expect(issues.some((i) => i.includes("share row 1"))).toBe(true);
     expect(issues.some((i) => i.includes("outside"))).toBe(true);
-    expect(diagramIssues({ heading: "P", items: ["a", "b"], diagram: { type: "prepositions", scenes: ["in"] } })).toHaveLength(1);
+    expect(diagramIssues({ heading: "P", items: ["It is ___ the box.", "It is ___ the box."], diagram: { type: "prepositions", scenes: ["in"] } })).toHaveLength(1);
+    expect(diagramIssues({ heading: "P", items: ["It is in the box."], diagram: { type: "prepositions", scenes: ["in"] } })[0]).toContain("___");
   });
 
   it("lays the map out on its grid", () => {

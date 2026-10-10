@@ -111,8 +111,9 @@ import { resetBookFonts } from "@/lib/pdf/fonts";
 import { renderBookFitted } from "@/lib/pdf/render-fitted";
 import { activityEmojis, loadEmojiIcons } from "@/lib/pdf/emoji-icons";
 import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
+import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
 import { ACTIVITY_PROMPT, activityIssues } from "@/lib/activities";
-import { DIAGRAM_PROMPT, diagramIssues } from "@/lib/diagrams";
+import { DIAGRAM_PROMPT, diagramIssues, fixPrepositionItems } from "@/lib/diagrams";
 import { buildEpub } from "@/lib/epub/BookEpub";
 
 type UnitOutline = BookOutline["units"][number];
@@ -1571,17 +1572,6 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
   return object;
 }
 
-// Faz "Beceri Dengesi Denetçisi" (2026-09-21, ROADMAP.md): the "dört beceri
-// dengesi" (four-skills balance) niceToHaveItems checklist entry was only
-// ever advisory prose fed into analyzeImprovements' output, which the writer
-// prompt may or may not actually follow - nothing verified the OUTPUT was
-// balanced. This is that missing verification, same unitReviews table/
-// retry-with-feedback flow as the four reviews above. Deliberately LENIENT
-// (at least two of the four skills, not all four) - a real coursebook can
-// legitimately rotate skill focus across units (e.g. one grammar+reading-
-// heavy unit, another listening+speaking-heavy), so this only catches units
-// that are genuinely lopsided (stuck on a single skill), not every unit that
-// isn't a perfect four-skill mix.
 // Last resort for exercises still printing without answers after the
 // structural retries: answer just those blocks in one small call. Answers
 // are applied only where there is exactly one per item (applyAnswerKeys).
@@ -1616,6 +1606,57 @@ async function fillMissingAnswerKeys(runId: string, unit: GeneratedUnit, content
   }
 }
 
+// Picture activities the writer left without pictures (live E2E
+// 2026-10-10: an 8-picture labelling grid came back with none, through
+// every structural retry). One small call picks an emoji per picture;
+// applyPictures keeps only complete sets and re-letters picture_match keys.
+async function fillMissingPictures(runId: string, unit: GeneratedUnit): Promise<GeneratedUnit> {
+  "use step";
+
+  const gaps = findPictureGaps(unit);
+  if (!gaps.length) return unit;
+  try {
+    const { object, usage } = await withObjectDiagnostics(() =>
+      generateObject({
+        model: toTextModel(resolveFinalTextModel()),
+        schema: z.object({
+          sets: z.array(
+            z.object({
+              id: z.string(),
+              pictures: z.array(z.object({ label: z.string(), emoji: z.string() })),
+            }),
+          ),
+        }),
+        system:
+          "You are the picture editor of a children's English workbook. Pictures are drawn from a standard emoji set, so you choose the single emoji that best shows each thing.",
+        prompt: [
+          `Picture activities (JSON) - "shows" lists what each picture must show, in order:\n${JSON.stringify(gaps)}`,
+          `For each activity return its id and exactly one picture per "shows" entry, in the same order: {label: the thing in 1-3 words, emoji: ONE emoji}. Pick the most recognisable object a child would name at once (a book stack for a library, a dinosaur for a museum, a money bag for a bank) and never use the same or a look-alike emoji twice in one activity.`,
+        ].join("\n\n"),
+      }),
+    );
+    await recordUsage(runId, "review", usage);
+    const filled = applyPictures(unit, object.sets);
+    const left = findPictureGaps(filled).length;
+    if (left) await logRunWarning(runId, `Ünite ${unit.unitNumber}: ${left} resimli alıştırmanın resimleri seçilemedi - açıklamalarıyla basılacak.`);
+    return filled;
+  } catch (err) {
+    await logRunWarning(runId, `Ünite ${unit.unitNumber}: ${gaps.length} resimli alıştırmanın resimleri seçilemedi - ${errorText(err)}`);
+    return unit;
+  }
+}
+
+// Faz "Beceri Dengesi Denetçisi" (2026-09-21, ROADMAP.md): the "dört beceri
+// dengesi" (four-skills balance) niceToHaveItems checklist entry was only
+// ever advisory prose fed into analyzeImprovements' output, which the writer
+// prompt may or may not actually follow - nothing verified the OUTPUT was
+// balanced. This is that missing verification, same unitReviews table/
+// retry-with-feedback flow as the four reviews above. Deliberately LENIENT
+// (at least two of the four skills, not all four) - a real coursebook can
+// legitimately rotate skill focus across units (e.g. one grammar+reading-
+// heavy unit, another listening+speaking-heavy), so this only catches units
+// that are genuinely lopsided (stuck on a single skill), not every unit that
+// isn't a perfect four-skill mix.
 async function reviewSkillBalance(runId: string, unitNumber: number, generated: GeneratedUnit) {
   "use step";
 
@@ -2279,6 +2320,19 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 
 // Faz 1 "Tasarım sistemi": deterministic design clean-up after generation -
 // breaks up runs of the same template (diversifyTemplates). No model call.
+// Deterministic backstop for preposition exercises the writer still wrote
+// without their gap (see fixPrepositionItems).
+export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
+  const fix = (pages?: GeneratedPage[]) => pages?.map((page) => ({ ...page, blocks: page.blocks.map(fixPrepositionItems) }));
+  return {
+    ...unit,
+    studentBookPages: fix(unit.studentBookPages) ?? unit.studentBookPages,
+    workbookPages: fix(unit.workbookPages) ?? unit.workbookPages,
+    teacherBookPages: fix(unit.teacherBookPages),
+    testBookletPages: fix(unit.testBookletPages),
+  };
+}
+
 export function normalizeLayoutTemplates(unit: GeneratedUnit): GeneratedUnit {
   return {
     ...unit,
@@ -3454,8 +3508,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // imagePrompt after both retry attempts above - fill any remaining
         // gap deterministically rather than shipping a page whose exercise
         // needs a picture it will never get.
-        generated = normalizeLayoutTemplates(applyFallbackImagePrompts(generated));
-        if (!isPictureBook) generated = await fillMissingAnswerKeys(runId, generated, outline.contentLanguage);
+        generated = normalizeLayoutTemplates(applyDiagramFixes(applyFallbackImagePrompts(generated)));
+        if (!isPictureBook) {
+          generated = await fillMissingPictures(runId, generated);
+          generated = await fillMissingAnswerKeys(runId, generated, outline.contentLanguage);
+        }
       } else {
         await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: ${variantCount} varyant üretiliyor`);
 
@@ -3474,7 +3531,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               if (!remainingIssues.length) break;
               unit = await buildUnit(remainingIssues);
             }
-            unit = normalizeLayoutTemplates(applyFallbackImagePrompts(unit));
+            unit = normalizeLayoutTemplates(applyDiagramFixes(applyFallbackImagePrompts(unit)));
+            unit = await fillMissingPictures(runId, unit);
             unit = await fillMissingAnswerKeys(runId, unit, outline.contentLanguage);
             const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
