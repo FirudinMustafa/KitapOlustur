@@ -4,6 +4,7 @@ import { BookDocument } from "./BookDocument";
 import { resetBookFonts } from "./fonts";
 import { countPdfPages } from "./rasterize";
 import { buildPageSpans } from "@/lib/design/page-review";
+import { activityEmojis, loadEmojiIcons } from "./emoji-icons";
 
 type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forcePlain">;
 
@@ -13,7 +14,9 @@ type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forc
 // the next page and leaves a near-blank page behind (live E2E 2026-10-10);
 // plain flow paginates naturally. The height estimate keeps most pages
 // designed - this pass guarantees the ones it got wrong never print broken.
-export async function renderBookFitted(props: BookProps): Promise<{ pdf: Buffer; flattened: string[] }> {
+export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer; flattened: string[] }> {
+  // Activity pictures are drawn from Twemoji; fetched once per book.
+  const props = input.pictureSrc ? input : { ...input, pictureSrc: await loadEmojiIcons(activityEmojis(input.units)) };
   const starts: Record<string, number> = {};
   resetBookFonts();
   const first = await renderToBuffer(

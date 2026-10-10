@@ -14,6 +14,7 @@ import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/des
 import { resolvePageTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
+import { TWEMOJI_CREDIT } from "@/lib/activities";
 
 registerBookFonts();
 
@@ -249,6 +250,7 @@ function ImprintPage({
   isbn,
   trimSize = "a4",
   bleed = 0,
+  credits = [],
 }: {
   bookTitle: string;
   variantLabel: string;
@@ -258,6 +260,7 @@ function ImprintPage({
   isbn?: string;
   trimSize?: TrimSizeId;
   bleed?: number;
+  credits?: string[];
 }) {
   return (
     <Page
@@ -273,6 +276,11 @@ function ImprintPage({
           yapay zeka (Kitap Orkestrası) ile üretilmiştir. Metin ve görseller orijinaldir; kaynak eserin
           birebir kopyası değildir.
         </Text>
+        {credits.map((c) => (
+          <Text key={c} style={styles.imprintDisclosure}>
+            {c}
+          </Text>
+        ))}
         {isbn && (
           <View style={styles.barcodeBlock}>
             <Barcode isbn={isbn} />
@@ -537,7 +545,10 @@ export function BookDocument({
   includeCover = true,
   bookKind,
   forcePlain,
+  pictureSrc,
 }: {
+  /** emoji -> image src for activity pictures (loadEmojiIcons); unset = pictures print as short descriptions. */
+  pictureSrc?: Record<string, string>;
   /** "<unitNumber>:<pageIndex>" keys of pages to print in plain flow - set by renderBookFitted after a measured spill. */
   forcePlain?: ReadonlySet<string>;
   /** Faz 6: "picturebook" drops the coursebook furniture (units, contents, book-type labels). */
@@ -570,7 +581,8 @@ export function BookDocument({
   // A source PDF's own colours win over the theme palette (the user chose
   // to mirror that book); otherwise the theme's palette for this book type.
   const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? theme.palettes[variant];
-  const look = makeLook(theme, palette);
+  const look = { ...makeLook(theme, palette), pictureSrc };
+  const usesIcons = !!pictureSrc && Object.keys(pictureSrc).length > 0;
   const logoStyle = sourceStyle?.logoUrl ? LOGO_POSITION_STYLE[sourceStyle.logoPosition ?? "top_right"] : null;
   const pageImageHeight = sourceStyle?.density === "compact" ? 180 : sourceStyle?.density === "spacious" ? 280 : 230;
   // pageSize is the TRIM size (what layouts are designed against);
@@ -615,6 +627,7 @@ export function BookDocument({
         isbn={isbn}
         trimSize={trimSize}
         bleed={bleed}
+        credits={usesIcons ? [TWEMOJI_CREDIT] : []}
       />
 
       {!isPictureBook && (

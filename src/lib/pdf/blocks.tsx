@@ -223,7 +223,7 @@ function RuledLines({ count }: { count: number }) {
 // emoji, otherwise a soft frame with a short description so the exercise
 // still reads.
 function PictureFrame({ picture, fallback, height, look }: { picture?: ActivityPicture; fallback: string; height: number; look: Look }) {
-  const src = picture?.emoji ? look.pictureSrc?.[picture.emoji] : undefined;
+  const src = picture?.emoji ? look.pictureSrc?.[picture.emoji.trim()] : undefined;
   return (
     <View
       style={{
@@ -239,7 +239,7 @@ function PictureFrame({ picture, fallback, height, look }: { picture?: ActivityP
     >
       {src ? (
         // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop
-        <Image src={src} style={{ height: height - 14, width: height - 14, objectFit: "contain" }} />
+        <Image src={src} style={{ height: height - Math.min(14, height * 0.15), width: height - Math.min(14, height * 0.15), objectFit: "contain" }} />
       ) : (
         <Text style={{ fontSize: 7.5, color: "#6b7280", textAlign: "center", lineHeight: 1.3 }}>{fallback}</Text>
       )}

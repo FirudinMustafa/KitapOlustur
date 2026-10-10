@@ -6,7 +6,7 @@ import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geom
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { blocksForRender } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
-import { letterFor, type ActivityPicture } from "@/lib/activities";
+import { isEmoji, letterFor, twemojiUrl, type ActivityPicture } from "@/lib/activities";
 import { isChecklistBlock, resolvePageTemplate } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, DESIGN_THEMES, speakerColorMap } from "@/lib/design/themes";
 import { TemplatedPage, lookFonts, type WebLook } from "./TemplatedPage";
@@ -333,10 +333,10 @@ function BlockTable({ table, primary, light }: { table: NonNullable<ContentBlock
 function ActivityPictureBox({ picture, fallback, light }: { picture?: ActivityPicture; fallback: string; light: string }) {
   return (
     <div className="flex h-16 items-center justify-center rounded-lg border bg-white p-1 text-center" style={{ borderColor: light }}>
-      {picture?.emoji ? (
-        <span className="text-4xl leading-none" role="img" aria-label={picture.label}>
-          {picture.emoji}
-        </span>
+      {picture?.emoji && isEmoji(picture.emoji) ? (
+        // Same Twemoji picture the PDF prints (not the OS's own emoji font).
+        // eslint-disable-next-line @next/next/no-img-element -- tiny static SVG from a CDN, nothing for next/image to optimise
+        <img src={twemojiUrl(picture.emoji)} alt={picture.label} className="h-12 w-12 object-contain" loading="lazy" />
       ) : (
         <span className="text-[10px] leading-tight text-muted-foreground">{fallback}</span>
       )}

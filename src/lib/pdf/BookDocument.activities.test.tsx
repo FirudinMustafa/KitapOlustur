@@ -5,7 +5,8 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 import { BookDocument } from "./BookDocument";
 import { rasterizePdf } from "./rasterize";
-import { activityIssues } from "@/lib/activities";
+import { activityIssues, twemojiFileName } from "@/lib/activities";
+import { activityEmojis, loadEmojiIcons } from "./emoji-icons";
 
 // A workbook unit using every activity format (src/lib/activities.ts) -
 // the kind of page the British Council "Directions" sample is made of.
@@ -97,9 +98,18 @@ describe("workbook activities", () => {
     expect(activityIssues({ heading: "x", items: ["a", "b"], activity: { type: "picture_label", pictures: [{ label: "a" }] } })).toHaveLength(1);
   });
 
+  it("names Twemoji files the way the set does", () => {
+    expect(twemojiFileName("📚")).toBe("1f4da");
+    expect(twemojiFileName("🏛️")).toBe("1f3db"); // variation selector dropped
+    expect(twemojiFileName("👩‍🏫")).toBe("1f469-200d-1f3eb"); // ZWJ sequence kept whole
+  });
+
   it("print on their own pages with the answers only at the back", async () => {
+    // Real icons only when asked for (network); the fallback is the description.
+    const pictureSrc = OUT ? await loadEmojiIcons(activityEmojis([activityUnit])) : undefined;
+    if (OUT) expect(Object.keys(pictureSrc!).length).toBe(12);
     const buffer = await renderToBuffer(
-      <BookDocument bookTitle="My Town" variant="workbook" units={[activityUnit]} level="A1" contentsUnits={[]} designTheme="playful-kids" contentLanguage="en" />,
+      <BookDocument pictureSrc={pictureSrc} bookTitle="My Town" variant="workbook" units={[activityUnit]} level="A1" contentsUnits={[]} designTheme="playful-kids" contentLanguage="en" />,
     );
     const pages = await rasterizePdf(new Uint8Array(buffer), { dpi: OUT ? 80 : 20 });
     if (OUT) {

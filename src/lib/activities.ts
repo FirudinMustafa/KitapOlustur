@@ -30,7 +30,7 @@ export const ACTIVITY_PROMPT = [
   `- word_bank: gap-fill or choose-the-word items whose answers come from a box of words. "activity.words" = the words in the box (mixed order, may include one extra distractor).`,
   `- write_lines: learners write full answers or a short text. "activity.lines" = ruled lines per item (1-3), or the number of lines for one free-writing task when there are no items. Open items get a model answer starting "e.g." in answerKey.`,
   `- draw_box: "draw and write" tasks - prints an empty frame to draw in. "activity.lines" = frame height in lines (6-10).`,
-  `Use 4-8 pictures per picture activity. Never describe a picture as text in "items" without setting "activity" - "Picture of a ..." items print as words, not pictures.`,
+  `Use 4-8 pictures per picture activity, and pick emoji that a child can tell apart at a glance (not two similar buildings for "museum" and "bank" - choose the most recognisable object instead, e.g. 🦖 for a museum, 💰 for a bank). Never describe a picture as text in "items" without setting "activity" - "Picture of a ..." items print as words, not pictures.`,
 ].join("\n");
 
 export function activityIssues(block: ActivityBlock): string[] {
@@ -60,7 +60,7 @@ export function pictureColumns(width: number): number {
 // in) the block, in pt - mirrors the PDF drawing in src/lib/pdf/blocks.tsx.
 export const RULE_GAP = 20;
 export const PICTURE_CELL = 84;
-export const MATCH_ROW = 40;
+export const MATCH_ROW = 48;
 export const DRAW_LINE = 18;
 
 export function activityHeight(block: ActivityBlock, width: number, size: number): { extra: number; replacesItems: boolean } {
@@ -80,4 +80,25 @@ export function activityHeight(block: ActivityBlock, width: number, size: number
     default:
       return { extra: bank, replacesItems: false };
   }
+}
+
+// Imprint-page credit for the Twemoji activity pictures (src/lib/pdf/emoji-icons.ts).
+export const TWEMOJI_CREDIT = "Activity icons: Twemoji (jdecked/twemoji), CC-BY 4.0.";
+
+export const TWEMOJI_VERSION = "15.1.0";
+
+// Twemoji file names: the code points in hex joined by "-", without the
+// variation selector U+FE0F unless the emoji is a ZWJ sequence.
+export function twemojiFileName(emoji: string): string {
+  const points = [...emoji.trim()].map((c) => c.codePointAt(0)!);
+  const keep = points.includes(0x200d) ? points : points.filter((p) => p !== 0xfe0f);
+  return keep.map((p) => p.toString(16)).join("-");
+}
+
+export function twemojiUrl(emoji: string): string {
+  return `https://cdn.jsdelivr.net/gh/jdecked/twemoji@${TWEMOJI_VERSION}/assets/svg/${twemojiFileName(emoji)}.svg`;
+}
+
+export function isEmoji(text: string): boolean {
+  return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(text);
 }

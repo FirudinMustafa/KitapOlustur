@@ -109,6 +109,7 @@ import type { CharacterSheet } from "@/db/schema";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { resetBookFonts } from "@/lib/pdf/fonts";
 import { renderBookFitted } from "@/lib/pdf/render-fitted";
+import { activityEmojis, loadEmojiIcons } from "@/lib/pdf/emoji-icons";
 import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { ACTIVITY_PROMPT, activityIssues } from "@/lib/activities";
 import { buildEpub } from "@/lib/epub/BookEpub";
@@ -2323,10 +2324,12 @@ type BookAssemblyInput = {
 async function renderProofPages(runId: string, round: number, variant: Variant, input: BookAssemblyInput): Promise<ProofPage[]> {
   "use step";
 
+  const pictureSrc = await loadEmojiIcons(activityEmojis(input.units));
   resetBookFonts();
   const starts: Record<string, number> = {};
   const pdf = await renderToBuffer(
     <BookDocument
+      pictureSrc={pictureSrc}
       bookTitle={input.bookTitle}
       variant={variant}
       units={input.units}
