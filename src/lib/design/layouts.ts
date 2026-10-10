@@ -1,3 +1,4 @@
+import { diagramHeight, type Diagram } from "@/lib/diagrams";
 import { activityHeight, type Activity } from "@/lib/activities";
 // Faz 1 "Tasarım sistemi": named page-layout templates. The writer model
 // picks one per page (generatedPageSchema.layoutTemplate) and every renderer
@@ -99,6 +100,7 @@ type BlockLike = {
   callout?: string;
   layout?: unknown;
   activity?: Activity;
+  diagram?: Diagram;
 };
 
 type PageLike = {
@@ -119,7 +121,7 @@ export function isChecklistBlock(b: { kind: string; items?: string[] }): boolean
 }
 
 export function isExerciseBlock(b: BlockLike): boolean {
-  return (!!b.items?.length || !!b.interactive || !!b.activity) && !isChecklistBlock(b);
+  return (!!b.items?.length || !!b.interactive || !!b.activity || b.diagram?.type === "prepositions") && !isChecklistBlock(b);
 }
 
 // ---- Height estimate ----
@@ -159,13 +161,16 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number): 
     const cell = inner / Math.max(1, b.table.headers.length);
     h += 24 + b.table.rows.reduce((n, row) => n + Math.max(...row.map((c) => textHeight(c, cell - 10, 9)), 12) + 10, 0);
   }
+  // A map prints under the block text, items or not.
+  if (b.diagram?.type === "map") h += diagramHeight(b).extra;
   if (isChecklistBlock(b)) {
     h += (b.items ?? []).reduce((n, i) => n + textHeight(i, inner - 20, size) + 6, 0);
   } else if (b.items?.length || b.interactive || b.activity) {
     h += 44;
     const act = activityHeight(b, inner - 24, size);
-    h += act.extra;
-    if (!act.replacesItems) for (const i of b.items ?? []) h += textHeight(i, inner - 24, size) + 3;
+    const dia = diagramHeight(b);
+    h += act.extra + (dia.replacesItems ? dia.extra : 0);
+    if (!act.replacesItems && !dia.replacesItems) for (const i of b.items ?? []) h += textHeight(i, inner - 24, size) + 3;
     const it = b.interactive;
     if (it?.type === "multiple_choice") h += (it.options.length + 1) * size * LINE + 6;
     if (it?.type === "matching") h += it.pairs.length * size * LINE + 6;

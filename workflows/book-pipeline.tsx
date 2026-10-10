@@ -112,6 +112,7 @@ import { renderBookFitted } from "@/lib/pdf/render-fitted";
 import { activityEmojis, loadEmojiIcons } from "@/lib/pdf/emoji-icons";
 import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { ACTIVITY_PROMPT, activityIssues } from "@/lib/activities";
+import { DIAGRAM_PROMPT, diagramIssues } from "@/lib/diagrams";
 import { buildEpub } from "@/lib/epub/BookEpub";
 
 type UnitOutline = BookOutline["units"][number];
@@ -744,6 +745,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
       : "",
     `For a "practice" or "assessment" block whose exercise naturally fits one of these three shapes, ALSO fill in that block's "interactive" field so the digital reader can render it as a real, auto-checkable activity (in addition to "items"/"answerKey", which still print in the PDF/EPUB/LMS export): multiple_choice (one question, 2+ options, correctIndex), fill_blank (a "template" string with each blank marked as exactly "___", and "blanks" holding the correct answer for each one in order), or matching (2+ left/right pairs). Only use this when the exercise genuinely is one of these three shapes - most explanation/narrative/reference blocks should leave "interactive" unset. "interactive.type" MUST be exactly one of these three literal strings ("multiple_choice", "fill_blank", "matching") - there is no fourth type. A true/false exercise (e.g. mirroring a source's "True or false?" activity) is NOT its own type: model it as multiple_choice with exactly two options, "True" and "False", and correctIndex pointing at the right one.`,
     ACTIVITY_PROMPT,
+    DIAGRAM_PROMPT,
     // Faz 1 "Tasarım sistemi": the page-design vocabulary. Every renderer
     // draws a page by its layoutTemplate (src/lib/design/layouts.ts), so the
     // writer decides the arrangement the way a book designer would.
@@ -2199,6 +2201,7 @@ export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics 
   for (const { label, field } of UNIT_PAGE_ARRAY_FIELDS) {
     for (const [pageIndex, page] of (unit[field] ?? []).entries()) {
       for (const block of page.blocks) {
+        for (const issue of diagramIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
         for (const issue of activityIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
         // "I can..." self-assessment lists print with tick boxes and have
         // no correct answers - see isChecklistBlock.

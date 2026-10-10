@@ -7,6 +7,7 @@ import { BLOCK_COLORS } from "@/lib/block-colors";
 import { blocksForRender } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
 import { isEmoji, letterFor, twemojiUrl, type ActivityPicture } from "@/lib/activities";
+import { SCENE_H, SCENE_W, mapGrid, prepositionScene, type Shape } from "@/lib/diagrams";
 import { isChecklistBlock, resolvePageTemplate } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, DESIGN_THEMES, speakerColorMap } from "@/lib/design/themes";
 import { TemplatedPage, lookFonts, type WebLook } from "./TemplatedPage";
@@ -354,6 +355,72 @@ function RuledLines({ count }: { count: number }) {
   );
 }
 
+// Code-drawn diagrams (src/lib/diagrams.ts) - same shapes as the PDF.
+function SceneSvg({ shapes, width }: { shapes: Shape[]; width: number }) {
+  return (
+    <svg viewBox={`0 0 ${SCENE_W} ${SCENE_H}`} width={width} height={(width * SCENE_H) / SCENE_W} aria-hidden>
+      {shapes.map((sh, i) => {
+        switch (sh.t) {
+          case "rect":
+            return <rect key={i} x={sh.x} y={sh.y} width={sh.w} height={sh.h} rx={sh.rx} fill={sh.fill} stroke={sh.stroke} strokeWidth={0.8} />;
+          case "poly":
+            return <polygon key={i} points={sh.points.map((pt) => pt.join(",")).join(" ")} fill={sh.fill} stroke={sh.stroke} strokeWidth={0.8} />;
+          case "circle":
+            return <circle key={i} cx={sh.cx} cy={sh.cy} r={sh.r} fill={sh.fill} stroke={sh.stroke} strokeWidth={sh.stroke ? 0.8 : 0} />;
+          case "line":
+            return <line key={i} x1={sh.x1} y1={sh.y1} x2={sh.x2} y2={sh.y2} stroke={sh.stroke} strokeWidth={sh.width ?? 1} strokeDasharray={sh.dash} />;
+        }
+      })}
+    </svg>
+  );
+}
+
+function PrepositionList({ block }: { block: ContentBlock }) {
+  const scenes = block.diagram?.scenes ?? [];
+  return (
+    <ol className="mt-2 flex flex-col gap-2 text-sm">
+      {(block.items ?? []).map((item, i) => (
+        <li key={i} className="flex items-center gap-3">
+          <span className="shrink-0 rounded-md bg-white p-0.5">{scenes[i] && <SceneSvg shapes={prepositionScene(scenes[i])} width={78} />}</span>
+          <span>
+            {i + 1}. {itemText(item)}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function TownMap({ block, primary }: { block: ContentBlock; primary: string }) {
+  const places = block.diagram?.places ?? [];
+  if (!places.length) return null;
+  const { rows, cols, at } = mapGrid(places);
+  return (
+    <div className="my-2 grid gap-2.5 rounded-lg bg-stone-300 p-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+      {Array.from({ length: rows * cols }, (_, k) => {
+        const place = at(Math.floor(k / cols) + 1, (k % cols) + 1);
+        return (
+          <div
+            key={k}
+            className={place ? "flex h-16 flex-col items-center justify-center rounded border bg-white p-1 text-center" : "h-16 rounded bg-green-200"}
+            style={place ? { borderColor: primary } : undefined}
+          >
+            {place?.emoji && isEmoji(place.emoji) && (
+              // eslint-disable-next-line @next/next/no-img-element -- tiny static SVG from a CDN
+              <img src={twemojiUrl(place.emoji)} alt="" className="h-7 w-7" loading="lazy" />
+            )}
+            {place && (
+              <span className="text-[10px] leading-tight font-bold" style={{ color: primary }}>
+                {place.name}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ActivityView({ block, primary, light }: { block: ContentBlock; primary: string; light: string }) {
   const a = block.activity!;
   const items = block.items ?? [];
@@ -483,6 +550,7 @@ export function BlockView({
       ))}
       {!!block.dialogue?.length && <DialogueBubbles lines={block.dialogue} />}
       {block.table && <BlockTable table={block.table} primary={primary} light={light} />}
+      {block.diagram?.type === "map" && <TownMap block={block} primary={primary} />}
       {checklist ? (
         <ul className="mt-2 flex flex-col gap-1.5 text-sm">
           {block.items!.map((item, i) => (
@@ -492,6 +560,8 @@ export function BlockView({
             </li>
           ))}
         </ul>
+      ) : block.diagram?.type === "prepositions" ? (
+        <PrepositionList block={block} />
       ) : block.activity ? (
         <ActivityView block={block} primary={primary} light={light} />
       ) : (

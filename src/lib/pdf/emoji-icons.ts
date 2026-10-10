@@ -51,8 +51,10 @@ export function activityEmojis(units: { [field: string]: unknown }[]): string[] 
   const found: string[] = [];
   const visit = (pages: unknown) => {
     if (!Array.isArray(pages)) return;
-    for (const page of pages as { blocks?: { activity?: { pictures?: { emoji?: string }[] } }[] }[]) {
-      for (const block of page.blocks ?? []) for (const p of block.activity?.pictures ?? []) if (p.emoji) found.push(p.emoji);
+    for (const page of pages as { blocks?: { activity?: { pictures?: { emoji?: string }[] }; diagram?: { places?: { emoji?: string }[] } }[] }[]) {
+      for (const block of page.blocks ?? []) {
+        for (const p of [...(block.activity?.pictures ?? []), ...(block.diagram?.places ?? [])]) if (p.emoji) found.push(p.emoji);
+      }
     }
   };
   for (const u of units) {

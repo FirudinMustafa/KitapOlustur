@@ -1,4 +1,5 @@
 import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schemas";
+import { mapGrid, prepositionScene, sceneSvgMarkup } from "@/lib/diagrams";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { itemText } from "@/lib/item-text";
 
@@ -121,8 +122,25 @@ export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): st
   const wordBank = a?.words?.length ? `<p class="word-bank"><strong>${a.words.map(escapeXml).join(" · ")}</strong></p>` : "";
   const itemLabel = (item: string, i: number) =>
     a?.type === "picture_label" && pictures[i]?.emoji ? `${pictures[i].emoji} ${itemText(item)}` : itemText(item);
+  // Code-drawn diagrams (src/lib/diagrams.ts): scenes as inline SVG, the
+  // town map as a table of its street grid.
+  const scenes = block.diagram?.type === "prepositions" ? (block.diagram.scenes ?? []) : [];
   const items = block.items?.length
-    ? `<ol class="items">${block.items.map((item, i) => `<li>${escapeXml(itemLabel(item, i))}</li>`).join("")}</ol>`
+    ? `<ol class="items">${block.items
+        .map((item, i) => `<li>${scenes[i] ? `${sceneSvgMarkup(prepositionScene(scenes[i]), 78)} ` : ""}${escapeXml(itemLabel(item, i))}</li>`)
+        .join("")}</ol>`
+    : "";
+  const places = block.diagram?.type === "map" ? (block.diagram.places ?? []) : [];
+  const grid = places.length ? mapGrid(places) : null;
+  const townMap = grid
+    ? `<table class="town-map">${Array.from(
+        { length: grid.rows },
+        (_, r) =>
+          `<tr>${Array.from({ length: grid.cols }, (_, c) => {
+            const place = grid.at(r + 1, c + 1);
+            return `<td>${place ? escapeXml(place.emoji ? `${place.emoji} ${place.name}` : place.name) : ""}</td>`;
+          }).join("")}</tr>`,
+      ).join("")}</table>`
     : "";
   const matchPictures =
     a?.type === "picture_match" && pictures.length
@@ -137,6 +155,7 @@ export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): st
   return `<section class="block block-${block.kind}">
     <h3>${escapeXml(block.heading)}</h3>
     ${paragraphs(block.body)}
+    ${townMap}
     ${wordBank}
     ${items}
     ${matchPictures}

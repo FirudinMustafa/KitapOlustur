@@ -7,6 +7,7 @@ import { BookDocument } from "./BookDocument";
 import { rasterizePdf } from "./rasterize";
 import { activityIssues, twemojiFileName } from "@/lib/activities";
 import { activityEmojis, loadEmojiIcons } from "./emoji-icons";
+import { diagramIssues } from "@/lib/diagrams";
 
 // A workbook unit using every activity format (src/lib/activities.ts) -
 // the kind of page the British Council "Directions" sample is made of.
@@ -61,6 +62,39 @@ export const activityUnit = {
       ],
     },
     {
+      sourcePageNumber: 3,
+      pageType: "practice",
+      blocks: [
+        {
+          kind: "practice",
+          heading: "6 Where is the ball?",
+          body: "Look and complete.",
+          items: ["The ball is ___ the box.", "The ball is ___ the box.", "The ball is ___ the table.", "The ball is ___ the boxes.", "The ball is ___ the box.", "The ball is ___ the box."],
+          answerKey: ["in", "on", "under", "between", "behind", "next to"],
+          diagram: { type: "prepositions", scenes: ["in", "on", "under", "between", "behind", "next_to"] },
+        },
+        {
+          kind: "practice",
+          heading: "7 Look at the map",
+          body: "Complete the sentences.",
+          items: ["The café is ___ the library and the bank.", "The post office is ___ the bank.", "The bakery is ___ the post office."],
+          answerKey: ["between", "opposite", "next to"],
+          diagram: {
+            type: "map",
+            places: [
+              { name: "library", emoji: "📚", row: 1, col: 1 },
+              { name: "café", emoji: "☕", row: 1, col: 2 },
+              { name: "bank", emoji: "💰", row: 1, col: 3 },
+              { name: "school", emoji: "🏫", row: 1, col: 4 },
+              { name: "park", emoji: "🌳", row: 2, col: 1 },
+              { name: "post office", emoji: "📮", row: 2, col: 3 },
+              { name: "bakery", emoji: "🥐", row: 2, col: 4 },
+            ],
+          },
+        },
+      ],
+    },
+    {
       sourcePageNumber: 2,
       pageType: "practice",
       blocks: [
@@ -94,7 +128,7 @@ export const activityUnit = {
 
 describe("workbook activities", () => {
   it("are valid by their own structural rules", () => {
-    for (const page of activityUnit.workbookPages) for (const block of page.blocks) expect(activityIssues(block)).toEqual([]);
+    for (const page of activityUnit.workbookPages) for (const block of page.blocks) expect([...activityIssues(block), ...diagramIssues(block)]).toEqual([]);
     expect(activityIssues({ heading: "x", items: ["a", "b"], activity: { type: "picture_label", pictures: [{ label: "a" }] } })).toHaveLength(1);
   });
 
@@ -107,7 +141,7 @@ describe("workbook activities", () => {
   it("print on their own pages with the answers only at the back", async () => {
     // Real icons only when asked for (network); the fallback is the description.
     const pictureSrc = OUT ? await loadEmojiIcons(activityEmojis([activityUnit])) : undefined;
-    if (OUT) expect(Object.keys(pictureSrc!).length).toBe(12);
+    if (OUT) expect(Object.keys(pictureSrc!).length).toBe(15);
     const buffer = await renderToBuffer(
       <BookDocument pictureSrc={pictureSrc} bookTitle="My Town" variant="workbook" units={[activityUnit]} level="A1" contentsUnits={[]} designTheme="playful-kids" contentLanguage="en" />,
     );
@@ -116,7 +150,7 @@ describe("workbook activities", () => {
       mkdirSync(OUT, { recursive: true });
       for (const p of pages) writeFileSync(path.join(OUT, `activities-${p.pageNumber}.png`), p.png);
     }
-    // cover + imprint + contents + 2 activity pages + answer key
-    expect(pages.length).toBe(6);
+    // cover + imprint + contents + 3 activity pages + answer key
+    expect(pages.length).toBe(7);
   }, 60_000);
 });

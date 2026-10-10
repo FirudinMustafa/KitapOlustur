@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ACTIVITY_TYPES } from "@/lib/activities";
+import { MAP_MAX_COLS, MAP_MAX_ROWS, PREPOSITIONS } from "@/lib/diagrams";
 import { LAYOUT_TEMPLATE_IDS } from "@/lib/design/layouts";
 
 // ---- Source page map ----
@@ -291,6 +292,25 @@ export const contentBlockSchema = z.object({
     .describe(
       "Optional workbook activity format: picture_label, picture_match, word_bank, write_lines or draw_box. Leave unset for a plain numbered exercise.",
     ),
+  // Code-drawn diagrams (src/lib/diagrams.ts) - additive like `activity`.
+  diagram: z
+    .object({
+      type: z.enum(["prepositions", "map"]),
+      scenes: z.array(z.enum(PREPOSITIONS)).optional().describe("prepositions: one scene per item, in item order."),
+      places: z
+        .array(
+          z.object({
+            name: z.string(),
+            emoji: z.string().optional().describe("ONE emoji that depicts the place."),
+            row: z.number().int().min(1).max(MAP_MAX_ROWS),
+            col: z.number().int().min(1).max(MAP_MAX_COLS),
+          }),
+        )
+        .optional()
+        .describe("map: the places on the street grid, one per cell."),
+    })
+    .optional()
+    .describe("Optional exact diagram drawn by the software: preposition scenes (ball and box) or a town map. Leave unset otherwise."),
 });
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 

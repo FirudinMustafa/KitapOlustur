@@ -1,4 +1,5 @@
-import { Text, View, Svg, Path, Rect, Circle, Line, Image } from "@react-pdf/renderer";
+import { Text, View, Svg, Path, Rect, Circle, Line, Image, Polygon } from "@react-pdf/renderer";
+import { MAP_CELL_H, SCENE_H, SCENE_ROW, SCENE_W, mapGrid, prepositionScene, type Shape } from "@/lib/diagrams";
 import { DRAW_LINE, MATCH_ROW, PICTURE_CELL, RULE_GAP, letterFor, type ActivityPicture } from "@/lib/activities";
 import type { ContentBlock, ContentBlockKind, GeneratedPage } from "@/lib/ai/schemas";
 import { seededShuffle } from "@/lib/content-html";
@@ -329,12 +330,98 @@ function ItemList({ block, look }: { block: ContentBlock; look: Look }) {
   );
 }
 
+// ---- Code-drawn diagrams (src/lib/diagrams.ts) ----
+
+function SceneSvg({ shapes, width }: { shapes: Shape[]; width: number }) {
+  return (
+    <Svg viewBox={`0 0 ${SCENE_W} ${SCENE_H}`} style={{ width, height: (width * SCENE_H) / SCENE_W }}>
+      {shapes.map((sh, i) => {
+        switch (sh.t) {
+          case "rect":
+            return <Rect key={i} x={sh.x} y={sh.y} width={sh.w} height={sh.h} rx={sh.rx} fill={sh.fill} stroke={sh.stroke} strokeWidth={0.8} />;
+          case "poly":
+            return <Polygon key={i} points={sh.points.map((pt) => pt.join(",")).join(" ")} fill={sh.fill} stroke={sh.stroke} strokeWidth={0.8} />;
+          case "circle":
+            return <Circle key={i} cx={sh.cx} cy={sh.cy} r={sh.r} fill={sh.fill} stroke={sh.stroke} strokeWidth={sh.stroke ? 0.8 : 0} />;
+          case "line":
+            return <Line key={i} x1={sh.x1} y1={sh.y1} x2={sh.x2} y2={sh.y2} stroke={sh.stroke} strokeWidth={sh.width ?? 1} strokeDasharray={sh.dash} />;
+        }
+      })}
+    </Svg>
+  );
+}
+
+function PrepositionList({ block, look }: { block: ContentBlock; look: Look }) {
+  const scenes = block.diagram?.scenes ?? [];
+  const sceneW = ((SCENE_ROW - 6) * SCENE_W) / SCENE_H;
+  return (
+    <View>
+      {(block.items ?? []).map((item, i) => (
+        <View key={i} style={{ flexDirection: "row", alignItems: "center", height: SCENE_ROW }} wrap={false}>
+          <View style={{ width: sceneW + 8, marginRight: 8, borderRadius: Math.max(6, look.theme.radius), backgroundColor: "#ffffff", padding: 2, alignItems: "center" }}>
+            {scenes[i] ? <SceneSvg shapes={prepositionScene(scenes[i])} width={sceneW} /> : null}
+          </View>
+          <Text style={{ flex: 1, lineHeight: 1.35 }}>
+            {i + 1}. {itemText(item)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// A street grid: grey roads between blocks of places, empty plots as grass.
+function TownMap({ block, look }: { block: ContentBlock; look: Look }) {
+  const places = block.diagram?.places ?? [];
+  if (!places.length) return null;
+  const { rows, cols, at } = mapGrid(places);
+  return (
+    <View style={{ backgroundColor: "#d6d3d1", borderRadius: Math.max(6, look.theme.radius), padding: 6, marginTop: 6, marginBottom: 8 }} wrap={false}>
+      {Array.from({ length: rows }, (_, r) => (
+        <View key={r} style={{ flexDirection: "row", marginBottom: r < rows - 1 ? 10 : 0 }}>
+          {Array.from({ length: cols }, (_, c) => {
+            const place = at(r + 1, c + 1);
+            const src = place?.emoji ? look.pictureSrc?.[place.emoji.trim()] : undefined;
+            return (
+              <View
+                key={c}
+                style={{
+                  flex: 1,
+                  height: MAP_CELL_H,
+                  marginRight: c < cols - 1 ? 10 : 0,
+                  borderRadius: 4,
+                  backgroundColor: place ? "#ffffff" : "#bbf7d0",
+                  borderWidth: place ? 1 : 0,
+                  borderColor: look.palette.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 3,
+                }}
+              >
+                {src ? (
+                  // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop
+                  <Image src={src} style={{ width: 30, height: 30, marginBottom: 3 }} />
+                ) : null}
+                {place ? (
+                  <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 8, color: look.palette.primaryDark, textAlign: "center" }}>{place.name}</Text>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function ActivityItems({ block, look, columns }: { block: ContentBlock; look: Look; columns: number }) {
   const a = block.activity;
   return (
     <>
       {!!a?.words?.length && <WordBank words={a.words} look={look} />}
-      {a?.type === "picture_label" ? (
+      {block.diagram?.type === "prepositions" ? (
+        <PrepositionList block={block} look={look} />
+      ) : a?.type === "picture_label" ? (
         <PictureLabelGrid block={block} look={look} columns={columns} />
       ) : a?.type === "picture_match" ? (
         <PictureMatch block={block} look={look} />
@@ -489,6 +576,7 @@ function BlockInner({ block, showAnswerKey, look, plain }: { block: ContentBlock
       {block.body ? <Text style={{ marginBottom: 6, lineHeight: 1.4 }}>{block.body}</Text> : null}
       {block.dialogue?.length ? <DialogueView lines={block.dialogue} look={look} /> : null}
       {block.table ? <TableView table={block.table} look={look} /> : null}
+      {block.diagram?.type === "map" ? <TownMap block={block} look={look} /> : null}
       <ExerciseBox block={block} showAnswerKey={showAnswerKey} look={look} plain={plain} />
     </>
   );
@@ -507,7 +595,8 @@ export function blockLines(block: ContentBlock): number {
     (block.answerKey?.length ? block.answerKey.length + 1 : 0) +
     (block.dialogue?.length ?? 0) * 2 +
     (block.table ? block.table.rows.length + 1 : 0) +
-    (block.activity ? 6 : 0)
+    (block.activity ? 6 : 0) +
+    (block.diagram ? 8 : 0)
   );
 }
 
