@@ -545,8 +545,11 @@ export function BookDocument({
   includeCover = true,
   bookKind,
   forcePlain,
+  compact,
   pictureSrc,
 }: {
+  /** "<unitNumber>:<pageIndex>" keys of pages printed with tighter activity sizes - renderBookFitted's last resort. */
+  compact?: ReadonlySet<string>;
   /** emoji -> image src for activity pictures (loadEmojiIcons); unset = pictures print as short descriptions. */
   pictureSrc?: Record<string, string>;
   /** "<unitNumber>:<pageIndex>" keys of pages to print in plain flow - set by renderBookFitted after a measured spill. */
@@ -645,6 +648,7 @@ export function BookDocument({
       {units.flatMap((unit) =>
         withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((page, idx) => {
           const imageSrc = resolvePageImageUrl(page, pageImages);
+          const pageLook = compact?.has(`${unit.unitNumber}:${idx}`) ? { ...look, compact: true } : look;
           const template = forcePlain?.has(`${unit.unitNumber}:${idx}`)
             ? "standard"
             : resolvePageTemplate(page, !!imageSrc, {
@@ -670,7 +674,7 @@ export function BookDocument({
                   unit={unit}
                   isUnitFirstPage={idx === 0 && !isPictureBook}
                   imageSrc={imageSrc}
-                  look={look}
+                  look={pageLook}
                   showAnswerKey={inlineAnswers}
                   pageSize={pageSize}
                   imageHeight={pageImageHeight}
@@ -684,7 +688,7 @@ export function BookDocument({
                   unit={unit}
                   isUnitFirstPage={idx === 0 && !isPictureBook}
                   imageSrc={imageSrc}
-                  look={look}
+                  look={pageLook}
                   showAnswerKey={inlineAnswers}
                   pageSize={pageSize}
                   unitKicker={`UNIT ${unit.unitNumber}`}
@@ -719,15 +723,16 @@ export function BookDocument({
                   // short unit's key over several pages.
                   <View key={i} style={styles.answerKeyEntry} wrap={false}>
                     <Text style={[styles.answerKeyLabel, { color: palette.primaryDark }]}>{block.heading}</Text>
-                    <Text style={{ lineHeight: 1.5 }}>
+                    {/* One box per answer in a wrapping row: inline text broke lines
+                        between answers with a hyphen ("supermarket-"). */}
+                    <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                       {(block.answerKey ?? []).map((answer, j) => (
-                        <Text key={j}>
-                          <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, color: palette.primary }}>{`${j + 1} `}</Text>
+                        <Text key={j} style={{ lineHeight: 1.5, marginRight: 14 }}>
+                          <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, color: palette.primary }}>{`${j + 1} `}</Text>
                           {itemText(answer)}
-                          {j < (block.answerKey?.length ?? 0) - 1 ? "    " : ""}
                         </Text>
                       ))}
-                    </Text>
+                    </View>
                   </View>
                 ))}
             </View>

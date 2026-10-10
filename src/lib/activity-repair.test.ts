@@ -87,3 +87,29 @@ describe("activity checks from the live run", () => {
     ).toEqual([expect.stringContaining("letter")]);
   });
 });
+
+describe("deterministic backstops from the third live run", () => {
+  it("answers each preposition with what its scene draws", () => {
+    const fixed = fixPrepositionItems({
+      heading: "Where is the ball?",
+      items: ["The ball is ___ the boxes.", "The ball is ___ the box.", "The red ball is ___ the blue ball.", "The ball is ___ the box."],
+      answerKey: ["between", "in", "next to", "under"],
+      diagram: { type: "prepositions", scenes: ["between", "next_to", "opposite", "behind"] },
+    });
+    expect(fixed.answerKey).toEqual(["between", "next to", "opposite", "behind"]);
+    expect(fixed.items![2]).toBe("The ball is ___ the box.");
+  });
+
+  it("names the answer the way the word bank does", async () => {
+    const { reconcileWordBank } = await import("./activities");
+    const block = {
+      heading: "Town Places",
+      items: ["A place to play football", "A place with many books"],
+      answerKey: ["stadium", "library"],
+      activity: { type: "picture_label" as const, words: ["library", "sports centre"] },
+    };
+    expect(reconcileWordBank(block).answerKey).toEqual(["sports centre", "library"]);
+    const two = reconcileWordBank({ ...block, answerKey: ["stadium", "museum"] });
+    expect(two.activity.words).toEqual(["library", "sports centre", "stadium", "museum"]);
+  });
+});

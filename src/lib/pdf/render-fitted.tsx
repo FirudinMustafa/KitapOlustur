@@ -6,7 +6,7 @@ import { countPdfPages } from "./rasterize";
 import { buildPageSpans } from "@/lib/design/page-review";
 import { activityEmojis, loadEmojiIcons } from "./emoji-icons";
 
-type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forcePlain">;
+type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forcePlain" | "compact">;
 
 // Measured, not estimated: renders the book, finds every page that ran onto
 // a second PDF page and renders again with those pages in plain flow.
@@ -14,19 +14,35 @@ type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forc
 // the next page and leaves a near-blank page behind (live E2E 2026-10-10);
 // plain flow paginates naturally. The height estimate keeps most pages
 // designed - this pass guarantees the ones it got wrong never print broken.
-export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer; flattened: string[] }> {
+//
+// A page that still runs over in plain flow gets one more pass with
+// tighter activity and diagram sizes (live E2E 2026-10-10: the last row of
+// a preposition exercise printed alone on an otherwise empty page). Kept
+// only for pages it actually pulls back onto one sheet.
+export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer; flattened: string[]; compacted: string[] }> {
   // Activity pictures are drawn from Twemoji; fetched once per book.
   const props = input.pictureSrc ? input : { ...input, pictureSrc: await loadEmojiIcons(activityEmojis(input.units)) };
-  const starts: Record<string, number> = {};
-  resetBookFonts();
-  const first = await renderToBuffer(
-    <BookDocument {...props} onPageStart={(key, n) => (starts[key] = Math.min(starts[key] ?? n, n))} />,
-  );
-  const spills = buildPageSpans(starts, await countPdfPages(new Uint8Array(first)))
-    .filter((s) => /^\d+:\d+$/.test(s.key) && s.pageCount > 1)
-    .map((s) => s.key);
-  if (!spills.length) return { pdf: first, flattened: [] };
-  resetBookFonts();
-  const second = await renderToBuffer(<BookDocument {...props} forcePlain={new Set(spills)} />);
-  return { pdf: second, flattened: spills };
+
+  async function render(forcePlain?: Set<string>, compact?: Set<string>) {
+    const starts: Record<string, number> = {};
+    resetBookFonts();
+    const pdf = await renderToBuffer(
+      <BookDocument {...props} forcePlain={forcePlain} compact={compact} onPageStart={(key, n) => (starts[key] = Math.min(starts[key] ?? n, n))} />,
+    );
+    const spills = buildPageSpans(starts, await countPdfPages(new Uint8Array(pdf)))
+      .filter((s) => /^\d+:\d+$/.test(s.key) && s.pageCount > 1)
+      .map((s) => s.key);
+    return { pdf, spills };
+  }
+
+  const first = await render();
+  if (!first.spills.length) return { pdf: first.pdf, flattened: [], compacted: [] };
+  const plain = new Set(first.spills);
+  const second = await render(plain);
+  if (!second.spills.length) return { pdf: second.pdf, flattened: [...plain], compacted: [] };
+  const third = await render(plain, new Set(second.spills));
+  const fixed = second.spills.filter((k) => !third.spills.includes(k));
+  return fixed.length
+    ? { pdf: third.pdf, flattened: [...plain], compacted: fixed }
+    : { pdf: second.pdf, flattened: [...plain], compacted: [] };
 }

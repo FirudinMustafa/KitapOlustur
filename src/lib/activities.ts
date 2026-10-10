@@ -116,3 +116,25 @@ export function twemojiUrl(emoji: string): string {
 export function isEmoji(text: string): boolean {
   return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(text);
 }
+
+// Backstop for a labelling grid whose key and word bank disagree (live E2E
+// 2026-10-10: box "sports centre", key "stadium", through every retry).
+// One answer missing from the box and one box word unused -> they are the
+// same thing named twice; the box's wording wins (it is what the learner
+// sees). Otherwise missing answers are added to the box so every answer
+// can be found.
+export function reconcileWordBank<B extends ActivityBlock>(block: B): B {
+  const a = block.activity;
+  if (a?.type !== "picture_label" || !a.words?.length || !block.answerKey?.length) return block;
+  const key = (s: string) => s.trim().toLowerCase();
+  const box = new Set(a.words.map(key));
+  const missing = block.answerKey.map((ans, i) => ({ ans, i })).filter(({ ans }) => !box.has(key(ans)));
+  if (!missing.length) return block;
+  const used = new Set(block.answerKey.map(key));
+  const unused = a.words.filter((w) => !used.has(key(w)));
+  if (missing.length === 1 && unused.length === 1) {
+    const answerKey = block.answerKey.map((ans, i) => (i === missing[0].i ? unused[0] : ans));
+    return { ...block, answerKey };
+  }
+  return { ...block, activity: { ...a, words: [...a.words, ...missing.map((m) => m.ans)] } };
+}

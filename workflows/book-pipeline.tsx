@@ -114,7 +114,7 @@ import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
 import { fixMapAnswers } from "@/lib/map-answers";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
-import { ACTIVITY_PROMPT, activityIssues } from "@/lib/activities";
+import { ACTIVITY_PROMPT, activityIssues, reconcileWordBank } from "@/lib/activities";
 import { DIAGRAM_PROMPT, diagramIssues, fixPrepositionItems } from "@/lib/diagrams";
 import { buildEpub } from "@/lib/epub/BookEpub";
 
@@ -2324,10 +2324,11 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // breaks up runs of the same template (diversifyTemplates). No model call.
 // Deterministic backstops for diagrams: preposition items the writer still
 // wrote without their gap (fixPrepositionItems), and map questions whose
-// answers contradict the drawn map (fixMapAnswers).
+// answers contradict the drawn map (fixMapAnswers), and labelling grids
+// whose key and word bank name things differently (reconcileWordBank).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   const fix = (pages?: GeneratedPage[]) =>
-    pages?.map((page) => fixMapAnswers({ ...page, blocks: page.blocks.map(fixPrepositionItems) }).page);
+    pages?.map((page) => fixMapAnswers({ ...page, blocks: page.blocks.map((b) => reconcileWordBank(fixPrepositionItems(b))) }).page);
   return {
     ...unit,
     studentBookPages: fix(unit.studentBookPages) ?? unit.studentBookPages,

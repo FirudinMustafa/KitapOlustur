@@ -211,13 +211,18 @@ export function prepositionWords(p: Preposition): string {
   return p.replace(/_/g, " ");
 }
 
-// Backstop after the writer's retries: a preposition item without its gap
-// is rewritten from the scene it sits next to (the drawing is the truth),
-// and its answer is the scene's preposition.
+// Backstop after the writer's retries - the drawing is the truth:
+// - every answer is the preposition its scene draws (live E2E 2026-10-10:
+//   scenes between/next to/opposite/behind came with the key
+//   between/in/next to/under);
+// - an item that doesn't ask about the ball and the scene's object ("The
+//   red ball is ___ the blue ball.", or no gap at all) is rewritten to the
+//   plain question for that scene.
 export function fixPrepositionItems<B extends DiagramBlock & { answerKey?: string[] }>(block: B): B {
   const scenes = block.diagram?.type === "prepositions" ? block.diagram.scenes : undefined;
-  if (!scenes?.length || !block.items?.length || block.items.every((i) => i.includes("___"))) return block;
-  const items = block.items.map((item, i) => (item.includes("___") || !scenes[i] ? item : `The ball is ___ ${SCENE_OBJECT[scenes[i]]}.`));
-  const answerKey = block.items.map((item, i) => (item.includes("___") || !scenes[i] ? (block.answerKey?.[i] ?? "") : prepositionWords(scenes[i])));
+  if (!scenes?.length || !block.items?.length) return block;
+  const asks = (item: string, p: Preposition) => item.includes("___") && item.toLowerCase().includes(SCENE_OBJECT[p]);
+  const items = block.items.map((item, i) => (!scenes[i] || asks(item, scenes[i]) ? item : `The ball is ___ ${SCENE_OBJECT[scenes[i]]}.`));
+  const answerKey = block.items.map((_, i) => (scenes[i] ? prepositionWords(scenes[i]) : (block.answerKey?.[i] ?? "")));
   return { ...block, items, answerKey };
 }

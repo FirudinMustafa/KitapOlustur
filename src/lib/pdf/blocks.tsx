@@ -21,7 +21,14 @@ export type Look = {
   bodyFont: string;
   /** emoji -> image src for activity pictures (filled by the book renderer when icons are available). */
   pictureSrc?: Record<string, string>;
+  /** Tighter activity/diagram sizes - set by renderBookFitted for a page that still ran over. */
+  compact?: boolean;
 };
+
+// Activity and diagram sizes shrink by this on a compact page.
+function sized(look: Look, pt: number): number {
+  return look.compact ? Math.round(pt * 0.72) : pt;
+}
 
 export function makeLook(theme: DesignTheme, palette: ThemePalette): Look {
   return {
@@ -210,11 +217,11 @@ function WordBank({ words, look }: { words: string[]; look: Look }) {
   );
 }
 
-function RuledLines({ count }: { count: number }) {
+function RuledLines({ count, gap = RULE_GAP }: { count: number; gap?: number }) {
   return (
     <View>
       {Array.from({ length: count }, (_, i) => (
-        <View key={i} style={{ height: RULE_GAP, borderBottomWidth: 0.75, borderBottomColor: "#9ca3af" }} />
+        <View key={i} style={{ height: gap, borderBottomWidth: 0.75, borderBottomColor: "#9ca3af" }} />
       ))}
     </View>
   );
@@ -255,7 +262,7 @@ function PictureLabelGrid({ block, look, columns }: { block: ContentBlock; look:
     <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
       {items.map((item, i) => (
         <View key={i} style={{ width: `${100 / columns}%`, paddingHorizontal: 4, marginBottom: 8 }} wrap={false}>
-          <PictureFrame picture={pictures[i]} fallback={itemText(item)} height={PICTURE_CELL - 30} look={look} />
+          <PictureFrame picture={pictures[i]} fallback={itemText(item)} height={sized(look, PICTURE_CELL - 30)} look={look} />
           <View style={{ flexDirection: "row", alignItems: "flex-end", height: 22 }}>
             <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9, color: look.palette.primary, marginRight: 4 }}>{i + 1}</Text>
             <View style={{ flex: 1, borderBottomWidth: 0.75, borderBottomColor: "#9ca3af", marginBottom: 3 }} />
@@ -279,11 +286,12 @@ function Dot({ color }: { color: string }) {
 function PictureMatch({ block, look }: { block: ContentBlock; look: Look }) {
   const items = block.items ?? [];
   const pictures = block.activity?.pictures ?? [];
-  const frame = MATCH_ROW - 8;
+  const row = sized(look, MATCH_ROW);
+  const frame = row - 8;
   return (
     <View>
       {items.map((item, i) => (
-        <View key={i} style={{ flexDirection: "row", alignItems: "center", height: MATCH_ROW }} wrap={false}>
+        <View key={i} style={{ flexDirection: "row", alignItems: "center", height: row }} wrap={false}>
           <Text style={{ flex: 1, lineHeight: 1.3 }}>
             {i + 1}. {itemText(item)}
           </Text>
@@ -310,14 +318,14 @@ function ItemList({ block, look }: { block: ContentBlock; look: Look }) {
           <Text style={s.item}>
             {k + 1}. {itemText(item)}
           </Text>
-          {lines > 0 && <RuledLines count={lines} />}
+          {lines > 0 && <RuledLines count={lines} gap={sized(look, RULE_GAP)} />}
         </View>
       ))}
-      {a?.type === "write_lines" && !block.items?.length && <RuledLines count={a.lines ?? 5} />}
+      {a?.type === "write_lines" && !block.items?.length && <RuledLines count={a.lines ?? 5} gap={sized(look, RULE_GAP)} />}
       {a?.type === "draw_box" && (
         <View
           style={{
-            height: (a.lines ?? 8) * DRAW_LINE,
+            height: (a.lines ?? 8) * sized(look, DRAW_LINE),
             marginTop: 6,
             borderWidth: 1,
             borderColor: look.palette.primary,
@@ -353,11 +361,12 @@ function SceneSvg({ shapes, width }: { shapes: Shape[]; width: number }) {
 
 function PrepositionList({ block, look }: { block: ContentBlock; look: Look }) {
   const scenes = block.diagram?.scenes ?? [];
-  const sceneW = ((SCENE_ROW - 6) * SCENE_W) / SCENE_H;
+  const rowH = sized(look, SCENE_ROW);
+  const sceneW = ((rowH - 6) * SCENE_W) / SCENE_H;
   return (
     <View>
       {(block.items ?? []).map((item, i) => (
-        <View key={i} style={{ flexDirection: "row", alignItems: "center", height: SCENE_ROW }} wrap={false}>
+        <View key={i} style={{ flexDirection: "row", alignItems: "center", height: rowH }} wrap={false}>
           <View style={{ width: sceneW + 8, marginRight: 8, borderRadius: Math.max(6, look.theme.radius), backgroundColor: "#ffffff", padding: 2, alignItems: "center" }}>
             {scenes[i] ? <SceneSvg shapes={prepositionScene(scenes[i])} width={sceneW} /> : null}
           </View>
@@ -387,7 +396,7 @@ function TownMap({ block, look }: { block: ContentBlock; look: Look }) {
                 key={c}
                 style={{
                   flex: 1,
-                  height: MAP_CELL_H,
+                  height: sized(look, MAP_CELL_H),
                   marginRight: c < cols - 1 ? 10 : 0,
                   borderRadius: 4,
                   backgroundColor: place ? "#ffffff" : "#bbf7d0",
