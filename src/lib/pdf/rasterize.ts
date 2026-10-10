@@ -40,3 +40,32 @@ export async function countPdfPages(pdf: Uint8Array): Promise<number> {
     doc.destroy();
   }
 }
+
+// Page-by-page variant for large books: each page is encoded (JPEG - a
+// fraction of a PNG's size for typeset pages with pictures), handed to
+// `onPage` and released before the next one is rendered, so memory stays
+// flat however long the book is. Live E2E 2026-10-09: rendering every page
+// of two books into memory at once got the dev server reaped for low memory.
+export async function forEachRasterizedPage(
+  pdf: Uint8Array,
+  onPage: (page: { pageNumber: number; jpeg: Uint8Array }) => Promise<void>,
+  { dpi = 100, quality = 85 }: { dpi?: number; quality?: number } = {},
+): Promise<number> {
+  const mupdf = await import("mupdf");
+  const doc = mupdf.Document.openDocument(pdf, "application/pdf");
+  try {
+    const scale = dpi / 72;
+    const total = doc.countPages();
+    for (let i = 0; i < total; i++) {
+      const page = doc.loadPage(i);
+      const pix = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true);
+      const jpeg = pix.asJPEG(quality);
+      pix.destroy();
+      page.destroy();
+      await onPage({ pageNumber: i + 1, jpeg });
+    }
+    return total;
+  } finally {
+    doc.destroy();
+  }
+}

@@ -101,7 +101,7 @@ import {
   type DesignFix,
   type PageDesignGrade,
 } from "@/lib/design/page-review";
-import { countPdfPages, rasterizePdf } from "@/lib/pdf/rasterize";
+import { countPdfPages, forEachRasterizedPage, rasterizePdf } from "@/lib/pdf/rasterize";
 import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeCharactersForPrompt } from "@/lib/ai/characters";
 import type { CharacterSheet } from "@/db/schema";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
@@ -447,6 +447,10 @@ async function extractOutline(
               text: [
                 "Extract the full unit-by-unit structure of this coursebook PDF: book title, academic subject (e.g. 'English Language Teaching', 'Mathematics', 'Physics'), overall level, tone, and target audience.",
                 "For every unit, give its title, level, the exact source page range it spans (derive start/end page numbers from the page map below), learning objectives, and key terms (vocabulary, formulas, or concepts introduced).",
+                // Live E2E 2026-10-09: the generated book shipped under the
+                // source's own (trademarked) series title. The outline drives
+                // a NEW book, so its name must be new too.
+                "bookTitle is the title of the NEW, original book that will be written from this structure - invent a fresh title that fits the subject and level. Never reuse the source book's title, series name, brand or character names; likewise give units descriptive titles of your own rather than copying the source's unit names.",
                 `Pre-computed page map (JSON):\n${JSON.stringify(pageMap)}`,
                 "Be thorough - do not skip units, and make sure every unit's sourcePageRange is consistent with the page map's unitNumber assignments.",
                 targetLanguage
@@ -2684,17 +2688,17 @@ async function assembleAndSaveBooks(
 
     // Faz 5: page images for the 3D reader (screen PDF, cover included).
     try {
-      const pages = await rasterizePdf(new Uint8Array(pdfBuffer), { dpi: 100 });
-      pageRenderUrls = [];
-      for (const pg of pages) {
-        const pngBlob = await put(`generated/${runId}/pages/${variant}-${pg.pageNumber}.png`, Buffer.from(pg.png), {
+      const urls: string[] = [];
+      await forEachRasterizedPage(new Uint8Array(pdfBuffer), async (pg) => {
+        const blob = await put(`generated/${runId}/pages/${variant}-${pg.pageNumber}.jpg`, Buffer.from(pg.jpeg), {
           access: "public",
-          contentType: "image/png",
+          contentType: "image/jpeg",
           addRandomSuffix: false,
           allowOverwrite: true,
         });
-        pageRenderUrls.push(pngBlob.url);
-      }
+        urls.push(blob.url);
+      });
+      pageRenderUrls = urls;
     } catch {
       pageRenderUrls = null;
     }
