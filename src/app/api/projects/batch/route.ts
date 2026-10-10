@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { isDesignThemeId } from "@/lib/design/themes";
+import { isArtStyleId } from "@/lib/ai/art-styles";
 import { auth } from "@clerk/nextjs/server";
 import { start } from "workflow/api";
 import { eq } from "drizzle-orm";
@@ -44,6 +46,9 @@ export async function POST(request: Request) {
     unitLimit: unitLimitRaw,
     styleProfileId: styleProfileIdRaw,
     qualityMode: qualityModeRaw,
+    designTheme: designThemeRaw,
+    artStyle: artStyleRaw,
+    referencePageUrls: referencePageUrlsRaw,
     targetLanguage: targetLanguageRaw,
     unitSkeleton: unitSkeletonRaw,
     spacedRepetition: spacedRepetitionRaw,
@@ -123,6 +128,15 @@ export async function POST(request: Request) {
 
   const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
   const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";
+  // Faz 1 "Tasarım sistemi": unknown/absent ids store null (= classic).
+  const designTheme = isDesignThemeId(designThemeRaw) ? designThemeRaw : null;
+  // Faz 2 "İllüstrasyon stili": unknown/absent ids store null (= textbook).
+  const artStyle = isArtStyleId(artStyleRaw) ? artStyleRaw : null;
+  // Faz 3: sample pages of a published book to grade the design against -
+  // only this app's own Blob uploads (they're fetched server-side).
+  const referencePageUrls = Array.isArray(referencePageUrlsRaw)
+    ? referencePageUrlsRaw.filter((u: unknown): u is string => typeof u === "string" && isOwnBlobUrl(u)).slice(0, 5)
+    : [];
   const targetLanguage =
     typeof targetLanguageRaw === "string" && targetLanguageRaw.trim() ? targetLanguageRaw.trim() : null;
   const sharedLevel = typeof level === "string" && level.trim() ? level.trim() : null;
@@ -151,6 +165,9 @@ export async function POST(request: Request) {
         selectedNiceToHaveIds: niceToHaveIds,
         styleProfileId,
         qualityMode,
+        designTheme,
+        artStyle,
+        referencePageUrls: referencePageUrls.length ? referencePageUrls : null,
         targetLanguage,
         customNotes: sharedNotes,
         unitLimit,

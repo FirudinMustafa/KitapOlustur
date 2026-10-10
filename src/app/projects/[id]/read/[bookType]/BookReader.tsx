@@ -4,8 +4,16 @@ import Link from "next/link";
 import { useState } from "react";
 import type { GeneratedUnit, GeneratedPage } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
-import { KaraokeAudio, PageView } from "@/components/book/PageContent";
+import { KaraokeAudio, PageView, type WebLook } from "@/components/book/PageContent";
+import { resolveDesignTheme } from "@/lib/design/themes";
 import { BookFlipViewer, type FlipPageEntry } from "@/components/book/BookFlipViewer";
+import dynamic from "next/dynamic";
+
+// Faz 5: WebGL - client only, loaded on first use.
+const Book3DReader = dynamic(() => import("@/components/book/Book3DReader"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-muted-foreground">3D görünüm yükleniyor…</p>,
+});
 import { resolvePageImageUrl } from "@/lib/page-image";
 import { resolveLogoPositionStyle } from "@/lib/logo-position";
 import { derivePaletteFromColors } from "@/lib/pdf/derive-palette";
@@ -50,7 +58,15 @@ export function BookReader({
   logoUrl,
   logoPosition,
   paletteColors,
+  designTheme,
+  pageRenderUrls,
+  pageAspect = 595.28 / 841.89,
 }: {
+  /** Faz 5: the typeset pages as images - enables the 3D reader. */
+  pageRenderUrls?: string[];
+  pageAspect?: number;
+  /** Faz 1: generation_runs.design_theme - null renders the classic look. */
+  designTheme?: string | null;
   bookTitle: string;
   level: string | null;
   variant: Variant;
@@ -71,6 +87,8 @@ export function BookReader({
 }) {
   const unitsWithPages = units.filter((u) => pagesForVariant(u, variant).length > 0);
   const palette = derivePaletteFromColors(paletteColors);
+  const theme = resolveDesignTheme(designTheme);
+  const look: WebLook = { theme, palette: palette ?? theme.palettes[variant] };
   const accentStyle = palette ? { borderColor: palette.primary } : undefined;
   const [activeUnit, setActiveUnit] = useState(unitsWithPages[0]?.unitNumber ?? null);
   // Faz C1 ("gerçek sayfa-çevirmeli okuma deneyimi", 2026-09-28): the
@@ -78,7 +96,7 @@ export function BookReader({
   // was previously only reachable from Dizilim, a post-hoc editor - readers
   // never saw it. "Liste" (the pre-existing scroll-through-one-unit view)
   // stays the default so nothing changes for anyone who doesn't switch modes.
-  const [viewMode, setViewMode] = useState<"list" | "flip">("list");
+  const [viewMode, setViewMode] = useState<"list" | "flip" | "3d">("list");
   // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
   // here despite always generating an answer key - it was silently dropped.
   const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
@@ -140,8 +158,17 @@ export function BookReader({
           >
             Sayfa çevir
           </button>
+          {!!pageRenderUrls?.length && (
+            <button
+              onClick={() => setViewMode("3d")}
+              title="Basılı kitabın birebir sayfalarıyla 3D çevirme"
+              className={`flex-1 rounded px-2 py-1 ${viewMode === "3d" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground"}`}
+            >
+              3D
+            </button>
+          )}
         </div>
-        <ul className={`mt-4 flex flex-col gap-1 ${viewMode === "flip" ? "opacity-50" : ""}`}>
+        <ul className={`mt-4 flex flex-col gap-1 ${viewMode !== "list" ? "opacity-50" : ""}`}>
           {unitsWithPages.map((unit) => (
             <li key={unit.unitNumber}>
               <button
@@ -165,12 +192,15 @@ export function BookReader({
       <main className="min-w-0 flex-1">
         {!current ? (
           <p className="text-sm text-muted-foreground">Bu kitap tipi için içerik bulunamadı.</p>
+        ) : viewMode === "3d" && pageRenderUrls?.length ? (
+          <Book3DReader pages={pageRenderUrls} aspect={pageAspect} />
         ) : viewMode === "flip" ? (
           <BookFlipViewer
             flatPages={flatPages}
             pageImages={pageImages}
             showAnswerKey={showAnswerKey}
             listeningAudioByUnit={(unitNumber) => unitsWithPages.find((u) => u.unitNumber === unitNumber)?.listeningAudio}
+            look={look}
           />
         ) : (
           <>
@@ -219,6 +249,9 @@ export function BookReader({
                 showAnswerKey={showAnswerKey}
                 imageUrl={resolvePageImageUrl(page, pageImages)}
                 listeningAudio={current.listeningAudio}
+                look={look}
+                unit={current}
+                isUnitFirstPage={i === 0}
               />
             ))}
           </>

@@ -1,17 +1,19 @@
-import { Document, Page, Text, View, StyleSheet, Svg, Path, Rect, Circle, Line, Image } from "@react-pdf/renderer";
-import type { GeneratedUnit, GeneratedPage, ContentBlock, ContentBlockKind } from "@/lib/ai/schemas";
+import { Document, Page, Text, View, StyleSheet, Svg, Path, Rect, Circle, Image } from "@react-pdf/renderer";
+import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schemas";
 import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument";
-import { seededShuffle } from "@/lib/content-html";
 import { encodeEan13 } from "@/lib/barcode/ean13";
 import { formatIsbn13 } from "@/lib/isbn";
 import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 import { resolvePageImageUrl } from "@/lib/page-image";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF } from "./fonts";
-import { BLOCK_COLORS } from "@/lib/block-colors";
 import { derivePaletteFromColors } from "./derive-palette";
 import { withUnitGlossary } from "@/lib/unit-glossary";
 import { blocksForRender, clampLayoutToPage } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
+import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/design/themes";
+import { resolvePageTemplate } from "@/lib/design/layouts";
+import { BlockCard, GlossaryGrid, makeLook, type Look } from "./blocks";
+import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
 
 registerBookFonts();
 
@@ -20,12 +22,12 @@ registerBookFonts();
 // - an ISBN-13 IS an EAN-13 barcode, so encodeEan13 doubles as the ISBN
 // barcode encoder. Returns null (renders nothing) for a missing/invalid
 // ISBN rather than a placeholder - never fabricates a fake barcode.
-function Barcode({ isbn }: { isbn: string }) {
+export function Barcode({ isbn, scale = 1 }: { isbn: string; scale?: number }) {
   const bits = encodeEan13(isbn);
   if (!bits) return null;
 
-  const moduleWidth = 1.1;
-  const barHeight = 40;
+  const moduleWidth = 1.1 * scale;
+  const barHeight = 40 * scale;
 
   return (
     <View style={{ alignItems: "flex-start" }}>
@@ -44,20 +46,15 @@ function Barcode({ isbn }: { isbn: string }) {
 
 export type Variant = "student_book" | "workbook" | "teacher_book" | "test_booklet";
 
-export const PALETTE: Record<Variant, { primary: string; primaryDark: string; primaryLight: string; accent: string }> = {
-  student_book: { primary: "#2563eb", primaryDark: "#1e3a8a", primaryLight: "#eff6ff", accent: "#f59e0b" },
-  workbook: { primary: "#0d9488", primaryDark: "#115e59", primaryLight: "#f0fdfa", accent: "#f97316" },
-  teacher_book: { primary: "#7c3aed", primaryDark: "#4c1d95", primaryLight: "#f5f3ff", accent: "#f59e0b" },
-  test_booklet: { primary: "#dc2626", primaryDark: "#7f1d1d", primaryLight: "#fef2f2", accent: "#f59e0b" },
-};
+// The classic theme's palettes - kept as an export because
+// ContentsDocument.tsx falls back to it when no palette is passed.
+export const PALETTE = DESIGN_THEMES.classic.palettes;
 
 // "Kaynağa görsel sadakat" (2026-09-28, ROADMAP.md): the pipeline's
 // captured read on the uploaded source PDF's visual style - undefined (or
 // each field individually undefined/empty) means "no source to mirror" or
-// "nothing detected", and every consumer below falls back to the existing
-// fixed PALETTE/no-logo/default-density behavior, so a "sıfırdan" (no
-// source PDF) project's output is byte-for-byte unchanged from before this
-// existed.
+// "nothing detected", and every consumer below falls back to the theme's
+// palette/no-logo/default-density behavior.
 export type BrandMarkPosition = "top_left" | "top_right" | "bottom_left" | "bottom_right" | "top_center" | "bottom_center" | "other";
 export type BookDocumentSourceStyle = {
   dominantColors?: string[];
@@ -66,11 +63,9 @@ export type BookDocumentSourceStyle = {
   density?: "compact" | "moderate" | "spacious";
 };
 
-// Fixed pixel offsets for the small cover-page logo, keyed by the detected
-// position - "other"/unset falls back to top_right, since that's the most
-// common real-world placement (matches the British Council source this
-// feature was built against) and a wrong guess here is harmless (a logo in
-// a slightly-off corner beats no logo at all).
+// Fixed offsets for the small cover-page logo, keyed by the detected
+// position - "other"/unset falls back to top_right, the most common
+// real-world placement (a logo in a slightly-off corner beats no logo).
 const LOGO_POSITION_STYLE: Record<BrandMarkPosition, { top?: number; bottom?: number; left?: number; right?: number }> = {
   top_left: { top: 24, left: 24 },
   top_right: { top: 24, right: 24 },
@@ -81,68 +76,12 @@ const LOGO_POSITION_STYLE: Record<BrandMarkPosition, { top?: number; bottom?: nu
   other: { top: 24, right: 24 },
 };
 
-const VARIANT_LABELS: Record<Variant, string> = {
+export const VARIANT_LABELS: Record<Variant, string> = {
   student_book: "Student Book",
   workbook: "Workbook",
   teacher_book: "Teacher's Book",
   test_booklet: "Test Booklet",
 };
-
-function BlockIcon({ kind, color }: { kind: ContentBlockKind; color: string }) {
-  switch (kind) {
-    case "narrative":
-      return (
-        <Svg viewBox="0 0 24 24" style={{ width: 10, height: 10 }}>
-          <Rect x="3" y="4" width="18" height="12" rx="4" fill={color} />
-          <Path d="M8 16 L6.5 21 L12 16 Z" fill={color} />
-        </Svg>
-      );
-    case "explanation":
-      return (
-        <Svg viewBox="0 0 24 24" style={{ width: 10, height: 10 }}>
-          <Path
-            d="M12 6 C10 4.5 6.5 4 3 4.8 V18.5 C6.5 17.7 10 18.2 12 19.7 C14 18.2 17.5 17.7 21 18.5 V4.8 C17.5 4 14 4.5 12 6 Z"
-            fill="none"
-            stroke={color}
-            strokeWidth={1.8}
-          />
-          <Line x1="12" y1="6" x2="12" y2="19.7" stroke={color} strokeWidth={1.8} />
-        </Svg>
-      );
-    case "example":
-      return (
-        <Svg viewBox="0 0 24 24" style={{ width: 10, height: 10 }}>
-          <Path d="M3 12 L12 3 L20 3 L20 11 L11 20 Z" fill={color} />
-          <Circle cx="16" cy="7" r="1.6" fill="#ffffff" />
-        </Svg>
-      );
-    case "practice":
-      return (
-        <Svg viewBox="0 0 24 24" style={{ width: 10, height: 10 }}>
-          <Rect x="10.5" y="2" width="3" height="15" rx="1.2" fill={color} transform="rotate(45 12 12)" />
-          <Path d="M4 20 L4 16.5 L7.5 20 Z" fill={color} />
-        </Svg>
-      );
-    case "assessment":
-      return (
-        <Svg viewBox="0 0 24 24" style={{ width: 10, height: 10 }}>
-          <Path d="M4 12a8 8 0 0 1 13.5-5.8" fill="none" stroke={color} strokeWidth={2.4} />
-          <Path d="M20 12a8 8 0 0 1 -13.5 5.8" fill="none" stroke={color} strokeWidth={2.4} />
-          <Path d="M17 3 L18 7 L14 6 Z" fill={color} />
-          <Path d="M7 21 L6 17 L10 18 Z" fill={color} />
-        </Svg>
-      );
-    case "reference":
-      return (
-        <Svg viewBox="0 0 24 24" style={{ width: 10, height: 10 }}>
-          <Rect x="3" y="3" width="8" height="8" rx="1.5" fill={color} />
-          <Rect x="13" y="3" width="8" height="8" rx="1.5" fill={color} opacity={0.55} />
-          <Rect x="3" y="13" width="8" height="8" rx="1.5" fill={color} opacity={0.55} />
-          <Rect x="13" y="13" width="8" height="8" rx="1.5" fill={color} />
-        </Svg>
-      );
-  }
-}
 
 const styles = StyleSheet.create({
   page: {
@@ -157,10 +96,8 @@ const styles = StyleSheet.create({
 
   // Cover
   coverPage: { padding: 0 },
-  // Faz "Kapak/Görsel Oranı Düzeltmesi" (2026-09-21, ROADMAP.md): shrunk from
-  // 62% now that the cover image is generated portrait (1024x1536, see
-  // BOOK_PIPELINE_COVER_IMAGE_SIZE) instead of landscape - the illustration
-  // needs real vertical room in coverFooter below, not a thin strip.
+  // Portrait cover image (1024x1536, see BOOK_PIPELINE_COVER_IMAGE_SIZE):
+  // the band takes 38% so the illustration gets real vertical room below.
   coverBand: { height: "38%", justifyContent: "center", paddingHorizontal: 48, position: "relative", overflow: "hidden" },
   coverDecoration: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   unitBadgeDecoration: { position: "absolute", top: -10, left: -10 },
@@ -168,38 +105,21 @@ const styles = StyleSheet.create({
   coverTitle: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 32, color: "#ffffff", lineHeight: 1.25, marginBottom: 14 },
   coverSubtitle: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 16, color: "#ffffff", opacity: 0.92 },
   coverFooter: { flex: 1, paddingHorizontal: 48, paddingTop: 28, flexDirection: "column", gap: 14 },
-  // flex:1 (was a fixed maxHeight:220 strip, sized for the old 16:9 landscape
-  // cover) - fills whatever vertical space coverFooter has left above
-  // coverPillRow, matching the now-portrait (1024x1536) cover image.
   coverIllustrationWrap: { borderRadius: 10, overflow: "hidden", flex: 1 },
-  // height:"100%" needed alongside flex:1 on the wrap above - without an
-  // explicit height, react-pdf sizes the Image to its own aspect ratio at
-  // the given width rather than stretching to fill the flex box.
+  // height:"100%" with flex:1 on the wrap - without an explicit height,
+  // react-pdf sizes the Image to its own aspect ratio instead of filling.
   coverIllustration: { width: "100%", height: "100%", objectFit: "cover" },
   coverPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  // maxHeight deliberately omitted here - set inline per-render from
-  // sourceStyle.density (BookDocument's pageImageMaxHeight), defaulting to
-  // the original 170 when there's no density signal.
-  // QA fix (2026-10-06): the image used to be width:100% with no height
-  // inside a maxHeight+overflow:hidden box - a square 1024px illustration was
-  // laid out ~507pt tall and clipped to a 170pt band, so only a strip of it
-  // printed (objects cut in half). The box now has a fixed height and the
-  // image is contained in it whole (letterboxed, never cropped).
+  // QA fix (2026-10-06): the image box has a fixed height and the image is
+  // contained in it whole (letterboxed, never cropped).
   pageIllustrationWrap: {
     borderRadius: 8,
     overflow: "hidden",
-    marginBottom: 4,
+    marginBottom: 14,
     alignItems: "center",
     justifyContent: "center",
   },
   pageIllustration: { width: "100%", height: "100%", objectFit: "contain" },
-  // @react-pdf/renderer's Image component has no `alt` prop - PDF/UA tagged
-  // accessibility text isn't something this library supports (confirmed in
-  // its type definitions). This caption is the closest practical
-  // equivalent: real, readable text describing the image, derived from the
-  // same prompt used to generate it. See ROADMAP.md's project-wide
-  // assessment (2026-09-20).
-  pageIllustrationCaption: { fontSize: 8, color: "#6b7280", fontStyle: "italic", marginBottom: 14 },
   coverLogoBadge: {
     position: "absolute",
     width: 52,
@@ -212,7 +132,8 @@ const styles = StyleSheet.create({
   },
   coverLogo: { width: "100%", height: "100%", objectFit: "contain" },
   coverPill: {
-    fontFamily: NOTO_SANS, fontWeight: 700,
+    fontFamily: NOTO_SANS,
+    fontWeight: 700,
     fontSize: 9,
     color: "#374151",
     backgroundColor: "#f3f4f6",
@@ -234,51 +155,14 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   unitBadgeText: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 14, color: "#ffffff" },
-  unitTitle: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 18 },
+  unitTitle: { fontWeight: 700, fontSize: 18 },
   unitKicker: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 8.5, letterSpacing: 1.5, marginBottom: 2 },
-  // Faz "Sabit Ünite İskeleti": only rendered for pages generated by
-  // generateSkeletonSide (page.sectionLabel set) - makes the user-defined
-  // section name (e.g. "Dinleme") visible in the output, since otherwise a
-  // skeleton-mode book would look identical to a mirror-mode one in print.
+  // Faz "Sabit Ünite İskeleti": the user-defined section name (e.g.
+  // "Dinleme") for skeleton-mode pages.
   sectionKicker: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 8.5, letterSpacing: 1.5, marginBottom: 6 },
 
-  // Content block
-  sectionCard: { marginBottom: 14, paddingLeft: 12, borderLeftWidth: 2.5 },
-  sectionHeading: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 12.5, marginBottom: 5 },
-  body: { marginBottom: 6, lineHeight: 1.5 },
-
-  // Items box
-  exerciseBox: { marginTop: 8, marginBottom: 4, padding: 10, borderRadius: 6, borderWidth: 1 },
-  exerciseBadgeRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  exerciseIconChip: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 6,
-  },
-  exerciseBadgeLabel: {
-    fontFamily: NOTO_SANS, fontWeight: 700,
-    fontSize: 7,
-    letterSpacing: 0.5,
-    color: "#ffffff",
-    borderRadius: 8,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-    marginRight: 7,
-  },
   item: { marginBottom: 3, marginLeft: 4, lineHeight: 1.4 },
-  answerKeyBox: { marginTop: 6, padding: 8, backgroundColor: "#f9fafb", borderRadius: 4 },
   answerKeyLabel: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 7.5, color: "#6b7280", letterSpacing: 1, marginBottom: 3 },
-
-  // Glossary
-  vocabHeading: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 12.5, marginBottom: 8, marginTop: 4 },
-  vocabGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  vocabCard: { width: "48%", padding: 9, borderRadius: 6, borderWidth: 1 },
-  vocabTerm: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 10.5, marginBottom: 2 },
-  vocabDefinition: { fontSize: 9.5, marginBottom: 3, lineHeight: 1.35 },
-  vocabExample: { fontSize: 9, fontFamily: NOTO_SERIF, fontStyle: "italic", color: "#4b5563" },
 
   // Footer / answer key page
   footer: {
@@ -307,129 +191,6 @@ const styles = StyleSheet.create({
   answerKeyEntry: { marginBottom: 8, padding: 8, backgroundColor: "#f9fafb", borderRadius: 4 },
 });
 
-type Palette = (typeof PALETTE)[Variant];
-
-// Faz H2 Faz 3: static print rendering of a structured exercise
-// (src/lib/ai/schemas.ts's interactiveExerciseSchema) - the real,
-// clickable version is BookReader.tsx's web-only components; this is what
-// prints in the PDF. Same visibility rule as the plain answerKey: matching
-// pairs/MC correct answers only reveal when showAnswerKey is true
-// (workbook/teacher_book), otherwise a matching exercise's right column is
-// deterministically scrambled so it stays a real exercise on paper too.
-function InteractiveExerciseView({ block, showAnswerKey }: { block: ContentBlock; showAnswerKey: boolean }) {
-  const interactive = block.interactive;
-  if (!interactive) return null;
-
-  if (interactive.type === "multiple_choice") {
-    return (
-      <View style={{ marginTop: 6 }}>
-        <Text style={styles.item}>{interactive.question}</Text>
-        {interactive.options.map((option, i) => (
-          <Text style={styles.item} key={i}>
-            {String.fromCharCode(97 + i)}) {option}
-            {showAnswerKey && i === interactive.correctIndex ? "  ✓" : ""}
-          </Text>
-        ))}
-      </View>
-    );
-  }
-
-  if (interactive.type === "fill_blank") {
-    return (
-      <View style={{ marginTop: 6 }}>
-        <Text style={styles.item}>{interactive.template.replace(/___/g, "_____")}</Text>
-        {showAnswerKey && (
-          <View style={styles.answerKeyBox}>
-            <Text style={styles.answerKeyLabel}>ANSWER KEY</Text>
-            {interactive.blanks.map((b, i) => (
-              <Text style={styles.item} key={i}>
-                {i + 1}. {b}
-              </Text>
-            ))}
-          </View>
-        )}
-      </View>
-    );
-  }
-
-  // matching
-  const rightColumn = showAnswerKey
-    ? interactive.pairs.map((p) => p.right)
-    : seededShuffle(
-        interactive.pairs.map((p) => p.right),
-        block.heading,
-      );
-  return (
-    <View style={{ marginTop: 6 }}>
-      {interactive.pairs.map((pair, i) => (
-        <Text style={styles.item} key={i}>
-          {i + 1}. {pair.left} — {rightColumn[i]}
-        </Text>
-      ))}
-    </View>
-  );
-}
-
-function BlockCard({ block, showAnswerKey, palette }: { block: ContentBlock; showAnswerKey: boolean; palette: Palette }) {
-  const colors = BLOCK_COLORS[block.kind];
-  // Faz "Sayfa Dizilimi Editörü": absent for every block generated before
-  // this existed and every block never manually repositioned - renders in
-  // normal document flow exactly as before. Present only when the user
-  // dragged this block in LayoutEditor.tsx; coordinates are PDF points
-  // (src/lib/pdf/page-geometry.ts) relative to the FULL page (0,0 = the A4
-  // sheet's own top-left corner), not the padding-inset content box -
-  // confirmed by styles.footer below, an existing absolute-positioned
-  // element that manually re-adds `left: 44`/`right: 44` to land on the
-  // page's own margin, which would double-offset if react-pdf resolved
-  // absolute children against the padding box instead of the page's outer
-  // edge. LayoutEditor.tsx's canvas and BookReader.tsx's preview both use
-  // this same full-page coordinate space. Absolute positioning here opts
-  // this block OUT of react-pdf's automatic page-break reflow (`wrap`) -
-  // overflowing content clips/overlaps rather than flowing to a new page, a
-  // known, accepted v1 limitation.
-  const layoutStyle = block.layout
-    ? {
-        position: "absolute" as const,
-        left: block.layout.x,
-        top: block.layout.y,
-        width: block.layout.width,
-        height: block.layout.height,
-      }
-    : {};
-  return (
-    <View style={[styles.sectionCard, { borderLeftColor: palette.primary }, layoutStyle]}>
-      <Text style={styles.sectionHeading}>{block.heading}</Text>
-      <Text style={styles.body}>{block.body}</Text>
-      {block.items?.length || block.interactive ? (
-        <View style={[styles.exerciseBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-          <View style={styles.exerciseBadgeRow}>
-            <View style={[styles.exerciseIconChip, { backgroundColor: colors.text }]}>
-              <BlockIcon kind={block.kind} color="#ffffff" />
-            </View>
-            <Text style={[styles.exerciseBadgeLabel, { backgroundColor: colors.text }]}>{block.kind.toUpperCase()}</Text>
-          </View>
-          {block.items?.map((item, k) => (
-            <Text style={styles.item} key={k}>
-              {k + 1}. {itemText(item)}
-            </Text>
-          ))}
-          <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />
-          {showAnswerKey && block.answerKey?.length ? (
-            <View style={styles.answerKeyBox}>
-              <Text style={styles.answerKeyLabel}>ANSWER KEY</Text>
-              {block.answerKey.map((answer, k) => (
-                <Text style={styles.item} key={k}>
-                  {k + 1}. {itemText(answer)}
-                </Text>
-              ))}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 // Render-time block list: legacy partially-positioned pages get the same
 // default slots the editor shows (blocksForRender), and every positioned box
 // is kept inside the page (clampLayoutToPage) so react-pdf can't loop.
@@ -439,44 +200,41 @@ function clampedBlocks(page: GeneratedPage, pageSize: { width: number; height: n
   );
 }
 
-function Blocks({ blocks, showAnswerKey, palette }: { blocks: ContentBlock[]; showAnswerKey: boolean; palette: Palette }) {
+// Faz 4: on a print PDF every page is trim + bleed on each side, so the
+// type area moves in by the bleed and stays where it is on the trimmed page.
+export function bleedPadding(bleed: number) {
+  return bleed
+    ? {
+        paddingTop: PAGE_PADDING.top + bleed,
+        paddingRight: PAGE_PADDING.right + bleed,
+        paddingBottom: PAGE_PADDING.bottom + bleed,
+        paddingLeft: PAGE_PADDING.left + bleed,
+      }
+    : {};
+}
+
+// Faz 3 "Görsel sayfa denetimi": an invisible marker that reports which
+// PDF page a logical page starts on, so a proof render can be mapped back
+// to (unit, page) - and a page that spilled onto extra PDF pages is
+// detected exactly. react-pdf evaluates render props during layout.
+export type PageStartListener = (key: string, pageNumber: number) => void;
+
+function PageMarker({ id, onPageStart }: { id: string; onPageStart?: PageStartListener }) {
+  if (!onPageStart) return null;
   return (
-    <>
-      {blocks.map((block, i) => (
-        <BlockCard block={block} showAnswerKey={showAnswerKey} palette={palette} key={i} />
-      ))}
-    </>
+    <Text
+      render={({ pageNumber }) => {
+        onPageStart(id, pageNumber);
+        return "";
+      }}
+    />
   );
 }
 
-function GlossaryGrid({ glossary, palette }: { glossary: GeneratedPage["glossary"]; palette: Palette }) {
-  if (!glossary?.length) return null;
+function Footer({ bookTitle, variantLabel, bleed = 0 }: { bookTitle: string; variantLabel: string; bleed?: number }) {
   return (
-    <View>
-      <Text style={styles.vocabHeading}>Glossary</Text>
-      <View style={styles.vocabGrid}>
-        {glossary.map((entry, i) => (
-          <View
-            key={i}
-            style={[styles.vocabCard, { borderColor: palette.primary, backgroundColor: palette.primaryLight }]}
-            wrap={false}
-          >
-            <Text style={[styles.vocabTerm, { color: palette.primaryDark }]}>{entry.term}</Text>
-            <Text style={styles.vocabDefinition}>{entry.definition}</Text>
-            {entry.example && <Text style={styles.vocabExample}>e.g. {entry.example}</Text>}
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function Footer({ bookTitle, variantLabel }: { bookTitle: string; variantLabel: string }) {
-  return (
-    <View style={styles.footer} fixed>
-      <Text>
-        {bookTitle} · {variantLabel}
-      </Text>
+    <View style={[styles.footer, bleed ? { left: 44 + bleed, right: 44 + bleed, bottom: 22 + bleed } : {}]} fixed>
+      <Text>{variantLabel ? `${bookTitle} · ${variantLabel}` : bookTitle}</Text>
       <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
     </View>
   );
@@ -487,23 +245,28 @@ function ImprintPage({
   variantLabel,
   level,
   generatedAt,
-  palette,
+  look,
   isbn,
   trimSize = "a4",
+  bleed = 0,
 }: {
   bookTitle: string;
   variantLabel: string;
   level: string;
   generatedAt: string;
-  palette: Palette;
+  look: Look;
   isbn?: string;
   trimSize?: TrimSizeId;
+  bleed?: number;
 }) {
   return (
-    <Page size={{ width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt }} style={styles.page}>
+    <Page
+      size={{ width: TRIM_SIZES[trimSize].widthPt + 2 * bleed, height: TRIM_SIZES[trimSize].heightPt + 2 * bleed }}
+      style={[styles.page, { fontFamily: look.bodyFont }, bleedPadding(bleed)]}
+    >
       <View style={styles.imprintBlock}>
-        <Text style={[styles.imprintTitle, { color: palette.primaryDark }]}>{bookTitle}</Text>
-        <Text style={styles.imprintLine}>{variantLabel} · {level}</Text>
+        <Text style={[styles.imprintTitle, { color: look.palette.primaryDark, fontFamily: look.headingFont }]}>{bookTitle}</Text>
+        <Text style={styles.imprintLine}>{variantLabel ? `${variantLabel} · ${level}` : level}</Text>
         <Text style={styles.imprintLine}>Oluşturulma tarihi: {generatedAt}</Text>
         <Text style={styles.imprintDisclosure}>
           Bu içerik, kullanıcı tarafından yüklenen bir kaynak ders kitabının sayfa yapısından esinlenerek
@@ -516,7 +279,7 @@ function ImprintPage({
           </View>
         )}
       </View>
-      <Footer bookTitle={bookTitle} variantLabel={variantLabel} />
+      <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} />
     </Page>
   );
 }
@@ -550,6 +313,211 @@ function pagesForVariant(unit: GeneratedUnit, variant: Variant): GeneratedPage[]
   }
 }
 
+export type CoverProps = {
+  bookTitle: string;
+  level: string;
+  variantLabel: string;
+  unitCount: number;
+  coverImageSrc?: string;
+  look: Look;
+  logoUrl?: string | null;
+  logoStyle: { top?: number; bottom?: number; left?: number; right?: number } | null;
+  contentLanguage?: string;
+  pageHeight: number;
+};
+
+function CoverLogo({ logoUrl, logoStyle }: Pick<CoverProps, "logoUrl" | "logoStyle">) {
+  if (!logoUrl || !logoStyle) return null;
+  return (
+    <View style={[styles.coverLogoBadge, logoStyle]}>
+      {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
+      <Image src={logoUrl} style={styles.coverLogo} />
+    </View>
+  );
+}
+
+// Faz 1 "Tasarım sistemi": the front cover follows the theme's coverStyle.
+// "band" is the original layout; "full-bleed" is the publisher look (art to
+// the edges, title plate over it); "framed" is the academic look.
+export function CoverBody(props: CoverProps) {
+  const { bookTitle, level, variantLabel, unitCount, coverImageSrc, look, contentLanguage } = props;
+  const { palette, theme } = look;
+
+  if (theme.coverStyle === "full-bleed") {
+    return (
+      <>
+        {coverImageSrc ? (
+          <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
+            <Image src={coverImageSrc} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </View>
+        ) : (
+          <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: palette.primaryDark }} />
+        )}
+        <View style={{ position: "absolute", top: 48, left: 40 }}>
+          <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 11, letterSpacing: 2, color: "#ffffff", backgroundColor: palette.accent, paddingVertical: 5, paddingHorizontal: 10, borderRadius: theme.radius }}>
+            {upperFor(level, contentLanguage)}
+          </Text>
+        </View>
+        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 40, paddingTop: 26, paddingBottom: 40 }}>
+          <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: palette.primaryDark, opacity: 0.88 }} />
+          <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: 34, color: "#ffffff", lineHeight: 1.2, marginBottom: 8 }}>{bookTitle}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 15, color: "#ffffff" }}>{variantLabel}</Text>
+            {unitCount > 0 && <Text style={{ fontFamily: NOTO_SANS, fontSize: 10, color: "#ffffff", opacity: 0.75 }}>· {unitCount} units</Text>}
+          </View>
+        </View>
+        <CoverLogo logoUrl={props.logoUrl} logoStyle={props.logoStyle} />
+      </>
+    );
+  }
+
+  if (theme.coverStyle === "framed") {
+    return (
+      <View style={{ position: "absolute", top: 22, left: 22, right: 22, bottom: 22, borderWidth: 1.5, borderColor: palette.primary, padding: 26 }}>
+        <View style={{ borderBottomWidth: 0.75, borderBottomColor: palette.primary, paddingBottom: 14, marginBottom: 18 }}>
+          <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 10, letterSpacing: 2.5, color: palette.accent, marginBottom: 8 }}>
+            {upperFor(level, contentLanguage)}
+          </Text>
+          <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: 30, color: palette.primaryDark, lineHeight: 1.2 }}>{bookTitle}</Text>
+        </View>
+        {coverImageSrc && (
+          <View style={{ flex: 1, borderRadius: theme.radius, overflow: "hidden", marginBottom: 18 }}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
+            <Image src={coverImageSrc} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </View>
+        )}
+        <Text style={{ fontFamily: look.headingFont, fontSize: 16, color: palette.primary }}>{variantLabel}</Text>
+        <CoverLogo logoUrl={props.logoUrl} logoStyle={props.logoStyle} />
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <View style={[styles.coverBand, { backgroundColor: palette.primaryDark }]}>
+        <Svg viewBox="0 0 600 480" style={styles.coverDecoration}>
+          <Circle cx="540" cy="60" r="150" fill="#ffffff" opacity={0.06} />
+          <Circle cx="60" cy="440" r="120" fill="#ffffff" opacity={0.06} />
+          <Circle cx="500" cy="420" r="60" fill={palette.accent} opacity={0.18} />
+          <Path d="M0 340 L600 260 L600 480 L0 480 Z" fill="#ffffff" opacity={0.05} />
+          <Circle cx="80" cy="70" r="5" fill={palette.accent} opacity={0.8} />
+          <Circle cx="110" cy="95" r="3" fill="#ffffff" opacity={0.5} />
+          <Circle cx="60" cy="110" r="3" fill="#ffffff" opacity={0.5} />
+        </Svg>
+        <CoverLogo logoUrl={props.logoUrl} logoStyle={props.logoStyle} />
+        <Text style={styles.coverKicker}>{upperFor(level, contentLanguage)}</Text>
+        <Text style={styles.coverTitle}>{bookTitle}</Text>
+        <Text style={styles.coverSubtitle}>{variantLabel}</Text>
+      </View>
+      <View style={styles.coverFooter}>
+        {coverImageSrc && (
+          // Explicit height: with only flex:1 react-pdf sized the portrait
+          // image to its own aspect ratio and pushed the pill row onto a
+          // second, otherwise blank cover page.
+          <View style={{ borderRadius: 10, overflow: "hidden", height: props.pageHeight * 0.62 - 28 - 14 - 24 - 40 }}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
+            <Image src={coverImageSrc} style={styles.coverIllustration} />
+          </View>
+        )}
+        <View style={styles.coverPillRow}>
+          {unitCount > 0 && <Text style={styles.coverPill}>{unitCount} units</Text>}
+          <Text style={[styles.coverPill, { color: palette.primaryDark }]}>Generated with Kitap Orkestrası</Text>
+        </View>
+      </View>
+    </>
+  );
+}
+
+// The original single-column flow - used for legacy pages (no template),
+// pages hand-positioned in Dizilim, and template fallbacks (see
+// resolvePageTemplate).
+function StandardPageBody({
+  page,
+  unit,
+  isUnitFirstPage,
+  imageSrc,
+  look,
+  showAnswerKey,
+  pageSize,
+  imageHeight,
+  sectionKicker,
+  bleed = 0,
+}: {
+  bleed?: number;
+  page: GeneratedPage;
+  unit: GeneratedUnit;
+  isUnitFirstPage: boolean;
+  imageSrc?: string;
+  look: Look;
+  showAnswerKey: boolean;
+  pageSize: { width: number; height: number };
+  imageHeight: number;
+  sectionKicker?: string;
+}) {
+  const { palette } = look;
+  return (
+    <>
+      {isUnitFirstPage && (
+        <View style={styles.unitHeaderRow}>
+          <Svg viewBox="0 0 60 60" style={[styles.unitBadgeDecoration, { width: 60, height: 60 }]}>
+            <Circle cx="30" cy="30" r="28" fill={palette.primary} opacity={0.12} />
+          </Svg>
+          <View style={[styles.unitBadge, { backgroundColor: palette.primary }]}>
+            <Text style={styles.unitBadgeText}>{unit.unitNumber}</Text>
+          </View>
+          <View>
+            <Text style={[styles.unitKicker, { color: palette.primary }]}>UNIT {unit.unitNumber}</Text>
+            <Text style={[styles.unitTitle, { fontFamily: look.headingFont }]}>{unit.title}</Text>
+          </View>
+        </View>
+      )}
+
+      {imageSrc &&
+        (page.imageLayout ? (
+          // Faz "Sayfa Dizilimi Editörü": opt-in absolute positioning,
+          // page-relative coordinates (see BlockCard in ./blocks.tsx).
+          (() => {
+            const clamped = clampLayoutToPage(page.imageLayout, pageSize.width, pageSize.height);
+            const box = { ...clamped, x: clamped.x + bleed, y: clamped.y + bleed };
+            return (
+              <View
+                style={[
+                  styles.pageIllustrationWrap,
+                  { position: "absolute", left: box.x, top: box.y, width: box.width, height: box.height },
+                ]}
+              >
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
+                <Image src={imageSrc} style={styles.pageIllustration} />
+              </View>
+            );
+          })()
+        ) : (
+          // The image prompt used to print here as a caption - that is an
+          // instruction to the image model, not reader-facing text, and was
+          // the most obvious "machine-made" tell on the page. Removed.
+          <View wrap={false}>
+            <View
+              style={[
+                styles.pageIllustrationWrap,
+                { height: imageHeight, backgroundColor: palette.primaryLight, borderRadius: look.theme.radius },
+              ]}
+            >
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
+              <Image src={imageSrc} style={styles.pageIllustration} />
+            </View>
+          </View>
+        ))}
+
+      {sectionKicker && <Text style={[styles.sectionKicker, { color: palette.primary }]}>{sectionKicker}</Text>}
+      {clampedBlocks(page, pageSize).map((b) => (b.layout && bleed ? { ...b, layout: { ...b.layout, x: b.layout.x + bleed, y: b.layout.y + bleed } } : b)).map((block, i) => (
+        <BlockCard block={block} showAnswerKey={showAnswerKey} look={look} key={i} />
+      ))}
+      <GlossaryGrid glossary={page.glossary} look={look} />
+    </>
+  );
+}
+
 export function BookDocument({
   bookTitle,
   variant,
@@ -563,7 +531,20 @@ export function BookDocument({
   trimSize = "a4",
   sourceStyle,
   contentLanguage,
+  designTheme,
+  onPageStart,
+  bleed = 0,
+  includeCover = true,
+  bookKind,
 }: {
+  /** Faz 6: "picturebook" drops the coursebook furniture (units, contents, book-type labels). */
+  bookKind?: string | null;
+  /** Faz 4: the print interior goes to the printer without its cover (the cover is a separate wrap). */
+  includeCover?: boolean;
+  /** Faz 4: print PDF - every page gets this much bleed (BLEED_PT) on each edge. */
+  bleed?: number;
+  /** Faz 3: proof renders pass this to map PDF pages to logical pages. */
+  onPageStart?: PageStartListener;
   bookTitle: string;
   variant: Variant;
   units: GeneratedUnit[];
@@ -577,157 +558,129 @@ export function BookDocument({
   sourceStyle?: BookDocumentSourceStyle;
   /** BCP-47 code of the book content (outline.contentLanguage) - drives locale-correct uppercasing. */
   contentLanguage?: string;
+  /** Faz 1: visual theme id (generation_runs.design_theme); unset = classic. */
+  designTheme?: DesignThemeId | string | null;
 }) {
-  const variantLabel = VARIANT_LABELS[variant];
-  // Falls back to the original fixed PALETTE[variant] whenever there's no
-  // source to mirror (sıfırdan mode) or the source's colors didn't parse -
-  // see derivePaletteFromColors's own doc comment for the parsing rules.
-  const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? PALETTE[variant];
+  const isPictureBook = bookKind === "picturebook";
+  const variantLabel = isPictureBook ? "" : VARIANT_LABELS[variant];
+  const theme = resolveDesignTheme(designTheme);
+  // A source PDF's own colours win over the theme palette (the user chose
+  // to mirror that book); otherwise the theme's palette for this book type.
+  const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? theme.palettes[variant];
+  const look = makeLook(theme, palette);
   const logoStyle = sourceStyle?.logoUrl ? LOGO_POSITION_STYLE[sourceStyle.logoPosition ?? "top_right"] : null;
-  const pageImageMaxHeight = sourceStyle?.density === "compact" ? 180 : sourceStyle?.density === "spacious" ? 280 : 230;
+  const pageImageHeight = sourceStyle?.density === "compact" ? 180 : sourceStyle?.density === "spacious" ? 280 : 230;
+  // pageSize is the TRIM size (what layouts are designed against);
+  // sheetSize adds the bleed for a print PDF.
   const pageSize = { width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt };
-  // Faz "Teacher's Book/Test Booklet Genişletme": test_booklet was missing
-  // here despite generateTestBookletSide/generateCumulativeAssessment always
-  // producing an answer key - it was silently never rendered in any export.
+  const sheetSize = { width: pageSize.width + 2 * bleed, height: pageSize.height + 2 * bleed };
+  const pageStyle = [styles.page, { fontFamily: look.bodyFont, fontSize: theme.bodySize }, bleedPadding(bleed)];
+  // Faz "Teacher's Book/Test Booklet Genişletme": every book type except the
+  // student book prints its answer key.
   const showAnswerKey = variant === "workbook" || variant === "teacher_book" || variant === "test_booklet";
 
   return (
     <Document title={`${bookTitle} - ${variantLabel}`}>
-      <Page size={pageSize} style={styles.coverPage}>
-        <View style={[styles.coverBand, { backgroundColor: palette.primaryDark }]}>
-          <Svg viewBox="0 0 600 480" style={styles.coverDecoration}>
-            <Circle cx="540" cy="60" r="150" fill="#ffffff" opacity={0.06} />
-            <Circle cx="60" cy="440" r="120" fill="#ffffff" opacity={0.06} />
-            <Circle cx="500" cy="420" r="60" fill={palette.accent} opacity={0.18} />
-            <Path d="M0 340 L600 260 L600 480 L0 480 Z" fill="#ffffff" opacity={0.05} />
-            <Circle cx="80" cy="70" r="5" fill={palette.accent} opacity={0.8} />
-            <Circle cx="110" cy="95" r="3" fill="#ffffff" opacity={0.5} />
-            <Circle cx="60" cy="110" r="3" fill="#ffffff" opacity={0.5} />
-          </Svg>
-          {logoStyle && sourceStyle?.logoUrl && (
-            <View style={[styles.coverLogoBadge, logoStyle]}>
-              {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop, see pageIllustrationCaption's comment above */}
-              <Image src={sourceStyle.logoUrl} style={styles.coverLogo} />
-            </View>
-          )}
-          <Text style={styles.coverKicker}>{upperFor(level, contentLanguage)}</Text>
-          <Text style={styles.coverTitle}>{bookTitle}</Text>
-          <Text style={styles.coverSubtitle}>{variantLabel}</Text>
-        </View>
-        <View style={styles.coverFooter}>
-          {coverImageSrc && (
-            <View style={styles.coverIllustrationWrap}>
-              {/* eslint-disable-next-line jsx-a11y/alt-text -- see pageIllustrationCaption's
-                  comment above: @react-pdf/renderer's Image has no `alt` prop. No caption text
-                  is available here (unlike per-page images, the cover has no stored prompt). */}
-              <Image src={coverImageSrc} style={styles.coverIllustration} />
-            </View>
-          )}
-          <View style={styles.coverPillRow}>
-            <Text style={styles.coverPill}>{units.length} units</Text>
-            <Text style={[styles.coverPill, { color: palette.primaryDark }]}>Generated with Kitap Orkestrası</Text>
-          </View>
-        </View>
+      {includeCover && (
+      <Page size={sheetSize} style={styles.coverPage}>
+        <PageMarker id="cover" onPageStart={onPageStart} />
+        <CoverBody
+          bookTitle={bookTitle}
+          level={level}
+          variantLabel={variantLabel}
+          unitCount={isPictureBook ? 0 : units.length}
+          coverImageSrc={coverImageSrc}
+          look={look}
+          logoUrl={sourceStyle?.logoUrl}
+          logoStyle={logoStyle}
+          contentLanguage={contentLanguage}
+          pageHeight={sheetSize.height}
+        />
       </Page>
+      )}
 
       <ImprintPage
         bookTitle={bookTitle}
         variantLabel={variantLabel}
         level={level}
         generatedAt={generatedAt ?? ""}
-        palette={palette}
+        look={look}
         isbn={isbn}
         trimSize={trimSize}
+        bleed={bleed}
       />
 
-      <ContentsPageContent
-        bookTitle={bookTitle}
-        level={level}
-        variant={variant}
-        units={contentsUnits}
-        trimSize={trimSize}
-      />
+      {!isPictureBook && (
+        <ContentsPageContent
+          bookTitle={bookTitle}
+          level={level}
+          variant={variant}
+          units={contentsUnits}
+          trimSize={trimSize}
+          palette={palette}
+          bleed={bleed}
+        />
+      )}
 
       {units.flatMap((unit) =>
-        withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((page, idx) => (
-          <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={pageSize} style={styles.page} wrap>
-            <View style={styles.runningHeader}>
-              <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
-                UNIT {unit.unitNumber} · {upperFor(unit.title, contentLanguage)}
-              </Text>
-            </View>
-
-            {idx === 0 && (
-              <View style={styles.unitHeaderRow}>
-                <Svg viewBox="0 0 60 60" style={[styles.unitBadgeDecoration, { width: 60, height: 60 }]}>
-                  <Circle cx="30" cy="30" r="28" fill={palette.primary} opacity={0.12} />
-                </Svg>
-                <View style={[styles.unitBadge, { backgroundColor: palette.primary }]}>
-                  <Text style={styles.unitBadgeText}>{unit.unitNumber}</Text>
+        withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((page, idx) => {
+          const imageSrc = resolvePageImageUrl(page, pageImages);
+          const template = resolvePageTemplate(page, !!imageSrc, {
+            isUnitFirstPage: idx === 0,
+            metrics: { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
+          });
+          const edgeToEdge = template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template);
+          const sectionKicker = page.sectionLabel ? upperFor(page.sectionLabel, contentLanguage) : undefined;
+          return (
+            <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={sheetSize} style={pageStyle} wrap>
+              <PageMarker id={`${unit.unitNumber}:${idx}`} onPageStart={onPageStart} />
+              {!edgeToEdge && (
+                <View style={styles.runningHeader}>
+                  <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
+                    {isPictureBook ? upperFor(unit.title, contentLanguage) : `UNIT ${unit.unitNumber} · ${upperFor(unit.title, contentLanguage)}`}
+                  </Text>
                 </View>
-                <View>
-                  <Text style={[styles.unitKicker, { color: palette.primary }]}>UNIT {unit.unitNumber}</Text>
-                  <Text style={styles.unitTitle}>{unit.title}</Text>
-                </View>
-              </View>
-            )}
+              )}
 
-            {resolvePageImageUrl(page, pageImages) &&
-              (page.imageLayout ? (
-                // Faz "Sayfa Dizilimi Editörü": same opt-in absolute
-                // positioning as BlockCard's `layout` field, see there for
-                // the pagination-reflow caveat. Rendered directly under the
-                // Page (no wrapper) so its coordinates stay page-relative.
-                (() => {
-                  const box = clampLayoutToPage(page.imageLayout, pageSize.width, pageSize.height);
-                  return (
-                    <View
-                      style={[
-                        styles.pageIllustrationWrap,
-                        { position: "absolute", left: box.x, top: box.y, width: box.width, height: box.height },
-                      ]}
-                    >
-                      {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-                      <Image src={resolvePageImageUrl(page, pageImages)} style={styles.pageIllustration} />
-                    </View>
-                  );
-                })()
+              {template === "standard" ? (
+                <StandardPageBody
+                  page={page}
+                  unit={unit}
+                  isUnitFirstPage={idx === 0 && !isPictureBook}
+                  imageSrc={imageSrc}
+                  look={look}
+                  showAnswerKey={showAnswerKey}
+                  pageSize={pageSize}
+                  imageHeight={pageImageHeight}
+                  sectionKicker={sectionKicker}
+                  bleed={bleed}
+                />
               ) : (
-                // wrap={false}: the illustration and its caption move to the
-                // next page as a whole instead of being split across two.
-                <View wrap={false}>
-                  <View
-                    style={[
-                      styles.pageIllustrationWrap,
-                      { height: pageImageMaxHeight, backgroundColor: palette.primaryLight },
-                    ]}
-                  >
-                    {/* eslint-disable-next-line jsx-a11y/alt-text -- this is @react-pdf/renderer's
-                        Image (print-layout component), not an HTML <img> - it has no `alt` prop
-                        to give (see the pageIllustrationCaption style comment above for the
-                        caption text that stands in for it). */}
-                    <Image src={resolvePageImageUrl(page, pageImages)} style={styles.pageIllustration} />
-                  </View>
-                  {page.imagePrompt && <Text style={styles.pageIllustrationCaption}>{page.imagePrompt}</Text>}
-                </View>
-              ))}
+                <TemplatedPageBody
+                  template={template}
+                  page={page}
+                  unit={unit}
+                  isUnitFirstPage={idx === 0 && !isPictureBook}
+                  imageSrc={imageSrc}
+                  look={look}
+                  showAnswerKey={showAnswerKey}
+                  pageSize={pageSize}
+                  unitKicker={`UNIT ${unit.unitNumber}`}
+                  bleed={bleed}
+                  sectionKicker={sectionKicker}
+                />
+              )}
 
-            {page.sectionLabel && (
-              <Text style={[styles.sectionKicker, { color: palette.primary }]}>
-                {upperFor(page.sectionLabel, contentLanguage)}
-              </Text>
-            )}
-            <Blocks blocks={clampedBlocks(page, pageSize)} showAnswerKey={showAnswerKey} palette={palette} />
-            <GlossaryGrid glossary={page.glossary} palette={palette} />
-
-            <Footer bookTitle={bookTitle} variantLabel={variantLabel} />
-          </Page>
-        )),
+              {template !== "full-bleed-illustration" && <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} />}
+            </Page>
+          );
+        }),
       )}
 
       {showAnswerKey && (
-        <Page size={pageSize} style={styles.page} wrap>
-          <View style={[styles.answerKeyTitleBand, { backgroundColor: palette.primaryDark }]}>
+        <Page size={sheetSize} style={pageStyle} wrap>
+          <PageMarker id="answer_key" onPageStart={onPageStart} />
+          <View style={[styles.answerKeyTitleBand, { backgroundColor: palette.primaryDark, borderRadius: theme.radius }]}>
             <Text style={styles.answerKeyTitle}>Answer Key</Text>
           </View>
           {units.map((unit) => (
@@ -750,7 +703,7 @@ export function BookDocument({
                 ))}
             </View>
           ))}
-          <Footer bookTitle={bookTitle} variantLabel={variantLabel} />
+          <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} />
         </Page>
       )}
     </Document>

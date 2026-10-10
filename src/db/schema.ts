@@ -35,6 +35,7 @@ export const runStatusEnum = pgEnum("run_status", [
   "analyzing",
   "awaiting_outline_approval",
   "awaiting_logo_upload",
+  "awaiting_character_approval",
   "awaiting_variant_selection",
   "generating",
   "reviewing",
@@ -42,6 +43,7 @@ export const runStatusEnum = pgEnum("run_status", [
   "generating_images",
   "awaiting_image_review",
   "reviewing_coherence",
+  "reviewing_design",
   "awaiting_final_approval",
   "assembling",
   "done",
@@ -49,6 +51,28 @@ export const runStatusEnum = pgEnum("run_status", [
   "failed",
 ]);
 export type RunStatus = (typeof runStatusEnum.enumValues)[number];
+
+export type PrintReport = {
+  pageCount: number;
+  spineMm: number;
+  bleedMm: number;
+  trimSize: string;
+  images: number;
+  upscaledImages: number;
+  smallestNativeWidthPx: number | null;
+  targetWidthPx: number;
+};
+
+export type CoverMockup = {
+  /** The cover wrap (back + spine + front, with bleed) rendered as an image. */
+  imageUrl: string;
+  trimWidthPt: number;
+  trimHeightPt: number;
+  spinePt: number;
+  bleedPt: number;
+};
+
+export type CharacterSheet = { id: string; name: string; role: string; visualDescription: string; outfit: string; imageUrl: string | null };
 export type BookType = (typeof bookTypeEnum.enumValues)[number];
 
 // "moderation" (2026-09-20, ROADMAP.md): content-safety check for generated
@@ -208,6 +232,30 @@ export const generationRuns = pgTable("generation_runs", {
   logoPosition: text("logo_position"),
   paletteColors: jsonb("palette_colors").$type<string[]>(),
   pageImageUrls: jsonb("page_image_urls").$type<Record<number, string>>(),
+  // Faz 1 "Tasarım sistemi": visual theme id (src/lib/design/themes.ts) the
+  // PDF and web reader render with. Null = "classic", the look every book
+  // had before themes existed, so older runs re-assemble unchanged.
+  designTheme: text("design_theme"),
+  // Faz 2 "İllüstrasyon stili": art direction id (src/lib/ai/art-styles.ts)
+  // appended to every image prompt. Null = "textbook", the original style.
+  artStyle: text("art_style"),
+  // Faz 2 "Karakter tutarlılığı": one reference image per recurring
+  // character, generated after the style bible and approved by a human
+  // (awaiting_character_approval). Every illustration showing a character
+  // is generated with that character's sheet as a reference image.
+  characterSheets: jsonb("character_sheets").$type<CharacterSheet[]>(),
+  // Scratch column while awaiting_character_approval: which hook round is
+  // open (same numbered-token pattern as pendingContentApproval).
+  pendingCharacterApproval: jsonb("pending_character_approval").$type<{ round: number } | null>(),
+  // Faz 3 "Referans kitapla kıyas": page images (PNG/JPEG Blob URLs, PDFs
+  // already rasterised) from a published book the user wants to match. The
+  // design review grades every typeset page against them.
+  referencePageUrls: jsonb("reference_page_urls").$type<string[]>(),
+  // Faz 6 "Resimli hikâye kitabı": "picturebook" runs write one illustrated
+  // story (a single unit whose pages are full-page pictures with short text)
+  // instead of a coursebook. Null = "coursebook".
+  bookKind: text("book_kind"),
+  pictureBookPageCount: integer("picture_book_page_count"),
   pendingVariants: jsonb("pending_variants"),
   // Scratch columns for the two new batch approval gates - same pattern as
   // pendingVariants above (holds data only while the run is paused waiting
@@ -264,6 +312,31 @@ export const imageReviews = pgTable("image_reviews", {
   attempt: integer("attempt").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Faz 3 "Görsel sayfa denetimi": one row per typeset page per review
+// round - the art-director grade of the page as it actually prints.
+export const pageDesignReviews = pgTable("page_design_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id")
+    .notNull()
+    .references(() => generationRuns.id, { onDelete: "cascade" }),
+  round: integer("round").notNull().default(1),
+  bookType: bookTypeEnum("book_type").notNull(),
+  pdfPage: integer("pdf_page").notNull(),
+  // Null for the cover / answer key.
+  unitNumber: integer("unit_number"),
+  pageIndex: integer("page_index"),
+  // PDF pages this logical page occupied (>1 = it spilled).
+  pageCount: integer("page_count").notNull().default(1),
+  score: integer("score").notNull(),
+  issues: jsonb("issues").$type<{ type: string; severity: "minor" | "major"; description: string }[]>().notNull().default([]),
+  suggestedFix: text("suggested_fix").notNull().default("none"),
+  appliedFix: text("applied_fix"),
+  referenceGap: text("reference_gap"),
+  imageUrl: text("image_url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type PageDesignReviewRow = typeof pageDesignReviews.$inferSelect;
 
 export const bookCoherenceReviews = pgTable("book_coherence_reviews", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -371,6 +444,16 @@ export const generatedBooks = pgTable("generated_books", {
   // Digital/accessible sibling export - see src/lib/epub/BookEpub.ts. Null
   // for books assembled before EPUB export existed (no backfill).
   epubBlobUrl: text("epub_blob_url"),
+  // Faz 4 "Baskıya hazır çıktı": interior with 3 mm bleed and no cover, the
+  // matching back+spine+front cover wrap, and what was measured for them.
+  printPdfBlobUrl: text("print_pdf_blob_url"),
+  coverSpreadBlobUrl: text("cover_spread_blob_url"),
+  printReport: jsonb("print_report").$type<PrintReport>(),
+  // Faz 5 "3D önizleme": every page of the screen PDF as an image (the 3D
+  // reader's page textures) plus the cover wrap as an image with its
+  // geometry (the 3D mockup's cover/spine/back texture).
+  pageRenderUrls: jsonb("page_render_urls").$type<string[]>(),
+  coverMockup: jsonb("cover_mockup").$type<CoverMockup>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -1,0 +1,1 @@
+ALTER TABLE "generation_runs" ADD COLUMN "pending_character_approval" jsonb;

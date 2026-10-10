@@ -225,6 +225,55 @@
       "when": 1790575592763,
       "tag": "0031_steady_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791566380666,
+      "tag": "0032_design_theme",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791566917113,
+      "tag": "0033_art_style_characters",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791567043166,
+      "tag": "0034_character_approval_round",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791567282615,
+      "tag": "0035_page_design_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791567739498,
+      "tag": "0036_print_outputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791567931304,
+      "tag": "0037_mockup_renders",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791568412486,
+      "tag": "0038_picture_book",
+      "breakpoints": true
     }
   ]
 }

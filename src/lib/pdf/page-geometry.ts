@@ -26,3 +26,31 @@ export const TRIM_SIZES: Record<TrimSizeId, { widthPt: number; heightPt: number;
   "6x9": { widthPt: 432, heightPt: 648, label: "6×9 inç (Trade Paperback)" },
   "7x10": { widthPt: 504, heightPt: 720, label: "7×10 inç (Ders Kitabı Boyutu)" },
 };
+
+// ---- Faz 4 "Baskıya hazır çıktı" ----
+// 3 mm bleed on every edge - the standard most print services (Amazon KDP,
+// Lulu, offset printers) ask for. A print PDF's pages are trim + 2 × bleed;
+// anything meant to run to the edge (covers, hero/full-bleed pictures)
+// paints into it and gets trimmed off.
+export const BLEED_PT = 8.5; // 3 mm
+
+export const PRINT_DPI = 300;
+
+// Spine thickness per printed page (one leaf = 2 pages) - Amazon KDP's
+// published paper factors. Page count is rounded up to an even number.
+export const PAPER_THICKNESS_IN: Record<"white" | "cream", number> = { white: 0.002252, cream: 0.0025 };
+
+export function spineWidthPt(pageCount: number, paper: "white" | "cream" = "white"): number {
+  const pages = pageCount + (pageCount % 2);
+  return pages * PAPER_THICKNESS_IN[paper] * 72;
+}
+
+/** Effective print resolution of an image of `px` pixels placed `placedPt` wide. */
+export function effectiveDpi(px: number, placedPt: number): number {
+  return Math.round(px / (placedPt / 72));
+}
+
+/** Pixel width an image needs to print at PRINT_DPI when placed `placedPt` wide. */
+export function pixelsForPrint(placedPt: number): number {
+  return Math.ceil((placedPt / 72) * PRINT_DPI);
+}

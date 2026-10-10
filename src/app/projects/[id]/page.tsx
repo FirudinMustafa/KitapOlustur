@@ -15,6 +15,7 @@ import {
   originalityChecks,
   teacherFeedback,
   unitReviews,
+  pageDesignReviews,
 } from "@/db/schema";
 import {
   RunStatusView,
@@ -27,6 +28,7 @@ import {
 import { computeUnitProgress } from "@/lib/unit-progress";
 import { fetchCoverDimensions } from "@/lib/cover-dimensions";
 import { bookTypesWithContent } from "@/lib/content-book-types";
+import { summarizeDesignReviews } from "@/lib/design/design-summary";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +56,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ]);
   if (!project || !userId || project.ownerId !== userId) notFound();
 
+  // Faz 3: started alongside the queries below, awaited after them.
+  const designRowsPromise = run
+    ? db.query.pageDesignReviews.findMany({ where: eq(pageDesignReviews.runId, run.id) })
+    : Promise.resolve([]);
   const [outline, books, reviews, coherenceReview, originalityRows, feedback, allUnitReviews, coverDimensions] = run
     ? await Promise.all([
         db.query.extractedOutlines.findFirst({ where: eq(extractedOutlines.runId, run.id) }).then((o) => o ?? null),
@@ -104,6 +110,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         project: { id: project.id, name: project.name, level: project.level, isbn: project.isbn },
         coverDimensions,
         contentBookTypes: bookTypesWithContent(books[0]?.content as GeneratedUnit[] | null),
+        designReview: summarizeDesignReviews(await designRowsPromise),
         upload: upload ? { filename: upload.filename, bookType: upload.bookType } : null,
         run: run
           ? {
@@ -120,6 +127,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               pendingImageReview: run.pendingImageReview as PendingImageReview[] | null,
               coverImageUrl: run.coverImageUrl,
               pageImageUrls: run.pageImageUrls,
+              designTheme: run.designTheme,
+              characterSheets: run.characterSheets,
             }
           : null,
         outline: outline ? { outline: outline.outline as OutlineDocument["outline"] } : null,
@@ -149,6 +158,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           markdown: b.markdown,
           pdfBlobUrl: b.pdfBlobUrl,
           epubBlobUrl: b.epubBlobUrl,
+          printPdfBlobUrl: b.printPdfBlobUrl,
+          coverSpreadBlobUrl: b.coverSpreadBlobUrl,
+          printReport: b.printReport,
+          coverMockup: b.coverMockup,
           content: b.content as GeneratedUnitContent[] | null,
         })),
       }}

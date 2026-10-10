@@ -29,6 +29,7 @@ import {
   generatedBooks,
   unitFeedback,
   teacherFeedback,
+  pageDesignReviews,
   type RunStatus,
 } from "@/db/schema";
 import { ngramJaccardSimilarity } from "@/lib/originality";
@@ -38,6 +39,8 @@ import {
   bookOutlineSchema,
   improvementPlanSchema,
   generatedMirroredSideSchema,
+  generatedPageSchema,
+  pictureBookPagesSchema,
   generatedComplementarySideSchema,
   styleBibleSchema,
   unitReviewSchema,
@@ -73,7 +76,34 @@ import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { translateAiError } from "@/lib/ai/error-messages";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant, type BookDocumentSourceStyle } from "@/lib/pdf/BookDocument";
-import type { TrimSizeId } from "@/lib/pdf/page-geometry";
+import { BLEED_PT, TRIM_SIZES, pixelsForPrint, spineWidthPt, type TrimSizeId } from "@/lib/pdf/page-geometry";
+import { CoverSpreadDocument } from "@/lib/pdf/CoverSpreadDocument";
+import { prepareImageForPrint, prepareImagesForPrint } from "@/lib/pdf/print-images";
+import type { CoverMockup, PrintReport } from "@/db/schema";
+import {
+  A4_METRICS,
+  LAYOUT_TEMPLATES,
+  diversifyTemplates,
+  estimateTemplateFit,
+  isChecklistBlock,
+  layoutTemplatePromptCatalog,
+  resolvePageTemplate,
+  type PageMetrics,
+} from "@/lib/design/layouts";
+import { resolveDesignTheme } from "@/lib/design/themes";
+import { resolveArtStyle, type ArtStyle } from "@/lib/ai/art-styles";
+import {
+  buildPageSpans,
+  decideFix,
+  designRubric,
+  pageDesignGradeSchema,
+  parseUnitPageKey,
+  type DesignFix,
+  type PageDesignGrade,
+} from "@/lib/design/page-review";
+import { countPdfPages, rasterizePdf } from "@/lib/pdf/rasterize";
+import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeCharactersForPrompt } from "@/lib/ai/characters";
+import type { CharacterSheet } from "@/db/schema";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { resetBookFonts } from "@/lib/pdf/fonts";
 import { buildEpub } from "@/lib/epub/BookEpub";
@@ -460,6 +490,7 @@ const DEFAULT_SCRATCH_UNIT_COUNT = 6;
 // didn't also supply a custom unitSkeleton - generateSkeletonSide always
 // needs a section list, real source pages or not.
 const DEFAULT_SCRATCH_UNIT_SKELETON = ["Giriş", "Ana İçerik", "Alıştırmalar", "Özet"];
+const DEFAULT_SCRATCH_UNIT_SKELETON_EN = ["Warm-up", "Learn", "Practice", "Review"];
 
 async function generateOutlineFromBrief(
   runId: string,
@@ -489,7 +520,7 @@ async function generateOutlineFromBrief(
         `There is no source document, so set each unit's sourcePageRange to a synthetic placeholder, evenly spaced: unit N (1-indexed) gets { start: (N-1)*${SCRATCH_UNIT_PAGE_SPAN}+1, end: N*${SCRATCH_UNIT_PAGE_SPAN} }. This is bookkeeping only, not a real page reference.`,
         targetLanguage
           ? `Write the whole book in "${targetLanguage}". Set contentLanguage to the correct BCP-47 code (e.g. "de" for German), and write bookTitle, tone, targetAudience, and every unit's title/learningObjectives/keyTerms in that language.`
-          : "Set contentLanguage to the BCP-47 code matching the language you write the book in (default to Turkish, 'tr', unless the topic clearly implies another language).",
+          : "Set contentLanguage to the BCP-47 code matching the language you write the book in. A coursebook that TEACHES a language (e.g. an English course with CEFR levels like A2) is written in that target language - an English course gets 'en'. Otherwise default to Turkish, 'tr', unless the topic clearly implies another language.",
         "Leave declaredLevelAlignment unset - there is no source material to compare the declared level against.",
       ].join("\n\n"),
     }),
@@ -499,6 +530,92 @@ async function generateOutlineFromBrief(
   await db.insert(extractedOutlines).values({ runId, outline: { outline: object } });
 
   return object;
+}
+
+// ---- Faz 6 "Resimli hikâye kitabı" ----
+// A picture book runs through the same pipeline as a coursebook with one
+// unit: the "unit" is the story, its Student Book pages are the story's
+// pages. That way character sheets + approval, referenced illustration,
+// the art-director page review, print files and the 3D previews all apply
+// unchanged; only the writing steps and the pedagogy reviews differ.
+
+const PICTURE_BOOK_DEFAULT_PAGES = 16;
+
+async function generatePictureBookOutline(
+  runId: string,
+  idea: string,
+  ageGroup: string | null,
+  brief: string | null,
+  pageCount: number,
+  targetLanguage?: string | null,
+): Promise<BookOutline> {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: toTextModel(resolveFinalTextModel()),
+      schema: bookOutlineSchema,
+      experimental_repairText: repairDoubleEncodedJsonLeaves,
+      system:
+        "You are an award-winning children's picture-book author and editor. You shape an idea into a story with a clear arc (a likeable hero, a want, a problem, rising tries, a satisfying turn, a warm ending) that works page-turn by page-turn.",
+      prompt: [
+        `Story idea: "${idea}".${ageGroup ? ` Reader age/level: ${ageGroup}.` : ""} The finished book has ${pageCount} story pages.`,
+        brief ? `Notes from the author: ${brief}` : "",
+        "Return it as a book outline with EXACTLY ONE unit - that unit is the whole story: its title is the story's title, learningObjectives holds the story's beats in order (one short line per beat, 5-8 beats), keyTerms holds 3-8 memorable words or phrases a child picks up from the story.",
+        "bookTitle = the story title, subject = \"Children's picture book\", level = the reader age group (e.g. \"4-6 yaş\"), tone and targetAudience as fits. The unit's sourcePageRange is bookkeeping only: { start: 1, end: " + pageCount + " }.",
+        targetLanguage
+          ? `Write in "${targetLanguage}" and set contentLanguage to its BCP-47 code.`
+          : "Set contentLanguage to the BCP-47 code of the language you write in (default Turkish, 'tr', unless the idea clearly implies another language).",
+        "Leave declaredLevelAlignment unset.",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    }),
+  );
+
+  await recordUsage(runId, "outline", usage);
+  await db.insert(extractedOutlines).values({ runId, outline: { outline: object } });
+  return object;
+}
+
+async function generatePictureBookPages(
+  runId: string,
+  input: UnitGenerationContext,
+  pageCount: number,
+): Promise<GeneratedPage[]> {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: toTextModel(input.textModel),
+      schema: pictureBookPagesSchema,
+      experimental_repairText: repairDoubleEncodedJsonLeaves,
+      maxOutputTokens: UNIT_SIDE_MAX_OUTPUT_TOKENS,
+      system:
+        "You are an award-winning children's picture-book author. Every page is one illustrated moment; the words and the picture each carry part of the story, so the text never describes what the picture already shows.",
+      prompt: [
+        `Write the picture book "${input.bookTitle}" in ${input.contentLanguage}, for ${input.level} (${input.targetAudience}). Tone: ${input.tone}.`,
+        `Story beats in order:\n${input.outlineUnit.learningObjectives.map((b, i) => `${i + 1}. ${b}`).join("\n")}`,
+        `Recurring characters (use their ids in imageCharacters; never re-describe their looks in imagePrompt - the illustrator has reference sheets):\n${JSON.stringify(input.styleBible.characters ?? [])}`,
+        `Produce EXACTLY ${pageCount} pages. Page text: short, rhythmic, read-aloud friendly, at most ~45 words (most pages 10-30 words). Use repetition and a refrain children can join in on. Vary the shots across pages (wide scenes, close-ups of faces, small details) like a real picture book.`,
+        input.feedback?.length ? `A previous draft had these issues - fix them:\n${input.feedback.map((f) => `- ${f}`).join("\n")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    }),
+  );
+  await recordUsage(runId, "unitGeneration", usage);
+
+  return object.pages.map((p, i) => ({
+    sourcePageNumber: input.outlineUnit.number * 1000 + i,
+    pageType: "content" as const,
+    unitNumber: input.outlineUnit.number,
+    blocks: [{ kind: "narrative" as const, heading: "", body: p.text }],
+    imagePrompt: p.imagePrompt,
+    imageCharacters: p.imageCharacters,
+    // Longer text gets the picture beside it rather than over it.
+    layoutTemplate: p.text.length > 320 ? ("image-left-text-right" as const) : ("full-bleed-illustration" as const),
+  }));
 }
 
 async function analyzeImprovements(
@@ -557,7 +674,7 @@ async function buildStyleBible(
         "You are a series editor. Given a coursebook's full outline, define a shared 'style bible' so every unit - each written independently - reads as one coherent book.",
       prompt: [
         `Book outline (JSON):\n${JSON.stringify(outline)}`,
-        "Define: (1) a short paragraph describing shared characters/setting/narrative context to reuse across units (names, ages, relationships, world) where relevant to the subject, (2) a glossary of key recurring terms/formulas and their definitions to keep terminology consistent across units.",
+        "Define: (1) a short paragraph describing shared characters/setting/narrative context to reuse across units (names, ages, relationships, world) where relevant to the subject, (2) a glossary of key recurring terms/formulas and their definitions to keep terminology consistent across units, (3) \"characters\": the 2-6 recurring characters who appear in the book's dialogues and illustrations, each with an exact, drawable visualDescription and a fixed outfit with specific colours - an illustrator will draw a reference sheet from this and every picture in the book will be matched against it, so be concrete (hair colour and style, skin tone, eye colour, height/build, glasses, etc.). Make the cast diverse and age-appropriate for the target audience. Leave characters empty only if the subject genuinely has no recurring people.",
         styleProfileGuidance ? `House style to follow (Faz H5 style profile): ${styleProfileGuidance}` : "",
       ]
         .filter(Boolean)
@@ -603,6 +720,11 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
       ? `A previous draft of this unit had these issues - fix them:\n${input.feedback.map((f) => `- ${f}`).join("\n")}`
       : "",
     `For a "practice" or "assessment" block whose exercise naturally fits one of these three shapes, ALSO fill in that block's "interactive" field so the digital reader can render it as a real, auto-checkable activity (in addition to "items"/"answerKey", which still print in the PDF/EPUB/LMS export): multiple_choice (one question, 2+ options, correctIndex), fill_blank (a "template" string with each blank marked as exactly "___", and "blanks" holding the correct answer for each one in order), or matching (2+ left/right pairs). Only use this when the exercise genuinely is one of these three shapes - most explanation/narrative/reference blocks should leave "interactive" unset. "interactive.type" MUST be exactly one of these three literal strings ("multiple_choice", "fill_blank", "matching") - there is no fourth type. A true/false exercise (e.g. mirroring a source's "True or false?" activity) is NOT its own type: model it as multiple_choice with exactly two options, "True" and "False", and correctIndex pointing at the right one.`,
+    // Faz 1 "Tasarım sistemi": the page-design vocabulary. Every renderer
+    // draws a page by its layoutTemplate (src/lib/design/layouts.ts), so the
+    // writer decides the arrangement the way a book designer would.
+    `PAGE DESIGN - this book is typeset like a professionally published coursebook, not a document. For EVERY page set "layoutTemplate" to one of:\n${layoutTemplatePromptCatalog()}\nDesign rules: (1) The first Student Book page of the unit uses "unit-opener-hero" with an imagePrompt. (2) Vary the templates - never use the same one on more than two pages in a row. (3) Write conversations into a block's "dialogue" field (one entry per turn) instead of prose, grammar patterns into a block's "table" field, and short tips/facts/rules as separate small blocks with "callout" set - real coursebooks use these boxes constantly. (4) EVERY page must fit on ONE printed page: roughly 220-320 words of running text in total on a page without a picture, about 150-220 with one, and at most 8 dialogue turns. If a page's content would be longer, tighten the wording - do not drop required exercises.`,
+    `CHARACTERS IN PICTURES - when an imagePrompt shows any of the style bible's characters, list their ids in that page's "imageCharacters" and refer to them by name in the imagePrompt. Describe the scene, action, expressions and setting - do not re-describe their appearance (the illustrator works from fixed character reference sheets).`,
     `If any block's body or items text refers to an image the learner should look at (e.g. "Resim:", "Picture:", "look at the image", a counting/matching exercise with objects), you MUST set that page's imagePrompt describing exactly that image - never write an exercise that depends on an image without providing one.`,
   ];
 }
@@ -634,6 +756,8 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
         // arbitrary number of generated blocks isn't reliable without
         // knowing their rendered text height in advance.
         "Each source page's visualStyle.layoutZone (if present) describes its coarse image/text arrangement (e.g. image_left_text_right, two_column, full_width_image). Let it guide how many blocks you write and how much weight text vs. image gets on that generated page - a full_width_image source page should get a short, light generated page dominated by its image; a two_column source page should get content that reads naturally as two short, parallel blocks rather than one long block. This shapes the generated page's feel to match the source's rhythm; it does not mean positioning anything at exact coordinates.",
+        // Faz 3: the same coarse zone also suggests the page design template.
+        "Use the source page's layoutZone as the starting point for layoutTemplate: image_left_text_right/image_right_text_left -> image-left-text-right, two_column -> two-column, full_width_image -> unit-opener-hero on a unit's first page (full-bleed-illustration elsewhere), image_top_text_bottom -> two-column with an imagePrompt, full_width_text -> reading-with-sidebar or exercise-grid depending on the content. Override it when the content clearly suits another template better.",
         "If content includes a dialogue, story, or a listening/read-aloud passage, also add a matching entry to listeningAudio with the exact text to be read aloud. If it's a dialogue between two or more named speakers, also fill dialogueLines with each turn broken out by speaker, in order - this lets each character be voiced distinctly instead of one narrator reading every line. Leave dialogueLines empty for a single-narrator passage.",
         "Provide a unit-level glossary of key terms with definitions and examples.",
       ]
@@ -667,8 +791,16 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
 // page images into ONE flat Record<number,string> for the whole book
 // (generationRuns.pageImageUrls) and a collision there would silently
 // overwrite one unit's images with another's.
-async function generateSkeletonSide(runId: string, input: UnitGenerationContext, sections: string[]) {
+async function generateSkeletonSide(runId: string, input: UnitGenerationContext, requestedSections: string[]) {
   "use step";
+
+  // Live E2E (2026-10-09): the built-in Turkish default sections were printed
+  // as section labels inside an English coursebook. Name them in the book's
+  // own language (only the built-in default - a user's own list is kept).
+  const sections =
+    requestedSections.join("|") === DEFAULT_SCRATCH_UNIT_SKELETON.join("|") && !input.contentLanguage.toLowerCase().startsWith("tr")
+      ? DEFAULT_SCRATCH_UNIT_SKELETON_EN
+      : requestedSections;
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
@@ -708,6 +840,9 @@ async function generateSkeletonSide(runId: string, input: UnitGenerationContext,
     pages: object.pages.map((page, i) => ({
       ...page,
       sourcePageNumber: input.outlineUnit.number * 1000 + i,
+      // Assigned, not trusted: live E2E caught the free model dumping its
+      // whole self-check monologue into this field (printed on the page).
+      sectionLabel: sections[i] ?? page.sectionLabel?.slice(0, 40),
     })),
   };
 }
@@ -1183,6 +1318,33 @@ async function checkpointUnit(runId: string, unitNumber: number, unit: Generated
   });
 }
 
+// Live E2E 2026-10-09: a unit regenerated at the content-approval gate (or
+// changed by the design review) was never written back, so a rerun resumed
+// the FIRST draft the human had already sent back. Keeps exactly one
+// selected checkpoint per unit: the latest version.
+async function replaceCheckpoint(runId: string, unitNumber: number, unit: GeneratedUnit): Promise<void> {
+  "use step";
+
+  await db
+    .update(variantHistory)
+    .set({ selected: false })
+    .where(and(eq(variantHistory.runId, runId), eq(variantHistory.unitNumber, unitNumber)));
+  await db.insert(variantHistory).values({ runId, unitNumber, variantIndex: 0, selected: true, passed: true, issues: [], unit });
+}
+
+async function loadRunCover(sourceRunId: string, artStyleId: string | null): Promise<string | null> {
+  "use step";
+  const run = await db.query.generationRuns.findFirst({ where: eq(generationRuns.id, sourceRunId), columns: { coverImageUrl: true, artStyle: true } });
+  if (resolveArtStyle(run?.artStyle).id !== resolveArtStyle(artStyleId).id) return null;
+  return run?.coverImageUrl ?? null;
+}
+
+async function loadRunPageImages(sourceRunId: string): Promise<Record<number, string>> {
+  "use step";
+  const run = await db.query.generationRuns.findFirst({ where: eq(generationRuns.id, sourceRunId), columns: { pageImageUrls: true } });
+  return (run?.pageImageUrls as Record<number, string> | null) ?? {};
+}
+
 // Faz H4: archives every generated variant (see variantHistory in
 // src/db/schema.ts) before clearing the run's pendingVariants scratch
 // column, so unselected variants aren't silently discarded - replaces the
@@ -1502,6 +1664,7 @@ async function reviewImage(
   prompt: string,
   pageContext: string,
   attempt: number,
+  references: { name: string; url: string }[] = [],
 ): Promise<ImageReview> {
   "use step";
 
@@ -1522,9 +1685,16 @@ async function reviewImage(
                 `The image was generated from this prompt: "${prompt}"`,
                 `Page context (what this image should support): ${pageContext}`,
                 "Check: (1) the image matches the prompt's subject and scene, (2) it is appropriate for a school-age audience (no violence, unsafe, or inappropriate content), (3) it contains no garbled or unreadable text/letters baked into the artwork, (4) it plausibly fits the described page context. List concrete issues if any, and if passed=false, suggest a revised prompt that would fix them. Set passed=true only if there are no significant issues.",
-              ].join("\n\n"),
+                // Faz 2 "Karakter tutarlılığı"
+                references.length
+                  ? `(5) CHARACTER CONSISTENCY: the first image is the illustration under review; the images after it are the approved reference sheets for ${references.map((r) => r.name).join(", ")}, in that order. Every one of these characters shown in the illustration must clearly be the same person as on their sheet - same face shape, skin tone, hair colour/style, glasses, and outfit colours. A character that looks like a different person is a significant issue (passed=false). The suggested prompt fix must describe only the scene - never restate their appearance.`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("\n\n"),
             },
             { type: "image", image: new URL(imageUrl) },
+            ...references.map((r) => ({ type: "image" as const, image: new URL(r.url) })),
           ],
         },
       ],
@@ -1558,9 +1728,18 @@ async function generateReviewedImage(
   storagePath: string,
   qualityMode: "draft" | "final",
   size: StudioImageSizeId,
+  // Faz 2: the book's art direction and the reference sheets of the
+  // characters in this picture. Kept apart from the scene prompt so a QA
+  // retry (which rewrites the scene) can never drop them.
+  { styleSuffix, characters = [] }: { styleSuffix?: string; characters?: CharacterSheet[] } = {},
 ): Promise<string> {
   let prompt = initialPrompt;
   let lastBlobUrl: string | null = null;
+  const references = characters
+    .filter((c): c is CharacterSheet & { imageUrl: string } => !!c.imageUrl)
+    .slice(0, 4) // GPT Image's documented reference-image limit
+    .map((c) => ({ name: c.name, url: c.imageUrl }));
+  const fullPrompt = () => [prompt, describeCharactersForPrompt(characters), styleSuffix].filter(Boolean).join("\n\n");
 
   for (let attempt = 1; attempt <= MAX_IMAGE_ATTEMPTS; attempt++) {
     let image: { uint8Array: Uint8Array; mediaType: string };
@@ -1574,12 +1753,21 @@ async function generateReviewedImage(
       // values don't apply here, so fold rough size guidance into the
       // prompt text instead.
       imageModel = "cloudflare/flux-1-schnell";
-      const result = await generateImageWithCloudflare(`${prompt}\n\n(Image size guidance: ${size})`);
+      // No reference-image support here - the written character
+      // descriptions in fullPrompt() are all the consistency it gets.
+      const result = await generateImageWithCloudflare(compactImagePrompt(prompt, characters, styleSuffix, size));
       if (!result) throw new Error("Cloudflare Workers AI görüntü döndürmedi.");
       image = result;
     } else {
       imageModel = resolveImageModel(qualityMode);
-      const res = await generateImage({ model: imageModel, prompt, size });
+      const res = await generateImage({
+        model: imageModel,
+        prompt: fullPrompt(),
+        size,
+        // Same reference-image path the studio's advanced panel uses
+        // (src/lib/ai/studio-generation.ts).
+        ...(references.length ? { providerOptions: { openai: { input_references: references.map((r) => r.url) } } } : {}),
+      });
       image = res.image;
     }
     // Every attempt is a real, separate paid call - including retries after
@@ -1603,12 +1791,39 @@ async function generateReviewedImage(
     });
     lastBlobUrl = blob.url;
 
-    const review = await reviewImage(runId, unitNumber, pageNumber, blob.url, prompt, pageContext, attempt);
+    // A review model can refuse to answer (live E2E 2026-10-09: the free
+    // vision model returned finishReason "content-filter" on illustrations
+    // of child characters, and the whole run died after 3 step retries).
+    // The QA check is a gate, not a generator: if it can't run, ship the
+    // image flagged as unreviewed so it lands in the human image review.
+    let review: ImageReview;
+    try {
+      review = await reviewImage(runId, unitNumber, pageNumber, blob.url, prompt, pageContext, attempt, references);
+    } catch (err) {
+      await db.insert(imageReviews).values({
+        runId,
+        unitNumber,
+        pageNumber,
+        imageUrl: blob.url,
+        prompt,
+        passed: false,
+        issues: [`Otomatik görsel denetimi yapılamadı (${err instanceof Error ? err.message.slice(0, 160) : "bilinmeyen hata"}) - lütfen gözle kontrol edin.`],
+        attempt,
+      });
+      break;
+    }
     if (review.passed || attempt === MAX_IMAGE_ATTEMPTS) break;
     if (review.suggestedPromptFix) prompt = review.suggestedPromptFix;
   }
 
   return lastBlobUrl as string;
+}
+
+function fallbackImagePrompt(page: GeneratedPage, sheets: CharacterSheet[]): string {
+  const text = page.blocks.map((b) => `${b.heading} ${b.body} ${(b.dialogue ?? []).map((d) => `${d.speaker}: ${d.line}`).join(" ")}`).join(" ");
+  const cast = charactersForImage({ imagePrompt: text }, sheets).map((c) => c.name);
+  const topic = page.blocks.find((b) => b.heading)?.heading ?? page.sectionLabel ?? "the lesson";
+  return `A lively, friendly illustration for a coursebook page about "${topic}": ${text.replace(/\s+/g, " ").slice(0, 260)}${cast.length ? ` Show ${cast.join(" and ")} in the scene.` : ""}`;
 }
 
 function pageImageContext(unit: GeneratedUnit, page: GeneratedPage): string {
@@ -1621,6 +1836,11 @@ async function generateUnitImages(
   runId: string,
   unit: GeneratedUnit,
   qualityMode: "draft" | "final",
+  artStyle: ArtStyle,
+  characterSheets: CharacterSheet[],
+  // Pictures a previous run already made for this exact unit (rerun of an
+  // unchanged unit) - reused instead of paid for again.
+  reuse: Record<number, string> = {},
 ): Promise<Record<number, string>> {
   "use step";
 
@@ -1632,20 +1852,36 @@ async function generateUnitImages(
   ];
 
   const images: Record<number, string> = {};
+  // Live E2E 2026-10-09: the free writer model left imagePrompt empty on
+  // whole Student Books. A coursebook page without pictures looks unfinished,
+  // so a Student Book page that has none gets one derived from its content.
+  const studentPages = new Set(unit.studentBookPages);
 
-  for (const page of allPages) {
+  for (const original of allPages) {
+    const page = original.imagePrompt || !studentPages.has(original) ? original : { ...original, imagePrompt: fallbackImagePrompt(original, characterSheets) };
     if (!page.imagePrompt || images[page.sourcePageNumber]) continue;
+    if (reuse[page.sourcePageNumber]) {
+      images[page.sourcePageNumber] = reuse[page.sourcePageNumber];
+      continue;
+    }
 
-    images[page.sourcePageNumber] = await generateReviewedImage(
-      runId,
-      unit.unitNumber,
-      page.sourcePageNumber,
-      pageImageContext(unit, page),
-      `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
-      `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
-      qualityMode,
-      BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
-    );
+    // One picture that can't be produced must not take the whole unit (and
+    // run) down with it - the page then prints in its text-only layout.
+    try {
+      images[page.sourcePageNumber] = await generateReviewedImage(
+        runId,
+        unit.unitNumber,
+        page.sourcePageNumber,
+        pageImageContext(unit, page),
+        page.imagePrompt,
+        `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
+        qualityMode,
+        BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
+        { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
+      );
+    } catch (err) {
+      console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: image skipped -`, err instanceof Error ? err.message : err);
+    }
   }
 
   return images;
@@ -1728,6 +1964,8 @@ async function regenerateFlaggedImage(
   unitNumber: number,
   pageNumber: number,
   qualityMode: "draft" | "final",
+  artStyle: ArtStyle,
+  characterSheets: CharacterSheet[],
 ): Promise<string | null> {
   "use step";
 
@@ -1745,11 +1983,57 @@ async function regenerateFlaggedImage(
     unitNumber,
     pageNumber,
     pageImageContext(unit, page),
-    `${page.imagePrompt}. Style: warm, professional educational textbook illustration, friendly and inclusive, no text or letters in the image.`,
+    page.imagePrompt,
     `generated/${runId}/unit-${unitNumber}-page-${pageNumber}.png`,
     qualityMode,
     BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
+    { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
   );
+}
+
+// Faz 2 "Karakter tutarlılığı": one reference sheet per recurring
+// character, in the book's art style. Every later picture of that character
+// is generated with this image as a reference (generateReviewedImage).
+async function generateCharacterSheet(
+  runId: string,
+  character: Omit<CharacterSheet, "imageUrl">,
+  artStyle: ArtStyle,
+  qualityMode: "draft" | "final",
+  attemptTag: number,
+): Promise<CharacterSheet> {
+  "use step";
+
+  const imageUrl = await generateReviewedImage(
+    runId,
+    null,
+    null,
+    `Character reference sheet for ${character.name} (${character.role}).`,
+    characterSheetPrompt(character),
+    `generated/${runId}/character-${character.id}-${attemptTag}.png`,
+    qualityMode,
+    BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
+    { styleSuffix: artStyle.prompt },
+  );
+  return { ...character, imageUrl };
+}
+
+async function saveCharacterSheets(runId: string, sheets: CharacterSheet[], approvalRound: number | null = null) {
+  "use step";
+  await db
+    .update(generationRuns)
+    .set({ characterSheets: sheets, pendingCharacterApproval: approvalRound === null ? null : { round: approvalRound } })
+    .where(eq(generationRuns.id, runId));
+}
+
+async function loadRunCharacterSheets(sourceRunId: string, artStyleId: string | null): Promise<CharacterSheet[] | null> {
+  "use step";
+  const run = await db.query.generationRuns.findFirst({
+    where: eq(generationRuns.id, sourceRunId),
+    columns: { characterSheets: true, artStyle: true },
+  });
+  // Sheets drawn in another art style would pull every picture back to it.
+  if (resolveArtStyle(run?.artStyle).id !== resolveArtStyle(artStyleId).id) return null;
+  return run?.characterSheets?.length ? run.characterSheets : null;
 }
 
 async function generateCoverImage(
@@ -1758,22 +2042,32 @@ async function generateCoverImage(
   subject: string,
   coverPage: SourcePage | undefined,
   qualityMode: "draft" | "final",
+  artStyle: ArtStyle,
+  characterSheets: CharacterSheet[],
 ): Promise<string> {
   "use step";
+
+  // The main cast on the cover, the way series covers show their
+  // recurring characters - drawn from the same reference sheets.
+  const coverCast = characterSheets.filter((c) => c.imageUrl).slice(0, 3);
 
   const scenePrompt = coverPage?.imageDescription
     ? `A book cover illustration inspired by this scene: ${coverPage.imageDescription}. Reimagine it as entirely new, original artwork for "${bookTitle}", a ${subject} coursebook.`
     : `A warm, professional, modern coursebook cover illustration for "${bookTitle}", a ${subject} coursebook.`;
+  const castLine = coverCast.length
+    ? ` Feature ${coverCast.map((c) => c.name).join(", ")} prominently and happily in the scene. Leave calm, uncluttered space in the lower third for the title.`
+    : " Leave calm, uncluttered space in the lower third for the title.";
 
   return generateReviewedImage(
     runId,
     null,
     null,
     `Front cover of "${bookTitle}", a ${subject} coursebook.`,
-    `${scenePrompt} Style: welcoming, modern educational textbook cover art, no text or letters in the image.`,
+    `${scenePrompt}${castLine}`,
     `generated/${runId}/cover.png`,
     qualityMode,
     BOOK_PIPELINE_COVER_IMAGE_SIZE,
+    { styleSuffix: artStyle.prompt, characters: coverCast },
   );
 }
 
@@ -1828,12 +2122,14 @@ const UNIT_PAGE_ARRAY_FIELDS: { label: string; field: keyof Pick<GeneratedUnit, 
   { label: "Test Booklet", field: "testBookletPages" },
 ];
 
-export function validateUnitStructure(unit: GeneratedUnit): string[] {
+export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics = A4_METRICS): string[] {
   const issues: string[] = [];
   for (const { label, field } of UNIT_PAGE_ARRAY_FIELDS) {
-    for (const page of unit[field] ?? []) {
+    for (const [pageIndex, page] of (unit[field] ?? []).entries()) {
       for (const block of page.blocks) {
-        if (block.items?.length && block.items.length !== (block.answerKey?.length ?? 0)) {
+        // "I can..." self-assessment lists print with tick boxes and have
+        // no correct answers - see isChecklistBlock.
+        if (block.items?.length && !isChecklistBlock(block) && block.items.length !== (block.answerKey?.length ?? 0)) {
           issues.push(
             `${label}, page ${page.sourcePageNumber}, block "${block.heading}": has ${block.items.length} items but ${block.answerKey?.length ?? 0} answerKey entries - answerKey must have exactly one correct answer per item, in the same order.`,
           );
@@ -1851,6 +2147,24 @@ export function validateUnitStructure(unit: GeneratedUnit): string[] {
         issues.push(
           `${label}, page ${page.sourcePageNumber}: exercise text refers to an image the learner should look at, but imagePrompt is not set on this page - add a vivid imagePrompt describing exactly that image.`,
         );
+      }
+      // Faz 1 "Tasarım sistemi": a designed page that can't hold its
+      // content would fall back to the plain flow and spill onto a second
+      // page - it looks unfinished, so ask for a tighter rewrite. Same
+      // estimate the renderers use (resolvePageTemplate).
+      if (page.layoutTemplate) {
+        const spec = LAYOUT_TEMPLATES[page.layoutTemplate];
+        if (spec?.needsImage && !page.imagePrompt) {
+          issues.push(
+            `${label}, page ${page.sourcePageNumber}: layoutTemplate "${page.layoutTemplate}" is built around a picture but imagePrompt is not set - add one or choose a text-only template.`,
+          );
+        }
+        const fit = estimateTemplateFit(page, page.layoutTemplate, !!page.imagePrompt, pageIndex === 0, metrics);
+        if (fit.needed > fit.available * 1.05) {
+          issues.push(
+            `${label}, page ${page.sourcePageNumber}: content is too long for one printed page with layoutTemplate "${page.layoutTemplate}" (about ${Math.round((fit.needed / fit.available) * 100)}% of the space available). Tighten the wording of this page's blocks so it fits, or pick a roomier template - keep every exercise.`,
+          );
+        }
       }
     }
   }
@@ -1887,6 +2201,282 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
   };
 }
 
+// Faz 1 "Tasarım sistemi": deterministic design clean-up after generation -
+// breaks up runs of the same template (diversifyTemplates). No model call.
+export function normalizeLayoutTemplates(unit: GeneratedUnit): GeneratedUnit {
+  return {
+    ...unit,
+    studentBookPages: diversifyTemplates(unit.studentBookPages),
+    workbookPages: diversifyTemplates(unit.workbookPages),
+    teacherBookPages: unit.teacherBookPages && diversifyTemplates(unit.teacherBookPages),
+    testBookletPages: unit.testBookletPages && diversifyTemplates(unit.testBookletPages),
+  };
+}
+
+// ---- Faz 3 "Görsel sayfa denetimi" ----
+// The typeset book is rendered to a proof PDF, every logical page is turned
+// into an image and graded by an art director (vision model) - optionally
+// against reference pages from a published book. Weak pages are fixed
+// automatically (shorter text / another template) and graded again; what is
+// still weak is shown to the human at final approval.
+
+const MAX_DESIGN_ROUNDS = 2;
+const DESIGN_BATCH_SIZE = 4;
+const MAX_REFERENCE_PAGES = 3;
+
+type ProofPage = {
+  key: string;
+  pdfPage: number;
+  pageCount: number;
+  unitNumber: number | null;
+  pageIndex: number | null;
+  imageUrl: string;
+};
+
+type BookAssemblyInput = {
+  bookTitle: string;
+  level: string;
+  units: GeneratedUnit[];
+  contentsUnits: CourseUnitSummary[];
+  coverImageSrc: string;
+  pageImages: Record<number, string>;
+  isbn?: string | null;
+  trimSize?: TrimSizeId;
+  sourceStyle?: BookDocumentSourceStyle;
+  contentLanguage?: string;
+  designTheme?: string | null;
+  bookKind?: string | null;
+};
+
+async function renderProofPages(runId: string, round: number, variant: Variant, input: BookAssemblyInput): Promise<ProofPage[]> {
+  "use step";
+
+  resetBookFonts();
+  const starts: Record<string, number> = {};
+  const pdf = await renderToBuffer(
+    <BookDocument
+      bookTitle={input.bookTitle}
+      variant={variant}
+      units={input.units}
+      level={input.level}
+      contentsUnits={input.contentsUnits}
+      coverImageSrc={input.coverImageSrc}
+      pageImages={input.pageImages}
+      isbn={input.isbn ?? undefined}
+      trimSize={input.trimSize}
+      sourceStyle={input.sourceStyle}
+      contentLanguage={input.contentLanguage}
+      designTheme={input.designTheme}
+      bookKind={input.bookKind}
+      onPageStart={(key, n) => {
+        starts[key] = Math.min(starts[key] ?? n, n);
+      }}
+    />,
+  );
+  const bytes = new Uint8Array(pdf);
+  const spans = buildPageSpans(starts, await countPdfPages(bytes)).filter((s) => s.key !== "answer_key");
+  const images = await rasterizePdf(bytes, { dpi: 80, pages: spans.map((s) => s.startPage) });
+  const byPage = new Map(images.map((img) => [img.pageNumber, img]));
+
+  const out: ProofPage[] = [];
+  for (const span of spans) {
+    const img = byPage.get(span.startPage);
+    if (!img) continue;
+    const blob = await put(`generated/${runId}/proof/r${round}-${variant}-p${span.startPage}.png`, Buffer.from(img.png), {
+      access: "public",
+      contentType: "image/png",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    const ref = parseUnitPageKey(span.key);
+    out.push({
+      key: span.key,
+      pdfPage: span.startPage,
+      pageCount: span.pageCount,
+      unitNumber: ref?.unitNumber ?? null,
+      pageIndex: ref?.pageIndex ?? null,
+      imageUrl: blob.url,
+    });
+  }
+  return out;
+}
+
+async function reviewProofBatch(
+  runId: string,
+  round: number,
+  variant: Variant,
+  pages: ProofPage[],
+  referenceUrls: string[],
+): Promise<{ page: ProofPage; grade: PageDesignGrade; fix: DesignFix; rowId: string }[]> {
+  "use step";
+
+  const content: ({ type: "text"; text: string } | { type: "image"; image: URL })[] = [
+    { type: "text", text: designRubric(referenceUrls.length > 0) },
+  ];
+  for (const page of pages) {
+    content.push({
+      type: "text",
+      text: `PDF page ${page.pdfPage}${page.key === "cover" ? " (front cover)" : ""}${page.pageCount > 1 ? ` - NOTE: this page's content spilled onto ${page.pageCount - 1} extra page(s)` : ""}:`,
+    });
+    content.push({ type: "image", image: new URL(page.imageUrl) });
+  }
+  referenceUrls.forEach((url, i) => {
+    content.push({ type: "text", text: `REFERENCE page ${i + 1} (published book - quality bar only):` });
+    content.push({ type: "image", image: new URL(url) });
+  });
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: toTextModel(resolveFinalTextModel()),
+      schema: pageDesignGradeSchema,
+      experimental_repairText: repairDoubleEncodedJsonLeaves,
+      messages: [{ role: "user", content }],
+    }),
+  );
+  await recordUsage(runId, "designReview", usage);
+
+  const results: { page: ProofPage; grade: PageDesignGrade; fix: DesignFix; rowId: string }[] = [];
+  for (const page of pages) {
+    const grade = object.pages.find((g) => g.pdfPage === page.pdfPage);
+    if (!grade) continue;
+    const fix = page.unitNumber === null ? "none" : decideFix(grade, { key: page.key, startPage: page.pdfPage, pageCount: page.pageCount });
+    const [row] = await db
+      .insert(pageDesignReviews)
+      .values({
+        runId,
+        round,
+        bookType: variant,
+        pdfPage: page.pdfPage,
+        unitNumber: page.unitNumber,
+        pageIndex: page.pageIndex,
+        pageCount: page.pageCount,
+        score: Math.round(grade.score),
+        issues: grade.issues,
+        suggestedFix: fix,
+        referenceGap: grade.referenceGap ?? null,
+        imageUrl: page.imageUrl,
+      })
+      .returning({ id: pageDesignReviews.id });
+    results.push({ page, grade, fix, rowId: row.id });
+  }
+  return results;
+}
+
+async function markDesignFixApplied(rowId: string, fix: DesignFix) {
+  "use step";
+  await db.update(pageDesignReviews).set({ appliedFix: fix }).where(eq(pageDesignReviews.id, rowId));
+}
+
+// Rewrites one page's text so it fits its printed page. The picture was
+// already generated from imagePrompt, so every image field is carried over
+// untouched - only the words get tighter.
+async function rewritePageToFit(
+  runId: string,
+  page: GeneratedPage,
+  problems: string[],
+  contentLanguage: string,
+  mode: "shorten" | "enrich" = "shorten",
+): Promise<GeneratedPage> {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: toTextModel(resolveFinalTextModel()),
+      schema: generatedPageSchema,
+      experimental_repairText: repairDoubleEncodedJsonLeaves,
+      maxOutputTokens: 12000,
+      system:
+        mode === "shorten"
+          ? "You are a coursebook editor tightening a page so it fits on one printed page. You keep every exercise and its answers; you cut wordiness, shorten explanations and narrative, and merge or trim examples."
+          : "You are a coursebook editor filling out a page that prints half-empty. You keep everything that is there and add the material a published coursebook page would have on this topic, so the page is full but still fits on one printed page.",
+      prompt: [
+        `The typeset page has these layout problems:\n${problems.map((p) => `- ${p}`).join("\n")}`,
+        mode === "shorten"
+          ? `Rewrite it in ${contentLanguage} so it fits comfortably: aim for about 30% less running text. Keep sourcePageNumber, pageType, unitNumber, sectionLabel and the same number of blocks with items, the same items count and answerKey count per block, and keep dialogue turns (shorten lines if needed). You may also change layoutTemplate to a roomier one.`
+          : `Rewrite it in ${contentLanguage} with roughly twice the content, staying on the same topic and level: keep every existing block, then add 1-3 blocks such as a short reading text, a dialogue (in the "dialogue" field), a grammar table (in "table"), a tip or did-you-know callout, or another exercise with 5-6 items and a full answerKey. Aim for about ${page.imagePrompt ? "120-170" : "180-240"} words on the page in total (${page.imagePrompt ? "the page also carries a picture" : "no picture on this page"}) - it must still fit on ONE printed page. Keep sourcePageNumber, pageType, unitNumber and sectionLabel; pick the layoutTemplate that fits the new mix of blocks.`,
+        `Page (JSON):\n${JSON.stringify(page)}`,
+      ].join("\n\n"),
+    }),
+  );
+  await recordUsage(runId, "designFix", usage);
+
+  return {
+    ...object,
+    sourcePageNumber: page.sourcePageNumber,
+    pageType: page.pageType,
+    unitNumber: page.unitNumber,
+    sectionLabel: page.sectionLabel,
+    imagePrompt: page.imagePrompt,
+    imageCharacters: page.imageCharacters,
+    imageLayout: page.imageLayout,
+    imageOverrideSourcePageNumber: page.imageOverrideSourcePageNumber,
+    // Strip any coordinates the model invents (same rule as unit generation).
+    blocks: object.blocks.map((b) => ({ ...b, layout: undefined })),
+  };
+}
+
+// Reference pages for the design review: the user's uploaded sample pages
+// (PDFs are rasterised here), or - when none were given - a few typical
+// pages of the uploaded source book, so every book is graded against a real
+// published design rather than the model's taste alone.
+async function prepareReferencePages(
+  runId: string,
+  uploaded: string[] | null,
+  sourcePdfUrl: string | null,
+  sourcePageNumbers: number[],
+): Promise<string[]> {
+  "use step";
+
+  const out: string[] = [];
+  async function savePng(png: Uint8Array, i: number) {
+    const blob = await put(`generated/${runId}/reference/ref-${i}.png`, Buffer.from(png), {
+      access: "public",
+      contentType: "image/png",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    out.push(blob.url);
+  }
+  async function rasterizeFrom(url: string, pickPages: (total: number) => number[]) {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const total = await countPdfPages(bytes);
+    for (const page of await rasterizePdf(bytes, { dpi: 80, pages: pickPages(total) })) {
+      if (out.length >= MAX_REFERENCE_PAGES) return;
+      await savePng(page.png, out.length);
+    }
+  }
+
+  try {
+    for (const url of uploaded ?? []) {
+      if (out.length >= MAX_REFERENCE_PAGES) break;
+      if (/\.pdf($|\?)/i.test(url)) {
+        // Skip the cover/front matter: inner pages carry the design language.
+        await rasterizeFrom(url, (total) => {
+          const start = Math.min(total, 3);
+          return Array.from({ length: MAX_REFERENCE_PAGES }, (_, i) => Math.min(total, start + i * Math.max(1, Math.floor(total / 6))));
+        });
+      } else {
+        out.push(url);
+      }
+    }
+    if (!out.length && sourcePdfUrl && sourcePageNumbers.length) {
+      await rasterizeFrom(sourcePdfUrl, () => sourcePageNumbers.slice(0, MAX_REFERENCE_PAGES));
+    }
+  } catch {
+    // References are a quality bar, not a requirement - review without them.
+  }
+  return [...new Set(out)].slice(0, MAX_REFERENCE_PAGES);
+}
+
+const VARIANT_PAGE_FIELD: Record<Variant, "studentBookPages" | "workbookPages" | "teacherBookPages" | "testBookletPages"> = {
+  student_book: "studentBookPages",
+  workbook: "workbookPages",
+  teacher_book: "teacherBookPages",
+  test_booklet: "testBookletPages",
+};
+
 async function assembleAndSaveBooks(
   runId: string,
   bookTitle: string,
@@ -1900,6 +2490,8 @@ async function assembleAndSaveBooks(
   trimSize?: TrimSizeId,
   sourceStyle?: BookDocumentSourceStyle,
   contentLanguage?: string,
+  designTheme?: string | null,
+  bookKind?: string | null,
 ) {
   "use step";
 
@@ -1911,6 +2503,28 @@ async function assembleAndSaveBooks(
     .where(eq(generationRuns.id, runId));
 
   const generatedAt = new Date().toLocaleDateString("tr-TR", { year: "numeric", month: "long", day: "numeric" });
+
+  // Faz 4 "Baskıya hazır çıktı": images resampled to 300 DPI at full page
+  // width (the widest any template places them) for the print PDF only.
+  // Best-effort: on failure the print files use the original images.
+  const trim = TRIM_SIZES[trimSize ?? "a4"];
+  const printTargetPx = pixelsForPrint(trim.widthPt + 2 * BLEED_PT);
+  let printPageImages = pageImages;
+  let printCoverSrc = coverImageSrc;
+  const printImageStats = { images: 0, upscaled: 0, smallestNativeWidthPx: null as number | null };
+  try {
+    const prepared = await prepareImagesForPrint(Object.values(pageImages), printTargetPx);
+    printPageImages = Object.fromEntries(Object.entries(pageImages).map(([k, url]) => [k, prepared.get(url)?.src ?? url]));
+    const cover = coverImageSrc ? await prepareImageForPrint(coverImageSrc, printTargetPx) : null;
+    if (cover) printCoverSrc = cover.src;
+    const all = [...prepared.values(), ...(cover ? [cover] : [])];
+    printImageStats.images = all.length;
+    printImageStats.upscaled = all.filter((i) => i.upscaled).length;
+    printImageStats.smallestNativeWidthPx = all.length ? Math.min(...all.map((i) => i.nativeWidth)) : null;
+  } catch {
+    // keep originals
+  }
+  const unitTitles = units.filter((u) => u.unitNumber < MIDTERM_UNIT_NUMBER).map((u) => u.title);
 
   for (const variant of requestedVariants) {
     const markdown = unitsToMarkdown(bookTitle, units, variant);
@@ -1930,6 +2544,8 @@ async function assembleAndSaveBooks(
         trimSize={trimSize}
         sourceStyle={sourceStyle}
         contentLanguage={contentLanguage}
+        designTheme={designTheme}
+        bookKind={bookKind}
       />,
     );
     // allowOverwrite: aynı gerekçe - bu step (assembleAndSaveBooks) birden
@@ -1971,6 +2587,118 @@ async function assembleAndSaveBooks(
       // left null - PDF still ships, see comment above
     }
 
+    // Faz 4: print interior (3 mm bleed, no cover) + cover wrap whose spine
+    // is sized from the interior's real page count. Best-effort like EPUB.
+    let printPdfBlobUrl: string | null = null;
+    let coverSpreadBlobUrl: string | null = null;
+    let printReport: PrintReport | null = null;
+    let coverMockup: CoverMockup | null = null;
+    let pageRenderUrls: string[] | null = null;
+    try {
+      resetBookFonts();
+      const printPdf = await renderToBuffer(
+        <BookDocument
+          bookTitle={bookTitle}
+          variant={variant}
+          units={units}
+          level={level}
+          contentsUnits={contentsUnits}
+          coverImageSrc={printCoverSrc}
+          pageImages={printPageImages}
+          generatedAt={generatedAt}
+          isbn={isbn ?? undefined}
+          trimSize={trimSize}
+          sourceStyle={sourceStyle}
+          contentLanguage={contentLanguage}
+          designTheme={designTheme}
+          bookKind={bookKind}
+          bleed={BLEED_PT}
+          includeCover={false}
+        />,
+      );
+      const pageCount = await countPdfPages(new Uint8Array(printPdf));
+      const printBlob = await put(`generated/${runId}/${variant}-print.pdf`, printPdf, {
+        access: "public",
+        contentType: "application/pdf",
+        addRandomSuffix: false,
+        allowOverwrite: true,
+      });
+      printPdfBlobUrl = printBlob.url;
+
+      resetBookFonts();
+      const spreadPdf = await renderToBuffer(
+        <CoverSpreadDocument
+          bookTitle={bookTitle}
+          variant={variant}
+          level={level}
+          unitTitles={unitTitles}
+          coverImageSrc={printCoverSrc}
+          isbn={isbn ?? undefined}
+          trimSize={trimSize}
+          pageCount={pageCount}
+          sourceStyle={sourceStyle}
+          contentLanguage={contentLanguage}
+          designTheme={designTheme}
+          bookKind={bookKind}
+          blurb={bookKind === "picturebook" ? units[0]?.studentBookPages[0]?.blocks[0]?.body : undefined}
+        />,
+      );
+      const spreadBlob = await put(`generated/${runId}/${variant}-cover-spread.pdf`, spreadPdf, {
+        access: "public",
+        contentType: "application/pdf",
+        addRandomSuffix: false,
+        allowOverwrite: true,
+      });
+      coverSpreadBlobUrl = spreadBlob.url;
+
+      // Faz 5: the wrap as a texture for the 3D mockup.
+      const [spreadImage] = await rasterizePdf(new Uint8Array(spreadPdf), { dpi: 110 });
+      if (spreadImage) {
+        const spreadPng = await put(`generated/${runId}/${variant}-cover-spread.png`, Buffer.from(spreadImage.png), {
+          access: "public",
+          contentType: "image/png",
+          addRandomSuffix: false,
+          allowOverwrite: true,
+        });
+        coverMockup = {
+          imageUrl: spreadPng.url,
+          trimWidthPt: TRIM_SIZES[trimSize ?? "a4"].widthPt,
+          trimHeightPt: TRIM_SIZES[trimSize ?? "a4"].heightPt,
+          spinePt: spineWidthPt(pageCount),
+          bleedPt: BLEED_PT,
+        };
+      }
+      printReport = {
+        pageCount,
+        spineMm: Math.round((spineWidthPt(pageCount) / 72) * 25.4 * 10) / 10,
+        bleedMm: 3,
+        trimSize: trimSize ?? "a4",
+        images: printImageStats.images,
+        upscaledImages: printImageStats.upscaled,
+        smallestNativeWidthPx: printImageStats.smallestNativeWidthPx,
+        targetWidthPx: printTargetPx,
+      };
+    } catch {
+      // left null - the screen PDF still ships
+    }
+
+    // Faz 5: page images for the 3D reader (screen PDF, cover included).
+    try {
+      const pages = await rasterizePdf(new Uint8Array(pdfBuffer), { dpi: 100 });
+      pageRenderUrls = [];
+      for (const pg of pages) {
+        const pngBlob = await put(`generated/${runId}/pages/${variant}-${pg.pageNumber}.png`, Buffer.from(pg.png), {
+          access: "public",
+          contentType: "image/png",
+          addRandomSuffix: false,
+          allowOverwrite: true,
+        });
+        pageRenderUrls.push(pngBlob.url);
+      }
+    } catch {
+      pageRenderUrls = null;
+    }
+
     await db.insert(generatedBooks).values({
       runId,
       bookType: variant,
@@ -1978,6 +2706,11 @@ async function assembleAndSaveBooks(
       markdown,
       pdfBlobUrl: blob.url,
       epubBlobUrl,
+      printPdfBlobUrl,
+      coverSpreadBlobUrl,
+      printReport,
+      coverMockup,
+      pageRenderUrls,
     });
   }
 }
@@ -2208,6 +2941,14 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
 
   try {
     const ctx = await fetchRunContext(runId);
+    // Faz 6: a picture book is one illustrated story (see generatePictureBookPages).
+    const isPictureBook = ctx.run.bookKind === "picturebook";
+    const pictureBookPageCount = Math.min(32, Math.max(8, ctx.run.pictureBookPageCount ?? PICTURE_BOOK_DEFAULT_PAGES));
+    const layoutMetrics: PageMetrics = {
+      width: TRIM_SIZES[ctx.project.trimSize].widthPt,
+      height: TRIM_SIZES[ctx.project.trimSize].heightPt,
+      bodySize: resolveDesignTheme(ctx.run.designTheme).bodySize,
+    };
     const requestedVariants = (
       ctx.run.requestedBookTypes.length ? ctx.run.requestedBookTypes : ["student_book", "workbook"]
     ).filter((v): v is Variant => (ALL_VARIANTS as string[]).includes(v));
@@ -2230,6 +2971,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         ctx.project.trimSize,
         assets.sourceStyle,
         assets.outline.contentLanguage,
+        ctx.run.designTheme,
+        ctx.run.bookKind,
       );
       await setRunStatus(runId, "done", "Tamamlandı");
       return { runId, status: "done" as const };
@@ -2247,9 +2990,18 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         pageMap = { totalPages: 0, pages: [] };
         outline = resumed.outline;
       } else {
-        await setRunStatus(runId, "extracting", "Kitabın yapısı (dizelge) sıfırdan oluşturuluyor");
+        await setRunStatus(runId, "extracting", isPictureBook ? "Hikâye kurgusu oluşturuluyor" : "Kitabın yapısı (dizelge) sıfırdan oluşturuluyor");
         pageMap = { totalPages: 0, pages: [] };
-        outline = await generateOutlineFromBrief(
+        outline = isPictureBook
+          ? await generatePictureBookOutline(
+              runId,
+              ctx.project.name,
+              ctx.project.level,
+              ctx.run.scratchBrief,
+              pictureBookPageCount,
+              ctx.run.targetLanguage,
+            )
+          : await generateOutlineFromBrief(
           runId,
           ctx.project.name,
           ctx.project.level,
@@ -2341,6 +3093,48 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     }
 
     const styleBible = await buildStyleBible(runId, outline, ctx.styleProfile?.promptGuidance);
+    const artStyle = resolveArtStyle(ctx.run.artStyle);
+
+    // Faz 2 "Karakter tutarlılığı": draw each recurring character once, let
+    // a human approve (or redraw) them, then generate every illustration
+    // from these sheets. A rerun reuses the previous run's approved sheets
+    // when it used the same art style.
+    let characterSheets: CharacterSheet[] = [];
+    const cast = styleBible.characters ?? [];
+    const previousSheets = resumeFromRunId ? await loadRunCharacterSheets(resumeFromRunId, ctx.run.artStyle) : null;
+    if (previousSheets && previousSheets.length) {
+      characterSheets = previousSheets;
+      await saveCharacterSheets(runId, characterSheets);
+    } else if (cast.length) {
+      await setRunStatus(runId, "generating_images", `${cast.length} karakter için referans çizimleri üretiliyor`);
+      for (const [i, c] of cast.entries()) {
+        characterSheets.push(await generateCharacterSheet(runId, { ...c, id: c.id || `c${i + 1}` }, artStyle, ctx.run.qualityMode, 1));
+      }
+      for (let round = 2; ; round++) {
+        await saveCharacterSheets(runId, characterSheets, round);
+        await setRunStatus(runId, "awaiting_character_approval", "Karakter çizimleri onay bekliyor");
+        const characterHook = createHook<{ approved: boolean; redraw: { id: string; note?: string }[] }>({
+          token: `character-approval:${runId}:${round}`,
+        });
+        const decision = await characterHook;
+        if (decision.approved || !decision.redraw.length) break;
+        await setRunStatus(runId, "generating_images", `${decision.redraw.length} karakter yeniden çiziliyor`);
+        for (const { id, note } of decision.redraw) {
+          const idx = characterSheets.findIndex((c) => c.id === id);
+          if (idx < 0) continue;
+          const current = characterSheets[idx];
+          const revised = note
+            ? { ...current, visualDescription: `${current.visualDescription} (Art director's correction: ${note})` }
+            : current;
+          characterSheets[idx] = await generateCharacterSheet(runId, revised, artStyle, ctx.run.qualityMode, round);
+        }
+      }
+      await saveCharacterSheets(runId, characterSheets);
+    }
+    // Writers see the approved cast (with any art-director corrections).
+    if (characterSheets.length) {
+      styleBible.characters = characterSheets.map(({ id, name, role, visualDescription, outfit }) => ({ id, name, role, visualDescription, outfit }));
+    }
     const variantCount = Math.max(1, Math.min(4, ctx.run.variantCount || 1));
 
     const unitsToGenerate = effectiveUnitLimit ? outline.units.slice(0, effectiveUnitLimit) : outline.units;
@@ -2356,13 +3150,26 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
 
     await setRunStatus(runId, "generating_images", "Kapak görseli üretiliyor");
     const coverPage = pageMap.pages.find((p) => p.pageType === "cover");
-    const coverImageSrc = await generateCoverImage(
-      runId,
-      outline.bookTitle,
-      outline.subject,
-      coverPage,
-      ctx.run.qualityMode,
-    );
+    // A rerun keeps the previous run's cover (same art style); a cover that
+    // can't be generated (live E2E: image quota exhausted) no longer fails
+    // the run - the book then gets its designed, picture-less cover.
+    const previousCover = resumeFromRunId ? await loadRunCover(resumeFromRunId, ctx.run.artStyle) : null;
+    let coverImageSrc = previousCover ?? "";
+    if (!previousCover) {
+      try {
+        coverImageSrc = await generateCoverImage(
+          runId,
+          outline.bookTitle,
+          outline.subject,
+          coverPage,
+          ctx.run.qualityMode,
+          artStyle,
+          characterSheets,
+        );
+      } catch {
+        coverImageSrc = "";
+      }
+    }
 
     for (const outlineUnit of unitsToGenerate) {
       const n = outlineUnit.number;
@@ -2434,6 +3241,16 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // the literal page-for-page mirror - skipped here for the same
         // reason the complementary side is already exempt from it (it's
         // independently-written new material, not a page-for-page mirror).
+        if (isPictureBook) {
+          return {
+            unitNumber: outlineUnit.number,
+            title: outlineUnit.title,
+            studentBookPages: await generatePictureBookPages(runId, genContext, pictureBookPageCount),
+            workbookPages: [],
+            glossary: [],
+          };
+        }
+
         const effectiveSkeleton = ctx.run.unitSkeleton?.length
           ? ctx.run.unitSkeleton
           : ctx.run.isFromScratch
@@ -2495,15 +3312,18 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         generated = await buildUnit();
 
         await setRunStatus(runId, "reviewing", `Ünite ${n}/${totalUnits}: kalite ve dil kontrolü yapılıyor`);
+        // Faz 6: a story isn't a lesson - structure and skill-balance
+        // reviews would demand exercises it shouldn't have.
+        const notApplicable = Promise.resolve({ unitNumber: n, passed: true, issues: [] as string[] });
         const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
-          reviewUnit(runId, n, outlineUnit, generated),
+          isPictureBook ? notApplicable : reviewUnit(runId, n, outlineUnit, generated),
           reviewLanguageAccuracy(runId, n, outline.contentLanguage, generated),
           reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, generated),
           reviewContentSafety(runId, n, generated),
-          reviewSkillBalance(runId, n, generated),
+          isPictureBook ? notApplicable : reviewSkillBalance(runId, n, generated),
         ]);
 
-        const structuralIssues = validateUnitStructure(generated);
+        const structuralIssues = validateUnitStructure(generated, layoutMetrics);
         const issues = [
           ...structureReview.issues,
           ...languageReview.issues,
@@ -2533,12 +3353,12 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // accepting "still broken after one retry" the way the AI-review
         // path does.
         for (let attempt = 0; attempt < 2; attempt++) {
-          const remainingIssues = validateUnitStructure(generated);
+          const remainingIssues = validateUnitStructure(generated, layoutMetrics);
           if (!remainingIssues.length) break;
           await setRunStatus(
             runId,
             "generating",
-            `Ünite ${n}/${totalUnits}: eksik görsel/cevap anahtarı için yeniden üretiliyor (${attempt + 1}/2)`,
+            `Ünite ${n}/${totalUnits}: eksik görsel, cevap anahtarı veya sayfaya sığmayan içerik için yeniden üretiliyor (${attempt + 1}/2)`,
           );
           generated = await buildUnit(remainingIssues);
         }
@@ -2547,7 +3367,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // imagePrompt after both retry attempts above - fill any remaining
         // gap deterministically rather than shipping a page whose exercise
         // needs a picture it will never get.
-        generated = applyFallbackImagePrompts(generated);
+        generated = normalizeLayoutTemplates(applyFallbackImagePrompts(generated));
       } else {
         await setRunStatus(runId, "generating", `Ünite ${n}/${totalUnits}: ${variantCount} varyant üretiliyor`);
 
@@ -2562,11 +3382,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
             // deterministic answerKey/imagePrompt check, not just whichever
             // one gets picked.
             for (let attempt = 0; attempt < 2; attempt++) {
-              const remainingIssues = validateUnitStructure(unit);
+              const remainingIssues = validateUnitStructure(unit, layoutMetrics);
               if (!remainingIssues.length) break;
               unit = await buildUnit(remainingIssues);
             }
-            unit = applyFallbackImagePrompts(unit);
+            unit = normalizeLayoutTemplates(applyFallbackImagePrompts(unit));
             const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
               reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),
@@ -2574,7 +3394,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               reviewContentSafety(runId, n, unit),
               reviewSkillBalance(runId, n, unit),
             ]);
-            const structuralIssues = validateUnitStructure(unit);
+            const structuralIssues = validateUnitStructure(unit, layoutMetrics);
             return {
               index: i,
               unit,
@@ -2672,6 +3492,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         if (idx !== -1) {
           previousUnitVersions[change.unitNumber] = units[idx];
           units[idx] = regenerated;
+          await replaceCheckpoint(runId, change.unitNumber, regenerated);
         }
       }
       contentApprovalRound++;
@@ -2804,7 +3625,16 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
 
     await setRunStatus(runId, "generating_images", "Ünite görselleri üretiliyor");
     for (const generated of units) {
-      const unitImages = await generateUnitImages(runId, generated, ctx.run.qualityMode);
+      // Reuse the previous run's pictures for a unit carried over unchanged.
+      const carriedOver = resumeFromRunId && resumedUnits[generated.unitNumber] && JSON.stringify(resumedUnits[generated.unitNumber]) === JSON.stringify(generated);
+      const unitImages = await generateUnitImages(
+        runId,
+        generated,
+        ctx.run.qualityMode,
+        artStyle,
+        characterSheets,
+        carriedOver && resumeFromRunId ? await loadRunPageImages(resumeFromRunId) : {},
+      );
       Object.assign(pageImages, unitImages);
     }
 
@@ -2834,6 +3664,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           decision.unitNumber,
           decision.pageNumber,
           ctx.run.qualityMode,
+          artStyle,
+          characterSheets,
         );
         if (newUrl) pageImages[decision.pageNumber] = newUrl;
       }
@@ -2843,6 +3675,111 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
 
     await setRunStatus(runId, "reviewing_coherence", "Kitap geneli tutarlılık kontrol ediliyor");
     await reviewBookCoherence(runId, outline, units);
+
+    // Faz 3 "Görsel sayfa denetimi": grade the book as it actually prints,
+    // fix weak pages automatically, grade again.
+    await setRunStatus(runId, "reviewing_design", "Dizilmiş sayfalar sanat yönetmeni gözüyle denetleniyor");
+    const referenceUrls = await prepareReferencePages(
+      runId,
+      ctx.run.referencePageUrls ?? null,
+      ctx.run.isFromScratch ? null : ctx.upload.blobUrl,
+      pageMap.pages
+        .filter((pg) => pg.pageType === "unit_opener" || pg.pageType === "content" || pg.pageType === "exercise")
+        .map((pg) => pg.pageNumber)
+        .filter((_, i, all) => i % Math.max(1, Math.floor(all.length / MAX_REFERENCE_PAGES)) === 0),
+    );
+    const proofContentsUnits = buildContentsUnits(outline);
+    const designChangedUnits = new Set<number>();
+    for (let round = 1; round <= MAX_DESIGN_ROUNDS; round++) {
+      let fixesApplied = 0;
+      for (const variant of requestedVariants) {
+        await setRunStatus(
+          runId,
+          "reviewing_design",
+          `Sayfa tasarım denetimi (${round}. tur): ${variant.replace("_", " ")} sayfaları puanlanıyor`,
+        );
+        const proof = await renderProofPages(runId, round, variant, {
+          bookTitle: outline.bookTitle,
+          level: outline.level,
+          units,
+          contentsUnits: proofContentsUnits,
+          coverImageSrc,
+          pageImages,
+          isbn: ctx.project.isbn,
+          trimSize: ctx.project.trimSize,
+          sourceStyle,
+          contentLanguage: outline.contentLanguage,
+          designTheme: ctx.run.designTheme,
+          bookKind: ctx.run.bookKind,
+        });
+        const graded: Awaited<ReturnType<typeof reviewProofBatch>> = [];
+        for (let i = 0; i < proof.length; i += DESIGN_BATCH_SIZE) {
+          // A refused/failed grading call skips that batch - the review is
+          // advisory and must never take the finished book down with it.
+          try {
+            graded.push(...(await reviewProofBatch(runId, round, variant, proof.slice(i, i + DESIGN_BATCH_SIZE), referenceUrls)));
+          } catch {
+            // ungraded pages simply don't appear in the design report
+          }
+        }
+        if (round === MAX_DESIGN_ROUNDS) continue; // last round reports only
+
+        const field = VARIANT_PAGE_FIELD[variant];
+        for (const { page: proofPage, grade, fix, rowId } of graded) {
+          if (fix === "none" || fix === "regenerate_image" || proofPage.unitNumber === null || proofPage.pageIndex === null) continue;
+          const unitIdx = units.findIndex((u) => u.unitNumber === proofPage.unitNumber);
+          const pages = unitIdx >= 0 ? units[unitIdx][field] : undefined;
+          const target = pages?.[proofPage.pageIndex];
+          if (!pages || !target) continue;
+          let next: GeneratedPage = target;
+          const hasImage = !!pageImages[target.imageOverrideSourcePageNumber ?? target.sourcePageNumber];
+          let action = fix;
+          // A suggested template the renderer would refuse for this content
+          // (live E2E: one-block pages switched to a sidebar layout printed an
+          // empty sidebar) is not applied - the page gets more content instead.
+          if (action === "switch_template" && (!grade.suggestedTemplate || resolvePageTemplate({ ...target, layoutTemplate: grade.suggestedTemplate }, hasImage) !== grade.suggestedTemplate)) {
+            action = "enrich_content";
+          }
+          if (action === "switch_template" && grade.suggestedTemplate) {
+            next = { ...target, layoutTemplate: grade.suggestedTemplate };
+          } else if (action === "enrich_content") {
+            try {
+              next = await rewritePageToFit(runId, target, grade.issues.map((i) => i.description), outline.contentLanguage, "enrich");
+              // Live E2E 2026-10-09: enriched pages with pictures ran onto a
+              // second page. Only keep a rewrite that still fits.
+              const fit = estimateTemplateFit(next, resolvePageTemplate(next, hasImage, { isUnitFirstPage: proofPage.pageIndex === 0, metrics: layoutMetrics }), hasImage, proofPage.pageIndex === 0, layoutMetrics);
+              if (fit.needed > fit.available) continue;
+            } catch {
+              continue;
+            }
+          } else if (action === "shorten_text") {
+            const problems = [
+              ...(proofPage.pageCount > 1 ? [`The page's content ran onto ${proofPage.pageCount - 1} extra printed page(s).`] : []),
+              ...grade.issues.map((i) => i.description),
+            ];
+            try {
+              next = await rewritePageToFit(runId, target, problems, outline.contentLanguage);
+            } catch {
+              continue; // keep the page as it was
+            }
+          }
+          if (next === target) continue;
+          units[unitIdx] = {
+            ...units[unitIdx],
+            [field]: pages.map((pg, i) => (i === proofPage.pageIndex ? next : pg)),
+          };
+          await markDesignFixApplied(rowId, action);
+          designChangedUnits.add(units[unitIdx].unitNumber);
+          fixesApplied++;
+        }
+      }
+      if (!fixesApplied) break;
+    }
+    // Persist the design-fixed units so a rerun resumes the improved pages.
+    for (const unitNumber of designChangedUnits) {
+      const unit = units.find((u) => u.unitNumber === unitNumber);
+      if (unit && unitNumber < MIDTERM_UNIT_NUMBER) await replaceCheckpoint(runId, unitNumber, unit);
+    }
 
     // Faz "İnsan-onaylı üretim hattı": the real process's "Final Sign-Off ->
     // Files to Print" gate - a distinct, narrow checkpoint after every
@@ -2877,6 +3814,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       ctx.project.trimSize,
       sourceStyle,
       outline.contentLanguage,
+      ctx.run.designTheme,
+      ctx.run.bookKind,
     );
 
     await setRunStatus(runId, "done", "Tamamlandı");

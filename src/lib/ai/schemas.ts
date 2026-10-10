@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LAYOUT_TEMPLATE_IDS } from "@/lib/design/layouts";
 
 // ---- Source page map ----
 // A page-by-page blueprint of the uploaded source PDF. This is what lets the
@@ -248,6 +249,26 @@ export const contentBlockSchema = z.object({
   layout: blockLayoutSchema
     .optional()
     .describe("Not set by the writer - leave unset. Only ever filled in later by the layout editor's save flow."),
+  // Faz 1 "Tasarım sistemi": optional presentation fields - all additive, so
+  // every block generated before they existed renders exactly as before.
+  callout: z
+    .enum(["tip", "did_you_know", "remember", "grammar"])
+    .optional()
+    .describe(
+      'Set ONLY for a short side note that should print as a coloured callout box (a study tip, a fun fact, a "remember" rule, a compact grammar rule). Keep its body under ~300 characters. Leave unset for normal blocks.',
+    ),
+  dialogue: z
+    .array(z.object({ speaker: z.string(), line: z.string() }))
+    .optional()
+    .describe(
+      "If this block IS a conversation between named characters, the turns in order (speaker name + what they say). Prints as speech bubbles. Do not also repeat the conversation in body - body is then a one-line lead-in only.",
+    ),
+  table: z
+    .object({ headers: z.array(z.string()).min(1), rows: z.array(z.array(z.string())).min(1) })
+    .optional()
+    .describe(
+      "For grammar/conjugation/comparison content that is naturally a table (e.g. subject | verb | example). Each row has exactly one cell per header.",
+    ),
 });
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 
@@ -336,6 +357,20 @@ export const generatedPageSchema = z.object({
   // image was dragged AWAY to another page). Absent (undefined, the common
   // case) means unchanged default behavior.
   imageOverrideSourcePageNumber: z.number().nullable().optional(),
+  // Faz 1 "Tasarım sistemi": which page design this page uses - see
+  // src/lib/design/layouts.ts. Absent on every page generated before
+  // templates existed; renderers then use the original single-column flow.
+  // Faz 2 "Karakter tutarlılığı": which style-bible characters appear in
+  // this page's illustration (their ids) - their reference sheets are sent
+  // to the image model so they look the same on every page.
+  imageCharacters: z
+    .array(z.string())
+    .optional()
+    .describe("If imagePrompt shows any of the style bible's characters, their ids (e.g. [\"leo\", \"ayse\"]). Empty/unset when no recurring character is in the picture."),
+  layoutTemplate: z
+    .enum(LAYOUT_TEMPLATE_IDS)
+    .optional()
+    .describe("The page design template for this page - pick from the catalogue given in the instructions."),
 });
 export type GeneratedPage = z.infer<typeof generatedPageSchema>;
 
@@ -377,8 +412,43 @@ export const styleBibleSchema = z.object({
   terminology: z
     .array(z.object({ term: z.string(), definition: z.string() }))
     .describe("Key recurring terms/formulas and their definitions, to keep usage consistent across units"),
+  // Faz 2 "Karakter tutarlılığı": the recurring cast, described precisely
+  // enough to draw. Each one gets a reference sheet image that every later
+  // illustration of them is generated from (see generateCharacterSheets).
+  characters: z
+    .array(
+      z.object({
+        id: z.string().describe("Short stable slug, e.g. 'leo'"),
+        name: z.string(),
+        role: z.string().describe("Who they are in the book, e.g. 'student, 11, curious and funny'"),
+        visualDescription: z
+          .string()
+          .describe(
+            "Exact, drawable appearance: age, build, skin tone, face shape, hair (colour, length, style), eye colour, distinguishing features. Concrete enough that two artists would draw the same person.",
+          ),
+        outfit: z.string().describe("Their usual clothes with specific colours, kept the same throughout the book"),
+      }),
+    )
+    .max(6)
+    .optional()
+    .describe("The book's recurring characters (2-6). Empty when the subject has no recurring cast."),
 });
 export type StyleBible = z.infer<typeof styleBibleSchema>;
+export type StyleBibleCharacter = NonNullable<StyleBible["characters"]>[number];
+
+// Faz 6 "Resimli hikâye kitabı": one spread-worthy moment per page.
+export const pictureBookPagesSchema = z.object({
+  pages: z.array(
+    z.object({
+      text: z.string().describe("The words printed on this page - short, read-aloud friendly, age-appropriate (usually 1-3 sentences)"),
+      imagePrompt: z
+        .string()
+        .describe("The full-page illustration for this moment: setting, action, expressions, composition. Leave calm space at the bottom for the text."),
+      imageCharacters: z.array(z.string()).describe("Ids of the style-bible characters visible in the illustration"),
+    }),
+  ),
+});
+export type PictureBookPages = z.infer<typeof pictureBookPagesSchema>;
 
 export const unitReviewSchema = z.object({
   unitNumber: z.number(),

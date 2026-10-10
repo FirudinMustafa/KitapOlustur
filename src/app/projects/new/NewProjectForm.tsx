@@ -6,6 +6,7 @@ import { upload } from "@vercel/blob/client";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  BookHeartIcon,
   BookOpenIcon,
   FileUpIcon,
   Loader2Icon,
@@ -19,6 +20,11 @@ import {
 } from "lucide-react";
 import { isValidIsbn13 } from "@/lib/isbn";
 import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
+import { DEFAULT_DESIGN_THEME, type DesignThemeId } from "@/lib/design/themes";
+import { ThemePicker } from "@/components/app/theme-picker";
+import { PictureBookForm } from "./PictureBookForm";
+import { ArtStylePicker } from "@/components/app/art-style-picker";
+import { DEFAULT_ART_STYLE, type ArtStyleId } from "@/lib/ai/art-styles";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,7 +110,13 @@ function SectionCard({
   );
 }
 
-export function NewProjectForm({ initialMode }: { initialMode: "source" | "scratch" }) {
+export function NewProjectForm({
+  initialMode,
+  pictureBookPrefill,
+}: {
+  initialMode: "source" | "scratch" | "picturebook";
+  pictureBookPrefill?: { idea: string; brief: string };
+}) {
   const router = useRouter();
 
   const [items, setItems] = useState<NiceToHaveItem[]>([]);
@@ -133,12 +145,29 @@ export function NewProjectForm({ initialMode }: { initialMode: "source" | "scrat
   // Yapılandırılabilir Trim Size: varsayılan "a4" - mevcut davranış aynen
   // kalıyor, proje oluşturulduktan sonra değiştirilemez (ISBN gibi).
   const [trimSize, setTrimSize] = useState<TrimSizeId>("a4");
+  // Faz 1 "Tasarım sistemi": the PDF/reader theme - can be switched later
+  // without regenerating (AI-free reassembly).
+  const [designTheme, setDesignTheme] = useState<DesignThemeId>(DEFAULT_DESIGN_THEME);
+  // Faz 2 "İllüstrasyon stili": one art direction for every picture.
+  const [artStyle, setArtStyle] = useState<ArtStyleId>(DEFAULT_ART_STYLE);
+  // Faz 3 "Referans kitapla kıyas": optional sample pages of a published
+  // book; every typeset page is graded against them.
+  const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
+
+  async function uploadReferences(): Promise<string[]> {
+    const urls: string[] = [];
+    for (const f of referenceFiles.slice(0, 5)) {
+      const blob = await upload(f.name, f, { access: "public", handleUploadUrl: "/api/blob/upload", contentType: f.type });
+      urls.push(blob.url);
+    }
+    return urls;
+  }
   // "Sıfırdan Kitap" modu (2026-09-22): "scratch" hides the file upload
   // block entirely and skips the @vercel/blob/client upload() call, showing
   // a unit-count + optional brief instead (see handleSubmit's branch and
   // POST /api/projects's `mode: "scratch"` handling). The initial mode comes
   // from ?mode=scratch (home page "Sıfırdan tasarla" tile).
-  const [mode, setMode] = useState<"source" | "scratch">(initialMode);
+  const [mode, setMode] = useState<"source" | "scratch" | "picturebook">(initialMode);
   const [brief, setBrief] = useState("");
   const [file, setFile] = useState<File | null>(null);
   // Faz "Toplu/seri üretim": when more than one file is selected, the form
@@ -265,6 +294,9 @@ export function NewProjectForm({ initialMode }: { initialMode: "source" | "scrat
             unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
             spacedRepetition,
             trimSize,
+            designTheme,
+            artStyle,
+            referencePageUrls: await uploadReferences(),
           }),
         });
         if (!res.ok) {
@@ -316,6 +348,9 @@ export function NewProjectForm({ initialMode }: { initialMode: "source" | "scrat
             unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
             spacedRepetition,
             trimSize,
+            designTheme,
+            artStyle,
+            referencePageUrls: await uploadReferences(),
           }),
         });
         if (!res.ok) {
@@ -370,6 +405,9 @@ export function NewProjectForm({ initialMode }: { initialMode: "source" | "scrat
           unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
           spacedRepetition,
           trimSize,
+          designTheme,
+          artStyle,
+          referencePageUrls: await uploadReferences(),
           blobUrl: blob.url,
           filename: file.name,
         }),
@@ -392,19 +430,22 @@ export function NewProjectForm({ initialMode }: { initialMode: "source" | "scrat
     <PageContainer size="narrow" className="pb-32">
       <PageHeader
         eyebrow="Yeni kitap"
-        title={mode === "source" ? "Kaynaktan yepyeni bir kitap" : "Sıfırdan bir kitap tasarla"}
+        title={mode === "source" ? "Kaynaktan yepyeni bir kitap" : mode === "picturebook" ? "Resimli hikâye kitabı" : "Sıfırdan bir kitap tasarla"}
         description={
           mode === "source"
             ? "Herhangi bir konudaki ders kitabının PDF'ini yükle; konusu ve dili otomatik tespit edilip aynı yapıdan yola çıkan özgün bir versiyonu üretilecek."
-            : "Kaynak bir PDF olmadan, sadece konu, seviye ve ünite sayısı vererek yapay zekânın sıfırdan tasarladığı özgün bir ders kitabı üret."
+            : mode === "picturebook"
+              ? "Bir hikâye fikrinden; tutarlı karakterleri, tam sayfa illüstrasyonları ve baskıya hazır dosyalarıyla bir çocuk kitabı üret."
+              : "Kaynak bir PDF olmadan, sadece konu, seviye ve ünite sayısı vererek yapay zekânın sıfırdan tasarladığı özgün bir ders kitabı üret."
         }
       />
 
-      <div role="tablist" aria-label="Üretim modu" className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border bg-muted/50 p-1.5">
+      <div role="tablist" aria-label="Üretim modu" className="mt-6 grid grid-cols-1 gap-2 rounded-2xl border bg-muted/50 p-1.5 sm:grid-cols-3">
         {(
           [
             { value: "source", label: "Kaynak PDF'ten", hint: "PDF yükle", Icon: FileUpIcon },
             { value: "scratch", label: "Sıfırdan", hint: "Konu ver, üretelim", Icon: WandSparklesIcon },
+            { value: "picturebook", label: "Hikâye kitabı", hint: "Resimli çocuk kitabı", Icon: BookHeartIcon },
           ] as const
         ).map(({ value, label, hint, Icon }) => (
           <button
@@ -436,6 +477,9 @@ export function NewProjectForm({ initialMode }: { initialMode: "source" | "scrat
         ))}
       </div>
 
+      {mode === "picturebook" ? (
+        <PictureBookForm initialIdea={pictureBookPrefill?.idea} initialBrief={pictureBookPrefill?.brief} />
+      ) : (
       <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-5">
         <SectionCard
           icon={mode === "source" ? FileUpIcon : SparklesIcon}
@@ -672,6 +716,40 @@ export function NewProjectForm({ initialMode }: { initialMode: "source" | "scrat
           </Field>
 
           <Field>
+            <FieldLabel>Tasarım teması</FieldLabel>
+            <ThemePicker value={designTheme} onChange={setDesignTheme} />
+            <FieldDescription>
+              Kapak, renkler, yazı tipi ve kutu stilleri. Kitap hazır olduktan sonra da yapay zekâ maliyeti olmadan
+              değiştirilebilir.
+            </FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>İllüstrasyon stili</FieldLabel>
+            <ArtStylePicker value={artStyle} onChange={setArtStyle} />
+            <FieldDescription>
+              Kapak, karakter çizimleri ve tüm sayfa görselleri bu stilde üretilir. Karakterler önce bir kez çizilir ve
+              senin onayından sonra bütün kitapta aynı görünür.
+            </FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>Referans kitap sayfaları (opsiyonel)</FieldLabel>
+            <FileDropzone
+              files={referenceFiles}
+              onFilesChange={(files) => setReferenceFiles(files.slice(0, 5))}
+              accept="application/pdf,image/png,image/jpeg"
+              multiple
+              title="Ulaşmak istediğin kitabın sayfalarını bırak"
+              hint="PDF veya PNG/JPG, en fazla 5 dosya"
+            />
+            <FieldDescription>
+              Her dizilmiş sayfa bu örneklere göre puanlanır ve aradaki fark raporlanır. Boş bırakılırsa yüklenen kaynak
+              kitabın sayfaları ölçüt alınır. İçerik kopyalanmaz, sadece tasarım kalitesi kıyaslanır.
+            </FieldDescription>
+          </Field>
+
+          <Field>
             <FieldLabel>Baskı boyutu</FieldLabel>
             <RadioGroup value={trimSize} onValueChange={(v) => setTrimSize(v as TrimSizeId)} className="sm:grid-cols-3">
               {(Object.keys(TRIM_SIZES) as TrimSizeId[]).map((id) => (
@@ -848,6 +926,7 @@ export function NewProjectForm({ initialMode }: { initialMode: "source" | "scrat
           </div>
         </div>
       </form>
+      )}
     </PageContainer>
   );
 }

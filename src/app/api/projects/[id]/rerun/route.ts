@@ -9,6 +9,7 @@ import { requireProjectOwner } from "@/lib/auth";
 import { bookTypesWithContent, type ContentBookType } from "@/lib/content-book-types";
 import { BOOK_TYPE_LABELS } from "@/lib/run-status";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
+import { isDesignThemeId } from "@/lib/design/themes";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
@@ -47,6 +48,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   // units instead of the count the user originally chose.
   const unitLimit =
     Number.isInteger(body?.unitLimit) && body.unitLimit > 0 ? body.unitLimit : (previousRun?.unitLimit ?? null);
+
+  // Faz 1 "Tasarım sistemi": a theme switch is an AI-free reassembly -
+  // the same content re-typeset with another theme.
+  const designThemeOverride = isDesignThemeId(body?.designTheme) ? body.designTheme : undefined;
 
   const bookTypes: string[] | null =
     Array.isArray(body?.bookTypes) && body.bookTypes.every((t: unknown) => typeof t === "string")
@@ -103,6 +108,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         // union of what the project already had and what was just requested.
         requestedBookTypes: Array.from(new Set([...(assembleSource.requestedBookTypes ?? []), ...bookTypes])),
         variantCount: assembleSource.variantCount,
+        designTheme: designThemeOverride ?? assembleSource.designTheme,
+        artStyle: assembleSource.artStyle,
+        bookKind: assembleSource.bookKind,
+        characterSheets: assembleSource.characterSheets,
       })
       .returning();
 
@@ -140,6 +149,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       // kaybetmesine yol açıyordu.
       unitSkeleton: previousRun?.unitSkeleton ?? null,
       spacedRepetition: previousRun?.spacedRepetition ?? false,
+      designTheme: designThemeOverride ?? previousRun?.designTheme ?? null,
+      artStyle: previousRun?.artStyle ?? null,
+      referencePageUrls: previousRun?.referencePageUrls ?? null,
+      bookKind: previousRun?.bookKind ?? null,
+      pictureBookPageCount: previousRun?.pictureBookPageCount ?? null,
     })
     .returning();
 

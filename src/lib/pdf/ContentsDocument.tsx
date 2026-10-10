@@ -61,19 +61,25 @@ export function ContentsPageContent({
   variant = "student_book",
   units,
   trimSize = "a4",
+  palette: paletteOverride,
+  bleed = 0,
 }: {
+  /** Faz 4: print bleed on each edge. */
+  bleed?: number;
   bookTitle: string;
   level: string;
   variant?: Variant;
   units: CourseUnitSummary[];
   trimSize?: TrimSizeId;
+  /** The book's resolved theme/source palette - defaults to the classic one. */
+  palette?: (typeof PALETTE)[Variant];
 }) {
-  const palette = PALETTE[variant];
+  const palette = paletteOverride ?? PALETTE[variant];
 
   return (
     <Page
-      size={{ width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt }}
-      style={styles.page}
+      size={{ width: TRIM_SIZES[trimSize].widthPt + 2 * bleed, height: TRIM_SIZES[trimSize].heightPt + 2 * bleed }}
+      style={[styles.page, bleed ? { padding: 44 + bleed } : {}]}
     >
       <View style={[styles.headerBand, { backgroundColor: palette.primaryDark }]}>
         <Svg viewBox="0 0 600 140" style={styles.headerDecoration}>
@@ -114,7 +120,7 @@ export function ContentsPageContent({
         </View>
       ))}
 
-      <View style={styles.footer} fixed>
+      <View style={[styles.footer, bleed ? { left: 44 + bleed, right: 44 + bleed, bottom: (styles.footer.bottom as number) + bleed } : {}]} fixed>
         <Text>{bookTitle} · Contents</Text>
         <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </View>

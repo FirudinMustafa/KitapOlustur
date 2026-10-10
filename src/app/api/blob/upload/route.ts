@@ -15,7 +15,8 @@ export async function POST(request: Request) {
       body,
       request,
       onBeforeGenerateToken: async () => ({
-        allowedContentTypes: ["application/pdf"],
+        // PNG/JPEG: Faz 3 reference pages (sample pages of a published book).
+        allowedContentTypes: ["application/pdf", "image/png", "image/jpeg"],
         maximumSizeInBytes: 200 * 1024 * 1024,
         addRandomSuffix: true,
       }),

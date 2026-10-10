@@ -1,3 +1,4 @@
+import { TRIM_SIZES } from "@/lib/pdf/page-geometry";
 import { notFound } from "next/navigation";
 import { isUuid } from "@/lib/uuid";
 import { auth } from "@clerk/nextjs/server";
@@ -68,6 +69,9 @@ export default async function BookReaderPage({
       logoUrl={run.userLogoUrl}
       logoPosition={run.logoPosition}
       paletteColors={(run.paletteColors as string[] | null) ?? undefined}
+      designTheme={run.designTheme}
+      pageRenderUrls={(book.pageRenderUrls as string[] | null) ?? undefined}
+      pageAspect={TRIM_SIZES[project.trimSize].widthPt / TRIM_SIZES[project.trimSize].heightPt}
     />
   );
 }

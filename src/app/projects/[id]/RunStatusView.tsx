@@ -16,6 +16,16 @@ import { Input } from "@/components/ui/input";
 import { checkPrintReadiness } from "@/lib/print-readiness";
 import { PERSONA_LABELS, type PersonaReviewSummary } from "@/lib/personas";
 import { DeleteButton } from "@/components/app/delete-button";
+import { ThemePicker } from "@/components/app/theme-picker";
+import type { CharacterSheet, CoverMockup, PrintReport } from "@/db/schema";
+import dynamic from "next/dynamic";
+
+// Faz 5: WebGL - client only.
+const Book3DMockup = dynamic(() => import("@/components/book/Book3DMockup"), { ssr: false });
+import { CharacterApproval } from "./CharacterApproval";
+import { DesignQualityPanel } from "./DesignQualityPanel";
+import type { DesignReviewSummary } from "@/lib/design/design-summary";
+import { resolveDesignTheme, type DesignThemeId } from "@/lib/design/themes";
 
 type ListeningAudioEntry = { blockRef: string; script: string; audioUrl?: string };
 export type GeneratedUnitContent = { unitNumber: number; listeningAudio?: ListeningAudioEntry[] };
@@ -26,6 +36,11 @@ type GeneratedBook = {
   markdown: string | null;
   pdfBlobUrl: string | null;
   epubBlobUrl?: string | null;
+  // Faz 4: print interior (bleed, no cover) + cover wrap.
+  printPdfBlobUrl?: string | null;
+  coverSpreadBlobUrl?: string | null;
+  printReport?: PrintReport | null;
+  coverMockup?: CoverMockup | null;
   content?: GeneratedUnitContent[] | null;
 };
 
@@ -88,6 +103,8 @@ type Run = {
   pendingImageReview?: PendingImageReview[] | null;
   coverImageUrl?: string | null;
   pageImageUrls?: Record<number, string> | null;
+  designTheme?: string | null;
+  characterSheets?: CharacterSheet[] | null;
 };
 
 type OutlineUnit = { number: number; title: string; level: string };
@@ -159,6 +176,8 @@ type ProjectData = {
   // persona rozetleri (bkz. src/lib/personas.ts) - içerik onayı ekranında
   // her ünitenin altında "✓ Dil Denetçisi" gibi sign-off'lar göstermek için.
   unitReviewSummary?: PersonaReviewSummary[];
+  // Faz 3: art-director grades of the typeset pages (page_design_reviews).
+  designReview?: DesignReviewSummary | null;
 };
 
 const TERMINAL_STATUSES = new Set(["done", "failed", "changes_requested"]);
@@ -228,6 +247,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [submittingLogo, setSubmittingLogo] = useState(false);
   const [assembleTypes, setAssembleTypes] = useState<Set<string>>(new Set());
+  // Faz 1 "Tasarım sistemi": re-typeset the finished book in another theme.
+  const [themeChoice, setThemeChoice] = useState<DesignThemeId>(resolveDesignTheme(initial.run?.designTheme).id);
+  const [retheming, setRetheming] = useState(false);
   const [assembling, setAssembling] = useState(false);
   const [selectingVariant, setSelectingVariant] = useState(false);
   const [feedbackRating, setFeedbackRating] = useState<string>("");
@@ -532,6 +554,25 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
       toast.error(networkErrorMessage(err));
     } finally {
       setAssembling(false);
+    }
+  }
+
+  async function handleRetheme() {
+    const bookTypes = Array.from(new Set(data.books.map((b) => b.bookType)));
+    if (!bookTypes.length) return;
+    setRetheming(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/rerun`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookTypes, designTheme: themeChoice }),
+      });
+      if (res.ok) await refresh();
+      else toast.error(await responseErrorMessage(res));
+    } catch (err) {
+      toast.error(networkErrorMessage(err));
+    } finally {
+      setRetheming(false);
     }
   }
 
@@ -869,6 +910,10 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
+      {run?.status === "awaiting_character_approval" && !!run.characterSheets?.length && (
+        <CharacterApproval projectId={projectId} sheets={run.characterSheets} waitingSince={run.updatedAt} onDone={refresh} />
+      )}
+
       {run?.status === "awaiting_logo_upload" && (
         <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
@@ -1192,6 +1237,10 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
+      {data.designReview && (run?.status === "awaiting_final_approval" || run?.status === "done") && (
+        <DesignQualityPanel summary={data.designReview} />
+      )}
+
       {run?.status === "awaiting_final_approval" && (
         <div className="relative mt-5 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
@@ -1269,6 +1318,39 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             className="mt-3"
           >
             {assembling ? "Başlatılıyor…" : "Seçilenleri derle"}
+          </Button>
+        </div>
+      )}
+
+      {run?.status === "done" && data.books.some((b) => b.coverMockup) && (
+        <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
+          <h2 className="font-heading text-lg font-medium text-foreground">3D önizleme</h2>
+          <p className="mb-3 mt-1 text-xs text-muted-foreground">Basılı kapağın, sırtın ve arka kapağın gerçek ölçülerle 3D görünümü.</p>
+          <Book3DMockup
+            fileName={data.project.name}
+            books={data.books
+              .filter((b) => b.coverMockup)
+              .map((b) => ({ label: BOOK_TYPE_LABELS[b.bookType] ?? b.bookType, mockup: b.coverMockup! }))}
+          />
+        </div>
+      )}
+
+      {run?.status === "done" && data.books.length > 0 && (
+        <div className="mt-5 rounded-2xl border bg-card p-5 text-card-foreground shadow-xs">
+          <h2 className="font-heading text-lg font-medium text-foreground">Tasarım teması</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Aynı içerik, farklı kapak/renk/yazı tipi ve sayfa stiliyle yeniden dizilir - yapay zekâ çağrısı yapılmaz.
+          </p>
+          <div className="mt-3">
+            <ThemePicker value={themeChoice} onChange={setThemeChoice} />
+          </div>
+          <Button
+            onClick={handleRetheme}
+            disabled={retheming || themeChoice === resolveDesignTheme(run.designTheme).id}
+            size="sm"
+            className="mt-3"
+          >
+            {retheming ? "Başlatılıyor…" : "Bu temayla yeniden derle"}
           </Button>
         </div>
       )}
@@ -1387,6 +1469,26 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               </dd>
             </div>
           </dl>
+          {books.some((b) => b.printReport) && (
+            <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+              {books
+                .filter((b) => b.printReport)
+                .map((b) => {
+                  const r = b.printReport!;
+                  return (
+                    <p key={b.id}>
+                      <span className="font-medium text-foreground">{BOOK_TYPE_LABELS[b.bookType] ?? b.bookType}:</span>{" "}
+                      {r.pageCount} iç sayfa · sırt {r.spineMm} mm · {r.bleedMm} mm taşma payı
+                      {r.upscaledImages > 0 &&
+                        ` · ${r.upscaledImages}/${r.images} görsel 300 DPI için ${r.targetWidthPx}px'e büyütüldü (en küçük kaynak ${r.smallestNativeWidthPx}px - büyütme ayrıntı eklemez)`}
+                    </p>
+                  );
+                })}
+              <p className="mt-1">
+                Renkler RGB&apos;dir; CMYK/PDF-X dönüşümünü matbaanız ya da Acrobat&apos;ın baskı ön denetimi yapmalıdır.
+              </p>
+            </div>
+          )}
           {printReadiness.issues.length > 0 && (
             <ul className="mt-3 flex flex-col gap-1 border-t border-border pt-3 text-xs text-muted-foreground">
               {printReadiness.issues.map((issue, i) => (
@@ -1420,6 +1522,24 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
                   {book.pdfBlobUrl && (
                     <Button size="sm" render={<a href={book.pdfBlobUrl} target="_blank" rel="noopener noreferrer" />}>
                       PDF indir
+                    </Button>
+                  )}
+                  {book.printPdfBlobUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      render={<a href={book.printPdfBlobUrl} target="_blank" rel="noopener noreferrer" title="İç sayfalar, 3 mm taşma paylı, kapaksız - matbaaya gönderilecek dosya" />}
+                    >
+                      Baskı PDF (iç sayfalar)
+                    </Button>
+                  )}
+                  {book.coverSpreadBlobUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      render={<a href={book.coverSpreadBlobUrl} target="_blank" rel="noopener noreferrer" title="Arka kapak + sırt + ön kapak tek parça, 3 mm taşma paylı" />}
+                    >
+                      Kapak açılımı
                     </Button>
                   )}
                   {book.epubBlobUrl && (

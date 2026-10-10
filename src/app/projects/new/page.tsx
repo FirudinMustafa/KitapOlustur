@@ -7,6 +7,12 @@ export default async function NewProjectPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { mode } = await searchParams;
-  return <NewProjectForm initialMode={mode === "scratch" ? "scratch" : "source"} />;
+  const { mode, idea, brief } = await searchParams;
+  return (
+    <NewProjectForm
+      initialMode={mode === "scratch" || mode === "picturebook" ? mode : "source"}
+      // Faz 6: Hikâye Stüdyosu's "Kitaba dönüştür" prefills the picture-book form.
+      pictureBookPrefill={{ idea: typeof idea === "string" ? idea : "", brief: typeof brief === "string" ? brief : "" }}
+    />
+  );
 }

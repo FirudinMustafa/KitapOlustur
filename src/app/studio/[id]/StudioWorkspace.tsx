@@ -176,6 +176,20 @@ export function StudioWorkspace({
         <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
           <h1 className="truncate text-lg font-semibold text-foreground">{storyProject.title}</h1>
           <div className="flex shrink-0 items-center gap-2">
+            {/* Faz 6: turn the story worked out here into a printed picture book. */}
+            <Button
+              variant="outline"
+              size="sm"
+              render={
+                <a
+                  href={`/projects/new?mode=picturebook&idea=${encodeURIComponent(storyProject.title)}&brief=${encodeURIComponent(
+                    [...messages].reverse().find((m) => m.role === "assistant")?.content.slice(0, 1500) ?? "",
+                  )}`}
+                />
+              }
+            >
+              Kitaba dönüştür
+            </Button>
             <DeleteButton
               endpoint={`/api/studio/projects/${storyProject.id}`}
               redirectTo="/studio"

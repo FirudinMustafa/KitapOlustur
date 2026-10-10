@@ -28,6 +28,9 @@ import type { Variant } from "@/lib/pdf/BookDocument";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
 import { resolvePageImageUrl } from "@/lib/page-image";
 import { DraggableBox } from "@/components/book/DraggableBox";
+import type { WebLook } from "@/components/book/PageContent";
+import { resolveDesignTheme } from "@/lib/design/themes";
+import { derivePaletteFromColors } from "@/lib/pdf/derive-palette";
 import { BookFlipViewer } from "@/components/book/BookFlipViewer";
 import { Button } from "@/components/ui/button";
 
@@ -70,12 +73,17 @@ export function ArrangementEditor({
   level,
   initialUnits,
   pageImages: initialPageImages,
+  designTheme,
+  paletteColors,
 }: {
   projectId: string;
   bookTitle: string;
   level: string;
   initialUnits: GeneratedUnit[];
   pageImages: Record<number, string>;
+  /** Faz 1: so the flip-book preview shows the book's real page designs. */
+  designTheme?: string | null;
+  paletteColors?: string[];
 }) {
   const [units, setUnits] = useState(initialUnits);
   const [pageArrayField, setPageArrayField] = useState<PageArrayField>("studentBookPages");
@@ -98,6 +106,11 @@ export function ArrangementEditor({
   );
 
   const showAnswerKey = ["workbook", "teacher_book", "test_booklet"].includes(PAGE_ARRAY_TO_VARIANT[pageArrayField]);
+  const theme = resolveDesignTheme(designTheme);
+  const look: WebLook = {
+    theme,
+    palette: derivePaletteFromColors(paletteColors) ?? theme.palettes[PAGE_ARRAY_TO_VARIANT[pageArrayField]],
+  };
 
   const flatPages = useMemo(
     () =>
@@ -448,6 +461,7 @@ export function ArrangementEditor({
             pageImages={pageImages}
             showAnswerKey={showAnswerKey}
             listeningAudioByUnit={(unitNumber) => units.find((u) => u.unitNumber === unitNumber)?.listeningAudio}
+            look={look}
           />
         </aside>
       </div>

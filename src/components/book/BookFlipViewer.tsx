@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import type { GeneratedPage, ListeningAudio } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT } from "@/lib/pdf/page-geometry";
 import { resolvePageImageUrl } from "@/lib/page-image";
-import { PageView } from "@/components/book/PageContent";
+import { PageView, type WebLook } from "@/components/book/PageContent";
 import { Button } from "@/components/ui/button";
 import "./flipbook.css";
 
@@ -41,7 +41,10 @@ export function BookFlipViewer({
   pageImages,
   showAnswerKey,
   listeningAudioByUnit,
+  look,
 }: {
+  /** Faz 1: the book's theme, so templated pages flip the way they print. */
+  look?: WebLook;
   flatPages: FlipPageEntry[];
   pageImages: Record<number, string>;
   showAnswerKey: boolean;
@@ -58,8 +61,8 @@ export function BookFlipViewer({
   // whenever its content changes, so React never patches nodes the library
   // has moved.
   const contentKey = useMemo(
-    () => hashString(JSON.stringify([flatPages.map((e) => [e.unitNumber, e.index, e.page]), pageImages, showAnswerKey])),
-    [flatPages, pageImages, showAnswerKey],
+    () => hashString(JSON.stringify([flatPages.map((e) => [e.unitNumber, e.index, e.page]), pageImages, showAnswerKey, look?.theme.id])),
+    [flatPages, pageImages, showAnswerKey, look],
   );
 
   // Verified live (2026-09-28): page-flip.js (react-pageflip's engine)
@@ -131,6 +134,9 @@ export function BookFlipViewer({
                   showAnswerKey={showAnswerKey}
                   imageUrl={resolvePageImageUrl(page, pageImages)}
                   listeningAudio={listeningAudioByUnit(unitNumber)}
+                  look={look}
+                  unit={{ unitNumber, title: unitTitle }}
+                  isUnitFirstPage={index === 0}
                 />
               </div>
             </div>

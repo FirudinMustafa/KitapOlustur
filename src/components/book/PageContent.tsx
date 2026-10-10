@@ -6,6 +6,15 @@ import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geom
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { blocksForRender } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
+import { isChecklistBlock, resolvePageTemplate } from "@/lib/design/layouts";
+import { CALLOUT_STYLES, DESIGN_THEMES, speakerColorMap } from "@/lib/design/themes";
+import { TemplatedPage, lookFonts, type WebLook } from "./TemplatedPage";
+
+export type { WebLook } from "./TemplatedPage";
+
+// The look every book had before themes existed - used when a caller passes
+// no theme (older runs, Dizilim before it learned about themes).
+export const CLASSIC_WEB_LOOK: WebLook = { theme: DESIGN_THEMES.classic, palette: DESIGN_THEMES.classic.palettes.student_book };
 
 // Extracted from BookReader.tsx ("Dizilim → Gerçek Kitap") so the merged
 // Dizilim flip-book preview can render the exact same real content (all
@@ -261,41 +270,145 @@ const BLOCK_KIND_LABELS: Record<ContentBlock["kind"], string> = {
   reference: "Kaynak",
 };
 
+// Faz 1 "Tasarım sistemi": speech bubbles - same speaker colours/sides as
+// the PDF (src/lib/pdf/blocks.tsx DialogueView).
+function DialogueBubbles({ lines }: { lines: NonNullable<ContentBlock["dialogue"]> }) {
+  const colors = speakerColorMap(lines);
+  const order = [...colors.keys()];
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      {lines.map((l, i) => {
+        const color = colors.get(l.speaker) ?? "#2563eb";
+        const right = order.indexOf(l.speaker) % 2 === 1;
+        return (
+          <div key={i} className={right ? "flex flex-row-reverse items-start gap-2" : "flex items-start gap-2"}>
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: color }}>
+              {l.speaker.trim().charAt(0).toUpperCase()}
+            </span>
+            <div className="max-w-[78%] rounded-xl border bg-gray-50 px-2.5 py-1.5 text-sm text-gray-800" style={{ borderColor: color }}>
+              <div className="text-[9px] font-bold" style={{ color }}>
+                {l.speaker}
+              </div>
+              {l.line}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BlockTable({ table, primary, light }: { table: NonNullable<ContentBlock["table"]>; primary: string; light: string }) {
+  return (
+    <div className="mt-2 overflow-hidden rounded border text-xs" style={{ borderColor: primary }}>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr style={{ background: primary }}>
+            {table.headers.map((h, i) => (
+              <th key={i} className="px-2 py-1 text-left font-bold text-white">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, r) => (
+            <tr key={r} style={{ background: r % 2 ? light : "#ffffff" }} className="text-gray-800">
+              {table.headers.map((_, c) => (
+                <td key={c} className="px-2 py-1 align-top">
+                  {row[c] ?? ""}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function BlockView({
   block,
   showAnswerKey,
   audio,
+  look,
+  frameless,
 }: {
   block: ContentBlock;
   showAnswerKey: boolean;
   audio?: ListeningAudio;
+  /** Faz 1: when set, the block is drawn in the book's theme (templated pages) instead of the per-kind colours. */
+  look?: WebLook;
+  frameless?: boolean;
 }) {
   const color = BLOCK_COLORS[block.kind];
+  const callout = block.callout ? CALLOUT_STYLES[block.callout] : null;
+  const checklist = isChecklistBlock(block);
+  const themed = look
+    ? callout
+      ? { background: callout.bg, border: `1px solid ${callout.border}`, borderRadius: Math.max(6, look.theme.radius) }
+      : frameless
+        ? {}
+        : look.theme.cardStyle === "tinted"
+          ? { background: look.palette.primaryLight, borderRadius: look.theme.radius }
+          : look.theme.cardStyle === "outlined"
+            ? { border: "1px solid #d1d5db", borderRadius: look.theme.radius }
+            : { borderLeft: `3px solid ${look.palette.primary}` }
+    : null;
+  const primary = look?.palette.primary ?? color.text;
+  const light = look?.palette.primaryLight ?? color.bg;
   return (
     <section
-      className="mb-4 rounded-lg border-l-4 p-4 text-card-foreground"
-      style={{ borderLeftColor: color.border, backgroundColor: color.bg }}
+      className={themed ? (frameless && !callout ? "mb-3" : "mb-3 p-3") : "mb-4 rounded-lg border-l-4 p-4 text-card-foreground"}
+      style={themed ?? { borderLeftColor: callout?.border ?? color.border, backgroundColor: callout?.bg ?? color.bg }}
     >
-      <span
-        className="mb-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase"
-        style={{ color: color.text, backgroundColor: "#ffffff" }}
-      >
-        {BLOCK_KIND_LABELS[block.kind]}
-      </span>
-      <h3 className="font-heading font-semibold" style={{ color: color.text }}>
-        {block.heading}
-      </h3>
-      {block.body.split(/\n+/).map((p, i) => (
-        <p key={i} className="font-reading mt-1 text-sm leading-relaxed text-foreground/80">
+      {callout ? (
+        <span className="mb-1 inline-block text-[9px] font-bold tracking-widest" style={{ color: callout.text }}>
+          {callout.label}
+        </span>
+      ) : !look ? (
+        <span
+          className="mb-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase"
+          style={{ color: color.text, backgroundColor: "#ffffff" }}
+        >
+          {BLOCK_KIND_LABELS[block.kind]}
+        </span>
+      ) : null}
+      {block.heading && (
+        <h3
+          className={look ? "font-bold" : "font-heading font-semibold"}
+          style={{
+            color: callout?.text ?? (look ? (look.theme.cardStyle === "accent-bar" ? undefined : look.palette.primaryDark) : color.text),
+            fontFamily: look ? lookFonts(look).heading : undefined,
+          }}
+        >
+          {block.heading}
+        </h3>
+      )}
+      {block.body.split(/\n+/).filter(Boolean).map((p, i) => (
+        <p key={i} className={look ? "mt-1 leading-relaxed" : "font-reading mt-1 text-sm leading-relaxed text-foreground/80"}>
           {p}
         </p>
       ))}
-      {!!block.items?.length && (
-        <ol className="mt-2 list-decimal pl-5 text-sm text-foreground">
-          {block.items.map((item, i) => (
-            <li key={i}>{itemText(item)}</li>
+      {!!block.dialogue?.length && <DialogueBubbles lines={block.dialogue} />}
+      {block.table && <BlockTable table={block.table} primary={primary} light={light} />}
+      {checklist ? (
+        <ul className="mt-2 flex flex-col gap-1.5 text-sm">
+          {block.items!.map((item, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className="mt-0.5 inline-block h-3 w-3 shrink-0 rounded-[3px] border-[1.5px]" style={{ borderColor: primary }} />
+              {itemText(item)}
+            </li>
           ))}
-        </ol>
+        </ul>
+      ) : (
+        !!block.items?.length && (
+          <ol className={look ? "mt-2 list-decimal pl-5" : "mt-2 list-decimal pl-5 text-sm text-foreground"}>
+            {block.items.map((item, i) => (
+              <li key={i}>{itemText(item)}</li>
+            ))}
+          </ol>
+        )
       )}
       {block.interactive && <InteractiveExerciseView exercise={block.interactive} />}
       {showAnswerKey && !!block.answerKey?.length && <AnswerKeyToggle answerKey={block.answerKey} />}
@@ -439,14 +552,48 @@ export function PageView({
   imageUrl,
   listeningAudio,
   renderBlockWrapper,
+  look,
+  unit,
+  isUnitFirstPage = false,
 }: {
   page: GeneratedPage;
   showAnswerKey: boolean;
   imageUrl?: string;
   listeningAudio?: ListeningAudio[];
   renderBlockWrapper?: BlockWrapper;
+  /** Faz 1: the book's theme; templated pages fall back to the classic look without it. */
+  look?: WebLook;
+  /** Needed to draw a templated page's unit heading/running header. */
+  unit?: { unitNumber: number; title: string };
+  isUnitFirstPage?: boolean;
 }) {
   const hasLayout = page.blocks.some((b) => b.layout) || !!page.imageLayout;
+  // Faz 1 "Tasarım sistemi": same decision BookDocument.tsx makes, so the
+  // reader shows the page the way it prints. Dizilim's block-dragging mode
+  // (renderBlockWrapper) always gets the free-form canvas below.
+  const template = !hasLayout && !renderBlockWrapper && unit ? resolvePageTemplate(page, !!imageUrl, { isUnitFirstPage }) : "standard";
+  if (template !== "standard" && unit) {
+    const pageLook = look ?? CLASSIC_WEB_LOOK;
+    return (
+      <TemplatedPage
+        template={template}
+        page={page}
+        unit={unit}
+        isUnitFirstPage={isUnitFirstPage}
+        imageUrl={imageUrl}
+        look={pageLook}
+        renderBlock={(block, { frameless }) => (
+          <BlockView
+            block={block}
+            showAnswerKey={showAnswerKey}
+            audio={listeningAudio?.find((a) => a.blockRef === block.heading)}
+            look={pageLook}
+            frameless={frameless}
+          />
+        )}
+      />
+    );
+  }
   if (hasLayout) {
     return (
       <PositionedPage
@@ -464,9 +611,6 @@ export function PageView({
         <figure className="mb-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- externally-hosted (Vercel Blob) generated image, no build-time optimization to gain */}
           <img src={imageUrl} alt="" className="h-64 w-full rounded-md bg-muted/40 object-contain" />
-          {page.imagePrompt && (
-            <figcaption className="mt-1 text-xs italic text-muted-foreground">{page.imagePrompt}</figcaption>
-          )}
         </figure>
       )}
       {page.blocks.map((block, i) => (

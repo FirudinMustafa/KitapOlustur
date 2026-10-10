@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { isDesignThemeId } from "@/lib/design/themes";
+import { isArtStyleId } from "@/lib/ai/art-styles";
 import { auth } from "@clerk/nextjs/server";
 import { start } from "workflow/api";
 import { eq } from "drizzle-orm";
@@ -52,6 +54,10 @@ export async function POST(request: Request) {
     unitLimit: unitLimitRaw,
     styleProfileId: styleProfileIdRaw,
     qualityMode: qualityModeRaw,
+    designTheme: designThemeRaw,
+    artStyle: artStyleRaw,
+    referencePageUrls: referencePageUrlsRaw,
+    pictureBookPageCount: pictureBookPageCountRaw,
     targetLanguage: targetLanguageRaw,
     unitSkeleton: unitSkeletonRaw,
     spacedRepetition: spacedRepetitionRaw,
@@ -69,7 +75,10 @@ export async function POST(request: Request) {
   // generateOutlineFromBrief in workflows/book-pipeline.tsx). unitLimit
   // doubles as "how many units to generate" in this mode, so it's required
   // here instead of optional.
-  const isFromScratch = modeRaw === "scratch";
+  // Faz 6 "Resimli hikâye kitabı": a from-scratch run that writes one
+  // illustrated story (a single unit) instead of a coursebook.
+  const isPictureBook = modeRaw === "picturebook";
+  const isFromScratch = modeRaw === "scratch" || isPictureBook;
 
   if (typeof name !== "string" || !name.trim()) {
     return NextResponse.json({ error: "Proje adı gerekli" }, { status: 400 });
@@ -82,7 +91,7 @@ export async function POST(request: Request) {
   if (!isFromScratch && !isOwnBlobUrl(blobUrl)) {
     return NextResponse.json({ error: "Geçersiz PDF adresi" }, { status: 400 });
   }
-  if (isFromScratch && (!Number.isInteger(unitLimitRaw) || unitLimitRaw <= 0)) {
+  if (isFromScratch && !isPictureBook && (!Number.isInteger(unitLimitRaw) || unitLimitRaw <= 0)) {
     return NextResponse.json({ error: "Ünite sayısı gerekli" }, { status: 400 });
   }
   if (Number.isInteger(unitLimitRaw) && unitLimitRaw > MAX_UNIT_LIMIT) {
@@ -145,6 +154,15 @@ export async function POST(request: Request) {
 
   const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
   const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";
+  // Faz 1 "Tasarım sistemi": unknown/absent ids store null (= classic).
+  const designTheme = isDesignThemeId(designThemeRaw) ? designThemeRaw : isPictureBook ? "storybook" : null;
+  // Faz 2 "İllüstrasyon stili": unknown/absent ids store null (= textbook).
+  const artStyle = isArtStyleId(artStyleRaw) ? artStyleRaw : null;
+  // Faz 3: sample pages of a published book to grade the design against -
+  // only this app's own Blob uploads (they're fetched server-side).
+  const referencePageUrls = Array.isArray(referencePageUrlsRaw)
+    ? referencePageUrlsRaw.filter((u: unknown): u is string => typeof u === "string" && isOwnBlobUrl(u)).slice(0, 5)
+    : [];
   const targetLanguage =
     typeof targetLanguageRaw === "string" && targetLanguageRaw.trim() ? targetLanguageRaw.trim() : null;
 
@@ -179,14 +197,21 @@ export async function POST(request: Request) {
       selectedNiceToHaveIds: niceToHaveIds,
       styleProfileId,
       qualityMode,
+      designTheme,
+      artStyle,
+      referencePageUrls: referencePageUrls.length ? referencePageUrls : null,
       targetLanguage,
       customNotes: typeof customNotes === "string" && customNotes.trim() ? customNotes.trim() : null,
-      unitLimit,
-      requestedBookTypes,
-      variantCount,
-      unitSkeleton,
-      spacedRepetition,
+      unitLimit: isPictureBook ? 1 : unitLimit,
+      requestedBookTypes: isPictureBook ? ["student_book"] : requestedBookTypes,
+      variantCount: isPictureBook ? 1 : variantCount,
+      unitSkeleton: isPictureBook ? null : unitSkeleton,
+      spacedRepetition: isPictureBook ? false : spacedRepetition,
       isFromScratch,
+      bookKind: isPictureBook ? "picturebook" : null,
+      pictureBookPageCount: isPictureBook
+        ? Math.min(32, Math.max(8, Number.isInteger(pictureBookPageCountRaw) ? pictureBookPageCountRaw : 16))
+        : null,
       scratchBrief: isFromScratch && typeof briefRaw === "string" && briefRaw.trim() ? briefRaw.trim() : null,
     })
     .returning();

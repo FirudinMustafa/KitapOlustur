@@ -57,6 +57,8 @@ export default async function ArrangementPage({ params }: { params: Promise<{ id
       level={outline?.level ?? ""}
       initialUnits={book.content as GeneratedUnit[]}
       pageImages={(run.pageImageUrls as Record<number, string> | null) ?? {}}
+      designTheme={run.designTheme}
+      paletteColors={(run.paletteColors as string[] | null) ?? undefined}
     />
   );
 }

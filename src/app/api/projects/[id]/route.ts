@@ -13,6 +13,7 @@ import {
   originalityChecks,
   teacherFeedback,
   unitReviews,
+  pageDesignReviews,
 } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { computeUnitProgress } from "@/lib/unit-progress";
@@ -20,6 +21,7 @@ import { summarizeUnitReviewsForPersona } from "@/lib/personas";
 import type { OutlineDocument } from "@/app/projects/[id]/RunStatusView";
 import { fetchCoverDimensions } from "@/lib/cover-dimensions";
 import { bookTypesWithContent } from "@/lib/content-book-types";
+import { summarizeDesignReviews } from "@/lib/design/design-summary";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -46,6 +48,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "Proje bulunamadı" }, { status: 404 });
   }
 
+  // Faz 3: started alongside the queries below, awaited after them.
+  const designRowsPromise = run
+    ? db.query.pageDesignReviews.findMany({ where: eq(pageDesignReviews.runId, run.id) })
+    : Promise.resolve([]);
   const [outline, books, reviews, coherenceReview, originalityRows, feedback, allUnitReviews, coverDimensions] = run
     ? await Promise.all([
         db.query.extractedOutlines.findFirst({ where: eq(extractedOutlines.runId, run.id) }),
@@ -115,6 +121,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     unitReviewSummary,
     coverDimensions,
     contentBookTypes: bookTypesWithContent(books[0]?.content as GeneratedUnit[] | null),
+    designReview: summarizeDesignReviews(await designRowsPromise),
   });
 }
 
