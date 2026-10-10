@@ -49,3 +49,6 @@ next-env.d.ts
 /.agents
 /.claude
 skills-lock.json
+
+# local workflow world state (see next.config.ts)
+/.workflow-data/

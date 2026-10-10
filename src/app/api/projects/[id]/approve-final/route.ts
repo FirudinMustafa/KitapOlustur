@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { resumeHook } from "workflow/api";
 import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
+import { resumeApprovalHook } from "@/lib/approval";
 
 // Faz "İnsan-onaylı üretim hattı" (ROADMAP.md) - resumes the final
 // sign-off gate, right before assembly. Rejecting doesn't fail the run
@@ -31,11 +31,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const body = await request.json().catch(() => ({}));
   const approved = body?.approved === true;
 
-  try {
-    await resumeHook(`final-approval:${run.id}`, { approved });
-  } catch {
-    return NextResponse.json({ error: "Onay gönderilemedi (token geçersiz veya süresi doldu)" }, { status: 404 });
-  }
+  const failure = await resumeApprovalHook(run.id, `final-approval:${run.id}`, { approved });
+  if (failure) return failure;
 
   await logHumanDecision(run.id, `awaiting_final_approval`, approved ? "Nihai onay verildi - kitaplar derleniyor" : "Nihai onayda değişiklik istendi");
 

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { resumeHook } from "workflow/api";
 import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
+import { resumeApprovalHook } from "@/lib/approval";
 import { isOwnBlobUrl } from "@/lib/blob-url";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -34,11 +34,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "Geçersiz logo adresi" }, { status: 400 });
   }
 
-  try {
-    await resumeHook(`logo-upload:${run.id}`, { logoUrl, skip });
-  } catch {
-    return NextResponse.json({ error: "Onay gönderilemedi (token geçersiz veya süresi doldu)" }, { status: 404 });
-  }
+  const failure = await resumeApprovalHook(run.id, `logo-upload:${run.id}`, { logoUrl, skip });
+  if (failure) return failure;
 
   await logHumanDecision(run.id, `awaiting_logo_upload`, skip || !logoUrl ? "Logo adımı atlandı" : "Kendi logosu yüklendi");
 

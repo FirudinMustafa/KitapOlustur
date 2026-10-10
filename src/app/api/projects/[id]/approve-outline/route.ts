@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { resumeHook } from "workflow/api";
 import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
+import { resumeApprovalHook } from "@/lib/approval";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
@@ -33,11 +33,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         ? body.unitLimit
         : null;
 
-  try {
-    await resumeHook(`outline-approval:${run.id}`, { approved, unitLimit });
-  } catch {
-    return NextResponse.json({ error: "Onay gönderilemedi (token geçersiz veya süresi doldu)" }, { status: 404 });
-  }
+  const failure = await resumeApprovalHook(run.id, `outline-approval:${run.id}`, { approved, unitLimit });
+  if (failure) return failure;
 
   await logHumanDecision(run.id, `awaiting_outline_approval`, approved ? `Dizelge onaylandı${unitLimit ? ` (ilk ${unitLimit} ünite)` : ""}` : "Dizelge reddedildi - üretim iptal");
 
