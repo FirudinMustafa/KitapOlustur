@@ -8,7 +8,7 @@ import { launchRun } from "@/lib/start-run";
 import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
-import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
+import { isTrimSizeChoice, type TrimSizeChoice } from "@/lib/pdf/page-geometry";
 import { isOwnBlobUrl } from "@/lib/blob-url";
 
 const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_booklet"];
@@ -123,8 +123,7 @@ export async function POST(request: Request) {
 
   // Yapılandırılabilir Trim Size: shared across the whole batch - falls back
   // to "a4" (unchanged existing behavior) for anything missing/invalid.
-  const trimSize: TrimSizeId =
-    typeof trimSizeRaw === "string" && trimSizeRaw in TRIM_SIZES ? (trimSizeRaw as TrimSizeId) : "a4";
+  const trimSize: TrimSizeChoice = isTrimSizeChoice(trimSizeRaw) ? trimSizeRaw : "a4";
 
   const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
   const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";

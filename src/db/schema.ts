@@ -98,7 +98,7 @@ export const qualityModeEnum = pgEnum("quality_mode", ["draft", "final"]);
 // default "a4" so existing behavior (and existing rows, once backfilled) is
 // unchanged unless a user picks a real print trim size at project creation.
 // See src/lib/pdf/page-geometry.ts's TRIM_SIZES for the pt dimensions.
-export const trimSizeEnum = pgEnum("trim_size", ["a4", "6x9", "7x10"]);
+export const trimSizeEnum = pgEnum("trim_size", ["a4", "6x9", "7x10", "220x280", "auto"]);
 
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),

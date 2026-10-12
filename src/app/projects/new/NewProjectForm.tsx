@@ -19,7 +19,7 @@ import {
   WandSparklesIcon,
 } from "lucide-react";
 import { isValidIsbn13 } from "@/lib/isbn";
-import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
+import { TRIM_SIZES, TRIM_SIZE_CHOICES, type TrimSizeChoice } from "@/lib/pdf/page-geometry";
 import { DEFAULT_DESIGN_THEME, type DesignThemeId } from "@/lib/design/themes";
 import { ThemePicker } from "@/components/app/theme-picker";
 import { PictureBookForm } from "./PictureBookForm";
@@ -144,7 +144,8 @@ export function NewProjectForm({
   const [spacedRepetition, setSpacedRepetition] = useState(false);
   // Yapılandırılabilir Trim Size: varsayılan "a4" - mevcut davranış aynen
   // kalıyor, proje oluşturulduktan sonra değiştirilemez (ISBN gibi).
-  const [trimSize, setTrimSize] = useState<TrimSizeId>("a4");
+  // "auto" (the uploaded book's own size) makes sense only with a source PDF.
+  const [trimSize, setTrimSize] = useState<TrimSizeChoice>("auto");
   // Faz 1 "Tasarım sistemi": the PDF/reader theme - can be switched later
   // without regenerating (AI-free reassembly).
   const [designTheme, setDesignTheme] = useState<DesignThemeId>(DEFAULT_DESIGN_THEME);
@@ -168,6 +169,7 @@ export function NewProjectForm({
   // POST /api/projects's `mode: "scratch"` handling). The initial mode comes
   // from ?mode=scratch (home page "Sıfırdan tasarla" tile).
   const [mode, setMode] = useState<"source" | "scratch" | "picturebook">(initialMode);
+  const effectiveTrimSize: TrimSizeChoice = mode === "scratch" && trimSize === "auto" ? "a4" : trimSize;
   const [brief, setBrief] = useState("");
   const [file, setFile] = useState<File | null>(null);
   // Faz "Toplu/seri üretim": when more than one file is selected, the form
@@ -298,7 +300,7 @@ export function NewProjectForm({
             unitLimit: unitCount,
             unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
             spacedRepetition,
-            trimSize,
+            trimSize: effectiveTrimSize,
             designTheme,
             artStyle,
             referencePageUrls: await uploadReferences(),
@@ -352,7 +354,7 @@ export function NewProjectForm({
             unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
             unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
             spacedRepetition,
-            trimSize,
+            trimSize: effectiveTrimSize,
             designTheme,
             artStyle,
             referencePageUrls: await uploadReferences(),
@@ -409,7 +411,7 @@ export function NewProjectForm({
           unitLimit: unitLimit.trim() ? Number(unitLimit.trim()) : null,
           unitSkeleton: useSkeleton && unitSkeleton.length ? unitSkeleton : null,
           spacedRepetition,
-          trimSize,
+          trimSize: effectiveTrimSize,
           designTheme,
           artStyle,
           referencePageUrls: await uploadReferences(),
@@ -756,13 +758,13 @@ export function NewProjectForm({
 
           <Field>
             <FieldLabel>Baskı boyutu</FieldLabel>
-            <RadioGroup value={trimSize} onValueChange={(v) => setTrimSize(v as TrimSizeId)} className="sm:grid-cols-3">
-              {(Object.keys(TRIM_SIZES) as TrimSizeId[]).map((id) => (
+            <RadioGroup value={effectiveTrimSize} onValueChange={(v) => setTrimSize(v as TrimSizeChoice)} className="sm:grid-cols-3">
+              {TRIM_SIZE_CHOICES.filter((id) => id !== "auto" || mode !== "scratch").map((id) => (
                 <label key={id} className={OPTION_TILE}>
                   <RadioGroupItem value={id} className="mt-0.5" />
                   <span className="font-medium">
-                    {TRIM_SIZES[id].label}
-                    {id === "a4" && <span className="block text-xs font-normal text-muted-foreground">varsayılan</span>}
+                    {id === "auto" ? "Kaynak kitapla aynı" : TRIM_SIZES[id].label}
+                    {id === "auto" && <span className="block text-xs font-normal text-muted-foreground">yüklenen kitabın boyutuna en yakın baskı boyutu</span>}
                   </span>
                 </label>
               ))}

@@ -9,7 +9,7 @@ import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
 import { bookPipelineWorkflow } from "@workflows/book-pipeline";
 import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
-import { TRIM_SIZES, type TrimSizeId } from "@/lib/pdf/page-geometry";
+import { isTrimSizeChoice, type TrimSizeChoice } from "@/lib/pdf/page-geometry";
 import { isOwnBlobUrl } from "@/lib/blob-url";
 import { listProjectsWithLatestRun } from "@/lib/project-list";
 
@@ -149,8 +149,7 @@ export async function POST(request: Request) {
   // Yapılandırılabilir Trim Size: falls back to "a4" (unchanged existing
   // behavior) for anything missing/invalid - chosen once at project
   // creation, no edit-after-creation UI.
-  const trimSize: TrimSizeId =
-    typeof trimSizeRaw === "string" && trimSizeRaw in TRIM_SIZES ? (trimSizeRaw as TrimSizeId) : "a4";
+  const trimSize: TrimSizeChoice = isTrimSizeChoice(trimSizeRaw) ? trimSizeRaw : "a4";
 
   const styleProfileId = typeof styleProfileIdRaw === "string" && styleProfileIdRaw ? styleProfileIdRaw : null;
   const qualityMode = qualityModeRaw === "draft" ? "draft" : "final";

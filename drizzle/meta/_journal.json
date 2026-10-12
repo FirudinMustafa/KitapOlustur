@@ -281,6 +281,13 @@
       "when": 1791624689998,
       "tag": "0039_run_events",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791800475677,
+      "tag": "0040_trim_size_auto",
+      "breakpoints": true
     }
   ]
 }

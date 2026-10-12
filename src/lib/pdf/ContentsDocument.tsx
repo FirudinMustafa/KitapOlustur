@@ -12,6 +12,9 @@ export type CourseUnitSummary = {
   keyTerms: string;
   objectives: string;
   level: string;
+  /** Faz B5: skills-matrix columns (outline grammar/skills), when the outline has them. */
+  grammar?: string;
+  skills?: string;
   /** Faz B5: printed page range of the unit ("pp. 10-17"), filled by renderBookFitted. */
   pages?: { from: number; to: number };
 };
@@ -38,6 +41,11 @@ const styles = StyleSheet.create({
   colKeyTerms: { width: "22%", paddingRight: 6 },
   colObjectives: { width: "22%", paddingRight: 6 },
   colLevel: { width: "21%" },
+  // skills-matrix layout
+  mxTitle: { width: "21%", paddingRight: 6 },
+  mxVocab: { width: "21%", paddingRight: 6 },
+  mxGrammar: { width: "19%", paddingRight: 6 },
+  mxSkills: { width: "30%" },
 
   unitBadge: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   unitBadgeText: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9.5, color: "#ffffff" },
@@ -82,6 +90,8 @@ export function ContentsPageContent({
   palette?: (typeof PALETTE)[Variant];
 }) {
   const palette = paletteOverride ?? PALETTE[variant];
+  // A coursebook's contents page: vocabulary, grammar and skills per unit.
+  const matrix = units.some((u) => u.grammar || u.skills);
 
   return (
     <Page
@@ -100,10 +110,20 @@ export function ContentsPageContent({
 
       <View style={[styles.tableHeaderRow, { backgroundColor: palette.primary }]}>
         <Text style={[styles.tableHeaderCell, styles.colUnit]}>UNIT</Text>
-        <Text style={[styles.tableHeaderCell, styles.colTitle]}>TITLE & TOPIC</Text>
-        <Text style={[styles.tableHeaderCell, styles.colKeyTerms]}>KEY TERMS</Text>
-        <Text style={[styles.tableHeaderCell, styles.colObjectives]}>OBJECTIVES</Text>
-        <Text style={[styles.tableHeaderCell, styles.colLevel]}>LEVEL</Text>
+        <Text style={[styles.tableHeaderCell, matrix ? styles.mxTitle : styles.colTitle]}>TITLE & TOPIC</Text>
+        {matrix ? (
+          <>
+            <Text style={[styles.tableHeaderCell, styles.mxVocab]}>VOCABULARY</Text>
+            <Text style={[styles.tableHeaderCell, styles.mxGrammar]}>GRAMMAR</Text>
+            <Text style={[styles.tableHeaderCell, styles.mxSkills]}>SKILLS</Text>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.tableHeaderCell, styles.colKeyTerms]}>KEY TERMS</Text>
+            <Text style={[styles.tableHeaderCell, styles.colObjectives]}>OBJECTIVES</Text>
+            <Text style={[styles.tableHeaderCell, styles.colLevel]}>LEVEL</Text>
+          </>
+        )}
       </View>
 
       {units.map((unit, i) => (
@@ -118,13 +138,23 @@ export function ContentsPageContent({
             </View>
             {unit.pages ? <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 7.5, color: palette.primaryDark, marginTop: 3 }}>{pageRangeLabel(unit.pages)}</Text> : null}
           </View>
-          <View style={styles.colTitle}>
+          <View style={matrix ? styles.mxTitle : styles.colTitle}>
             <Text style={[styles.cellTitle, { color: palette.primaryDark }]}>{unit.title}</Text>
             <Text style={styles.cellTopic}>{unit.topic}</Text>
           </View>
-          <Text style={[styles.cellText, styles.colKeyTerms]}>{unit.keyTerms}</Text>
-          <Text style={[styles.cellText, styles.colObjectives]}>{unit.objectives}</Text>
-          <Text style={[styles.cellText, styles.colLevel]}>{unit.level}</Text>
+          {matrix ? (
+            <>
+              <Text style={[styles.cellText, styles.mxVocab]}>{unit.keyTerms}</Text>
+              <Text style={[styles.cellText, styles.mxGrammar]}>{unit.grammar ?? ""}</Text>
+              <Text style={[styles.cellText, styles.mxSkills]}>{unit.skills ?? unit.objectives}</Text>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.cellText, styles.colKeyTerms]}>{unit.keyTerms}</Text>
+              <Text style={[styles.cellText, styles.colObjectives]}>{unit.objectives}</Text>
+              <Text style={[styles.cellText, styles.colLevel]}>{unit.level}</Text>
+            </>
+          )}
         </View>
       ))}
 

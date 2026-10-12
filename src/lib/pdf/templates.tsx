@@ -137,7 +137,7 @@ export function TemplatedPageBody(props: TemplateProps) {
       // each band, and a page whose content outgrows the plan was already
       // sent to another template by resolvePageTemplate.
       const pictures = imageSrcs ?? (imageSrc ? [imageSrc] : []);
-      const { bands, pictureScale, contentHeight } = planZones(page, pictures.length, !!heading, {
+      const { bands, pictureScale, textScale, contentHeight } = planZones(page, pictures.length, !!heading, {
         width: pageSize.width,
         height: pageSize.height,
         bodySize: look.theme.bodySize,
@@ -147,6 +147,7 @@ export function TemplatedPageBody(props: TemplateProps) {
         <>
           {heading}
           <SectionKicker text={sectionKicker} look={look} />
+          <View style={{ fontSize: look.theme.bodySize * textScale }}>
           {bands.map((band, i) => {
             if (band.kind === "pictures") {
               const h = pictureHeight(band.height);
@@ -217,6 +218,7 @@ export function TemplatedPageBody(props: TemplateProps) {
               </View>
             );
           })}
+          </View>
           <GlossaryGrid glossary={page.glossary} look={look} columns={3} />
         </>
       );

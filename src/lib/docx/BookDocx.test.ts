@@ -117,3 +117,28 @@ describe("buildDocx", () => {
     expect(xml).not.toContain("Key terms");
   });
 });
+
+describe("buildDocx - content added after the audit", () => {
+  it("keeps dialogues, tables and puzzle grids", async () => {
+    const unit = makeUnit({
+      studentBookPages: [
+        {
+          sourcePageNumber: 1,
+          pageType: "content",
+          unitNumber: 1,
+          blocks: [
+            { kind: "explanation", heading: "At the shop", body: "", dialogue: [{ speaker: "Ann", line: "Can I help you?" }], table: { headers: ["I", "you"], rows: [["am", "are"]] } },
+            { kind: "practice", heading: "Unscramble", body: "", items: ["a pet"], answerKey: ["kitten"], activity: { type: "unscramble" } },
+            { kind: "practice", heading: "Find the words", body: "", items: ["cat", "dog"], answerKey: ["cat", "dog"], activity: { type: "wordsearch" } },
+          ],
+        },
+      ],
+    });
+    const xml = await documentXml(await buildDocx({ bookTitle: "B", variant: "student_book", units: [unit], level: "A1", contentsUnits }));
+    expect(xml).toContain("Ann: ");
+    expect(xml).toContain("Can I help you?");
+    expect(xml).toContain(">you<");
+    expect(xml).not.toContain(">1. a pet<"); // printed as an unscramble line, not a plain item
+    expect((xml.match(/<w:tbl>/g) ?? []).length).toBeGreaterThanOrEqual(3); // contents, table, word search grid
+  });
+});

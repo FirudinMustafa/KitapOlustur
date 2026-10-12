@@ -149,7 +149,7 @@ export function TemplatedPage({
       // Web twin of the PDF's source-zones (src/lib/pdf/templates.tsx) -
       // same plan, same block distribution.
       const pictures = imageUrls ?? (imageUrl ? [imageUrl] : []);
-      const { bands, pictureScale, contentHeight } = planZones(page, pictures.length, !!heading, {
+      const { bands, pictureScale, textScale, contentHeight } = planZones(page, pictures.length, !!heading, {
         width: PAGE_WIDTH_PT,
         height: H,
         bodySize: look.theme.bodySize,
@@ -159,6 +159,7 @@ export function TemplatedPage({
         <>
           {heading}
           {kicker}
+          <div style={{ fontSize: look.theme.bodySize * textScale }}>
           {bands.map((band, i) => {
             if (band.kind === "pictures") {
               const h = pictureHeight(band.height);
@@ -222,6 +223,7 @@ export function TemplatedPage({
               </div>
             );
           })}
+          </div>
           {glossaryCards(3)}
         </>
       );

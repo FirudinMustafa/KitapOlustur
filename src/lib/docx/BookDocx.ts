@@ -15,7 +15,8 @@ import type { GeneratedUnit, ContentBlock, GeneratedPage } from "@/lib/ai/schema
 import type { Variant } from "@/lib/pdf/BookDocument";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { VARIANT_LABELS, pagesForVariant, seededShuffle, fetchAsset } from "@/lib/content-html";
-import { resolvePageImageUrl } from "@/lib/page-image";
+import { resolvePageImageUrls } from "@/lib/page-image";
+import { buildCrossword, buildWordSearch, crosswordCells, oddOneOutOptions, scrambleWord } from "@/lib/puzzles";
 import { withUnitGlossary } from "@/lib/unit-glossary";
 import { itemText } from "@/lib/item-text";
 
@@ -95,14 +96,86 @@ function renderInteractiveParagraphs(block: ContentBlock, showAnswerKey: boolean
 // mechanism for absolute-positioned text frames. Layout only affects the PDF
 // renderer (src/lib/pdf/BookDocument.tsx) and the web reader's preview
 // (BookReader.tsx) - DOCX always renders every block in plain reading order.
+const cell = (text: string, bold = false) => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text, bold })] })] });
+const grid = (rows: string[][]) =>
+  new Table({ rows: rows.map((r) => new TableRow({ children: r.map((c) => cell(c)) })) });
+
+// Audit 2026-10-12: dialogues, tables, callouts and every activity format
+// were missing from DOCX - an editor saw only headings, body and items.
+// Puzzles use the same grids as the PDF (src/lib/puzzles.ts).
+function renderActivity(block: ContentBlock): (Paragraph | Table)[] | null {
+  const a = block.activity;
+  const items = block.items ?? [];
+  const answers = block.answerKey ?? [];
+  const numbered = (texts: string[], mark = "") => texts.map((t, i) => new Paragraph({ text: `${mark}${i + 1}. ${t}` }));
+  switch (a?.type) {
+    case "crossword": {
+      const cw = buildCrossword(answers);
+      const rows = crosswordCells(cw).map((r) => r.map((c) => (c ? (c.starts.length ? c.starts.join("/") : " ") : "")));
+      const clue = (dir: "across" | "down", label: string) => {
+        const words = cw.words.filter((w) => w.dir === dir);
+        return words.length
+          ? [new Paragraph({ children: [new TextRun({ text: label, bold: true })] }), ...words.map((w) => new Paragraph({ text: `${w.item + 1} ${itemText(items[w.item] ?? "")}` }))]
+          : [];
+      };
+      return rows.length ? [grid(rows), ...clue("across", "Across"), ...clue("down", "Down")] : null;
+    }
+    case "wordsearch": {
+      const words = answers.length ? answers : items;
+      return [grid(buildWordSearch(words, block.heading).grid), new Paragraph({ text: words.join(" · ") })];
+    }
+    case "unscramble":
+      return items.map((item, i) => new Paragraph({ text: `${i + 1}. ${scrambleWord(answers[i] ?? "", block.heading)}  ________  ${itemText(item)}` }));
+    case "odd_one_out":
+      return items.map((item, i) => new Paragraph({ text: `${i + 1}. ${oddOneOutOptions(item).join("     ")}` }));
+    case "tick_cross":
+      return items.map((item, i) => new Paragraph({ text: `${i + 1}. ${itemText(item)}   ☐` }));
+    case "ordering":
+      return items.map((item) => new Paragraph({ text: `☐ ${itemText(item)}` }));
+    case "match_lines": {
+      const right = seededShuffle(answers, block.heading);
+      return [grid(items.map((item, i) => [`${i + 1} ${itemText(item)}`, `${String.fromCharCode(97 + i)} ${right[i] ? itemText(right[i]) : ""}`]))];
+    }
+    case "picture_label":
+      return numbered(items.map((item, i) => `${a.pictures?.[i]?.emoji ?? ""} ${itemText(item)} ________`.trim()));
+    case "picture_match":
+      return [
+        ...numbered(items.map(itemText)),
+        ...(a.pictures ?? []).map((p, i) => new Paragraph({ text: `${String.fromCharCode(97 + i)}) ${p.emoji ?? ""} ${p.label}` })),
+      ];
+    case "draw_box":
+      return [...numbered(items.map(itemText)), new Paragraph({ text: "[ draw here ]", spacing: { before: 400, after: 400 } })];
+    default:
+      return null;
+  }
+}
+
 function renderBlockParagraphs(block: ContentBlock, showAnswerKey: boolean): (Paragraph | Table)[] {
   const out: (Paragraph | Table)[] = [
     new Paragraph({ text: block.heading, heading: HeadingLevel.HEADING_3, spacing: { before: 200 } }),
   ];
+  if (block.callout) out.push(new Paragraph({ children: [new TextRun({ text: block.callout.replace(/_/g, " ").toUpperCase(), bold: true, size: 16 })] }));
   for (const p of block.body.split(/\n+/).filter(Boolean)) {
     out.push(new Paragraph({ text: p }));
   }
-  if (block.items?.length) {
+  for (const d of block.dialogue ?? []) {
+    out.push(new Paragraph({ children: [new TextRun({ text: `${d.speaker}: `, bold: true }), new TextRun(d.line)] }));
+  }
+  if (block.table) {
+    out.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({ children: block.table.headers.map((h) => cell(h, true)) }),
+          ...block.table.rows.map((row) => new TableRow({ children: block.table!.headers.map((_, c) => cell(row[c] ?? "")) })),
+        ],
+      }),
+    );
+  }
+  if (block.activity?.words?.length) out.push(new Paragraph({ children: [new TextRun({ text: block.activity.words.join("   "), bold: true })] }));
+  const activity = renderActivity(block);
+  if (activity) out.push(...activity);
+  else if (block.items?.length) {
     for (const [i, item] of block.items.entries()) {
       out.push(new Paragraph({ text: `${i + 1}. ${itemText(item)}` }));
     }
@@ -154,6 +227,7 @@ export async function buildDocx(input: {
     new Paragraph({ text: level, spacing: { after: 300 } }),
   ];
 
+  const matrix = contentsUnits.some((u) => u.grammar || u.skills);
   if (contentsUnits.length) {
     children.push(new Paragraph({ text: "Contents", heading: HeadingLevel.HEADING_1, spacing: { before: 200 } }));
     children.push(
@@ -161,20 +235,15 @@ export async function buildDocx(input: {
         width: { size: 100, type: WidthType.PERCENTAGE },
         rows: [
           new TableRow({
-            children: ["Unit", "Title", "Key terms", "Objectives", "Level"].map(
-              (h) => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })] }),
-            ),
+            children: (matrix ? ["Unit", "Title", "Vocabulary", "Grammar", "Skills"] : ["Unit", "Title", "Key terms", "Objectives", "Level"]).map((h) => cell(h, true)),
           }),
           ...contentsUnits.map(
             (u) =>
               new TableRow({
-                children: [
-                  new TableCell({ children: [new Paragraph(String(u.number))] }),
-                  new TableCell({ children: [new Paragraph(u.title)] }),
-                  new TableCell({ children: [new Paragraph(u.keyTerms)] }),
-                  new TableCell({ children: [new Paragraph(u.objectives)] }),
-                  new TableCell({ children: [new Paragraph(u.level)] }),
-                ],
+                children: (matrix
+                  ? [String(u.number), u.title, u.keyTerms, u.grammar ?? "", u.skills ?? u.objectives]
+                  : [String(u.number), u.title, u.keyTerms, u.objectives, u.level]
+                ).map((t) => cell(t)),
               }),
           ),
         ],
@@ -195,8 +264,8 @@ export async function buildDocx(input: {
     );
 
     for (const page of pages) {
-      const imageUrl = resolvePageImageUrl(page, pageImages);
-      if (imageUrl) {
+      // every picture of the page (Faz B3), main picture first
+      for (const [k, imageUrl] of resolvePageImageUrls(page, pageImages).entries()) {
         try {
           const { buffer } = await fetchAsset(imageUrl, "image/png");
           children.push(
@@ -209,12 +278,12 @@ export async function buildDocx(input: {
                   // (see generateReviewedImage in workflows/book-pipeline.tsx).
                   type: "png",
                   data: buffer,
-                  transformation: { width: 400, height: 225 },
+                  transformation: k === 0 ? { width: 400, height: 225 } : { width: 180, height: 180 },
                 }),
               ],
             }),
           );
-          if (page.imagePrompt) {
+          if (k === 0 && page.imagePrompt) {
             children.push(
               new Paragraph({
                 alignment: AlignmentType.CENTER,

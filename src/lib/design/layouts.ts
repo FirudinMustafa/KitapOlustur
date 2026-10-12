@@ -229,20 +229,41 @@ export const ZONE_GAP = 12;
 // The one place a zoned page is measured, shared by the fit estimate and
 // both renderers so they agree: the bands with their blocks, and how far the
 // pictures are scaled down (to at most half their source height) so the
-// text fits beside and between them.
+// text fits beside and between them. A page still too full gets its body
+// text set 10% smaller (textScale), as a dense coursebook page is, before
+// it gives up the source's arrangement.
 export function planZones<B extends BlockLike>(
   page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
   pictureCount: number,
   isUnitFirstPage: boolean,
   m: PageMetrics,
-): { bands: ZonedBand<B>[]; pictureScale: number; contentHeight: number; needed: number } {
-  const cw = m.width - MARGIN_X * 2;
-  const size = m.bodySize;
+): { bands: ZonedBand<B>[]; pictureScale: number; textScale: number; contentHeight: number; needed: number } {
   const contentHeight = m.height - MARGIN_TOP - MARGIN_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0);
-  if (!page.zonePlan) return { bands: [], pictureScale: 1, contentHeight, needed: Infinity };
+  if (!page.zonePlan) return { bands: [], pictureScale: 1, textScale: 1, contentHeight, needed: Infinity };
+  let last = { bands: [] as ZonedBand<B>[], pictureScale: 0.5, textScale: 0.9, contentHeight, needed: Infinity };
+  for (const textScale of [1, 0.9]) {
+    const { bands, neededAt } = measureZones(page, pictureCount, m, contentHeight, textScale);
+    for (const scale of [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
+      const needed = neededAt(scale);
+      if (needed <= contentHeight) return { bands, pictureScale: scale, textScale, contentHeight, needed };
+      last = { bands, pictureScale: scale, textScale, contentHeight, needed };
+    }
+  }
+  return last;
+}
+
+function measureZones<B extends BlockLike>(
+  page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
+  pictureCount: number,
+  m: PageMetrics,
+  contentHeight: number,
+  textScale: number,
+) {
+  const cw = m.width - MARGIN_X * 2;
+  const size = m.bodySize * textScale;
   const height = (b: B, w: number) => estimateBlockHeight(b, w, size, true);
   const column = (blocks: B[], w: number) => blocks.reduce((n, b) => n + height(b, w), 0);
-  const bands = layoutZones(page.zonePlan, page.blocks, pictureCount, (b) => height(b, cw));
+  const bands = layoutZones(page.zonePlan!, page.blocks, pictureCount, (b) => height(b, cw));
   const neededAt = (scale: number) => {
     let needed = glossaryHeight(page, 3);
     for (const band of bands) {
@@ -271,11 +292,7 @@ export function planZones<B extends BlockLike>(
     }
     return needed * (TEMPLATE_SAFETY["source-zones"] ?? 1);
   };
-  for (const scale of [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
-    const needed = neededAt(scale);
-    if (needed <= contentHeight || scale === 0.5) return { bands, pictureScale: scale, contentHeight, needed };
-  }
-  return { bands, pictureScale: 0.5, contentHeight, needed: neededAt(0.5) };
+  return { bands, neededAt };
 }
 
 function zoneFit(page: PageLike, pictureCount: number, isUnitFirstPage: boolean, m: PageMetrics): { needed: number; available: number } {

@@ -78,7 +78,7 @@ import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
 import { translateAiError } from "@/lib/ai/error-messages";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant, type BookDocumentSourceStyle } from "@/lib/pdf/BookDocument";
-import { BLEED_PT, TRIM_SIZES, pixelsForPrint, spineWidthPt, type TrimSizeId } from "@/lib/pdf/page-geometry";
+import { BLEED_PT, TRIM_SIZES, nearestTrimSize, pixelsForPrint, resolveTrimSize, spineWidthPt, type TrimSizeId } from "@/lib/pdf/page-geometry";
 import { CoverSpreadDocument } from "@/lib/pdf/CoverSpreadDocument";
 import { prepareImageForPrint, prepareImagesForPrint } from "@/lib/pdf/print-images";
 import type { CoverMockup, PrintReport } from "@/db/schema";
@@ -105,7 +105,7 @@ import {
 } from "@/lib/design/page-review";
 import { countPdfPages, forEachRasterizedPage, rasterizePdf } from "@/lib/pdf/rasterize";
 import { pdfPageTexts, slicePdf } from "@/lib/pdf/split";
-import { analyzeSourceLayout, type SourcePageLayout } from "@/lib/source-layout";
+import { analyzeSourceLayout, dominantTrim, type SourcePageLayout } from "@/lib/source-layout";
 import { mergePageMap } from "@/lib/page-map-merge";
 import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeCharactersForPrompt } from "@/lib/ai/characters";
 import type { CharacterSheet } from "@/db/schema";
@@ -496,6 +496,12 @@ async function extractPageMapChunk(
     .map((p) => (transcribe ? p : { ...p, sourceText: texts[p.pageNumber - from] || p.sourceText }));
 }
 
+async function saveProjectTrimSize(projectId: string, trimSize: TrimSizeId) {
+  "use step";
+
+  await db.update(projects).set({ trimSize }).where(eq(projects.id, projectId));
+}
+
 async function saveSourcePageMap(runId: string, pageMap: PageMap) {
   "use step";
 
@@ -541,7 +547,7 @@ async function extractOutline(
               type: "text",
               text: [
                 "Extract the full unit-by-unit structure of this coursebook PDF: book title, academic subject (e.g. 'English Language Teaching', 'Mathematics', 'Physics'), overall level, tone, and target audience.",
-                "For every unit, give its title, level, the exact source page range it spans (derive start/end page numbers from the page map below), learning objectives, and key terms (vocabulary, formulas, or concepts introduced).",
+                "For every unit, give its title, level, the exact source page range it spans (derive start/end page numbers from the page map below), learning objectives, and key terms (vocabulary, formulas, or concepts introduced). For a language book also list each unit's grammar points and its skills work (reading, listening, speaking, writing - what kind of task), as a coursebook's contents page shows them.",
                 // Live E2E 2026-10-09: the generated book shipped under the
                 // source's own (trademarked) series title. The outline drives
                 // a NEW book, so its name must be new too.
@@ -615,7 +621,7 @@ async function generateOutlineFromBrief(
           ? `Additional brief from the user: ${brief}`
           : "The user gave no additional brief - use your own judgment for scope and sequencing.",
         "Give the book a title, academic subject, overall level, tone, and target audience.",
-        `For every one of the ${unitCount} units, give its title, level, learning objectives, and key terms (vocabulary, formulas, or concepts introduced). Sequence units so difficulty progresses sensibly from the first unit to the last.`,
+        `For every one of the ${unitCount} units, give its title, level, learning objectives, and key terms (vocabulary, formulas, or concepts introduced); for a language book also its grammar points and its skills work (reading, listening, speaking, writing - what kind of task). Sequence units so difficulty progresses sensibly from the first unit to the last.`,
         `There is no source document, so set each unit's sourcePageRange to a synthetic placeholder, evenly spaced: unit N (1-indexed) gets { start: (N-1)*${SCRATCH_UNIT_PAGE_SPAN}+1, end: N*${SCRATCH_UNIT_PAGE_SPAN} }. This is bookkeeping only, not a real page reference.`,
         targetLanguage
           ? `Write the whole book in "${targetLanguage}". Set contentLanguage to the correct BCP-47 code (e.g. "de" for German), and write bookTitle, tone, targetAudience, and every unit's title/learningObjectives/keyTerms in that language.`
@@ -2315,6 +2321,8 @@ export function buildContentsUnits(outline: BookOutline): CourseUnitSummary[] {
     keyTerms: u.keyTerms.join(", "),
     objectives: u.learningObjectives.join("; "),
     level: u.level,
+    grammar: u.grammar?.length ? u.grammar.join(", ") : undefined,
+    skills: u.skills?.length ? u.skills.join("; ") : undefined,
   }));
 }
 
@@ -3215,11 +3223,16 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     // Faz 6: a picture book is one illustrated story (see generatePictureBookPages).
     const isPictureBook = ctx.run.bookKind === "picturebook";
     const pictureBookPageCount = Math.min(32, Math.max(8, ctx.run.pictureBookPageCount ?? PICTURE_BOOK_DEFAULT_PAGES));
-    const layoutMetrics: PageMetrics = {
-      width: TRIM_SIZES[ctx.project.trimSize].widthPt,
-      height: TRIM_SIZES[ctx.project.trimSize].heightPt,
+    // Faz B5: "auto" becomes the size closest to the source book once the
+    // source has been measured (below); until then, and for runs with no
+    // source, A4.
+    let trimSize = resolveTrimSize(ctx.project.trimSize);
+    const metricsFor = (id: TrimSizeId): PageMetrics => ({
+      width: TRIM_SIZES[id].widthPt,
+      height: TRIM_SIZES[id].heightPt,
       bodySize: resolveDesignTheme(ctx.run.designTheme).bodySize,
-    };
+    });
+    let layoutMetrics = metricsFor(trimSize);
     const requestedVariants = (
       ctx.run.requestedBookTypes.length ? ctx.run.requestedBookTypes : ["student_book", "workbook"]
     ).filter((v): v is Variant => (ALL_VARIANTS as string[]).includes(v));
@@ -3239,7 +3252,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         assets.coverImageSrc,
         assets.pageImages,
         ctx.project.isbn,
-        ctx.project.trimSize,
+        trimSize,
         assets.sourceStyle,
         assets.outline.contentLanguage,
         ctx.run.designTheme,
@@ -3287,6 +3300,14 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       } else {
         await setRunStatus(runId, "mapping_pages", "Kaynak PDF sayfa sayfa haritalanıyor");
         pageMap = await extractPageMap(runId, ctx.upload.blobUrl);
+      }
+      if (ctx.project.trimSize === "auto") {
+        const measured = dominantTrim(pageMap.pages.flatMap((p) => (p.layout ? [p.layout] : [])));
+        if (measured) {
+          trimSize = nearestTrimSize(measured.widthPt, measured.heightPt);
+          layoutMetrics = metricsFor(trimSize);
+          await saveProjectTrimSize(ctx.project.id, trimSize);
+        }
       }
 
       if (resumed?.outline) {
@@ -4005,7 +4026,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           coverImageSrc,
           pageImages,
           isbn: ctx.project.isbn,
-          trimSize: ctx.project.trimSize,
+          trimSize,
           sourceStyle,
           contentLanguage: outline.contentLanguage,
           designTheme: ctx.run.designTheme,
@@ -4118,7 +4139,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       coverImageSrc,
       pageImages,
       ctx.project.isbn,
-      ctx.project.trimSize,
+      trimSize,
       sourceStyle,
       outline.contentLanguage,
       ctx.run.designTheme,

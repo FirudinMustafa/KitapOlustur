@@ -113,6 +113,16 @@ export const unitOutlineSchema = z.object({
   sourcePageRange: z.object({ start: z.number(), end: z.number() }),
   learningObjectives: z.array(z.string()),
   keyTerms: z.array(z.string()).describe("Key vocabulary, formulas, or concepts introduced in this unit"),
+  // Faz B5: the contents page's skills matrix, as a published coursebook
+  // prints it. Optional - outlines extracted before it simply lack it.
+  grammar: z
+    .array(z.string())
+    .optional()
+    .describe("Grammar points of the unit, short (e.g. \"Present Simple\", \"can / can't\"). Empty for non-language subjects."),
+  skills: z
+    .array(z.string())
+    .optional()
+    .describe("The unit's skills work, each prefixed with the skill (e.g. \"Reading: a dialogue\", \"Listening: matching\", \"Writing: an email\")."),
 });
 export type UnitOutline = z.infer<typeof unitOutlineSchema>;
 
