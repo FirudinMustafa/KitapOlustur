@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DeleteButton } from "@/components/app/delete-button";
+import { latestStoryText } from "@/lib/studio-notes";
 
 type StoryProject = typeof storyProjects.$inferSelect;
 type StoryMessage = typeof storyMessages.$inferSelect;
@@ -183,7 +184,7 @@ export function StudioWorkspace({
               render={
                 <a
                   href={`/projects/new?mode=picturebook&idea=${encodeURIComponent(storyProject.title)}&brief=${encodeURIComponent(
-                    [...messages].reverse().find((m) => m.role === "assistant")?.content.slice(0, 1500) ?? "",
+                    latestStoryText([...messages].reverse()).slice(0, 1500),
                   )}`}
                 />
               }
@@ -277,7 +278,7 @@ export function StudioWorkspace({
               <Button
                 variant="outline"
                 onClick={() => sendMessage("image")}
-                disabled={sending || (!input.trim() && !messages.some((m) => m.role === "assistant"))}
+                disabled={sending || (!input.trim() && !latestStoryText(messages))}
                 className="h-9 rounded-full px-4"
               >
                 Bunun görselini üret
@@ -285,7 +286,7 @@ export function StudioWorkspace({
               <Button
                 variant="outline"
                 onClick={() => sendMessage("audio")}
-                disabled={sending || (!input.trim() && !messages.some((m) => m.role === "assistant"))}
+                disabled={sending || (!input.trim() && !latestStoryText(messages))}
                 className="h-9 rounded-full px-4"
               >
                 Bunun sesini üret

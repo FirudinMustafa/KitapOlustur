@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { storyProjects, storyMessages, storyArtifacts } from "@/db/schema";
 import { requireStoryProjectOwner } from "@/lib/auth";
+import { actionNote, latestStoryText } from "@/lib/studio-notes";
 import { resolveTextModel, toTextModel } from "@/lib/ai/model";
 import {
   generateStoryImage,
@@ -18,17 +19,6 @@ import {
 const STUDIO_SYSTEM_PROMPT = `Sen yaratıcı bir hikaye/içerik yazım asistanısın. Kullanıcıyla sohbet ederek hikayeler, kısa metinler veya serbest içerikler yazıyorsun; ihtiyaç oldukça bunları geliştiriyor, düzenliyorsun.
 
 Elinde üç araç var: generateImage (bir sahnenin/betimlemenin görselini üretir), generateAudio (bir metnin sesli anlatımını üretir) ve generateVideo (en son üretilen görseli kısa bir videoya dönüştürür - önce bir görsel üretilmiş olmalı, iki sağlayıcıdan biri seçilebilir: "veo" varsayılan, kullanıcı özellikle "higgsfield" isterse o kullanılır). Kullanıcı açıkça bunlardan birini istediğinde, ya da isteği bunu doğal olarak ima ettiğinde ilgili aracı kullan - hikaye yazmadan da tek başına sadece bir görsel/ses/video istenebilir, bu tamamen normal. Video sağlayıcılarından biri hesap kısıtlaması/API key eksikliği yüzünden aktif olmayabilir - aracı çağır, sonucu kullanıcıya olduğu gibi ilet. Bir aracı kullandıktan sonra kullanıcıya kısaca ne ürettiğini anlat.`;
-
-// The short notes posted after a direct image/audio/video action.
-function actionNote(status: "done" | "pending" | "failed", label: string, error: string | null): string {
-  if (status === "done") return `İstediğin ${label} oluşturdum.`;
-  if (status === "pending") return "Video üretimi başladı, hazır olunca burada görünecek.";
-  return `Üzgünüm, ${label} üretimi başarısız oldu: ${error}`;
-}
-
-function isActionNote(text: string): boolean {
-  return /^(İstediğin .{1,30} oluşturdum\.|Video üretimi başladı, hazır olunca burada görünecek\.|Üzgünüm, .{1,30} üretimi başarısız oldu:)/.test(text.trim());
-}
 
 type CreatedArtifact = {
   id: string;
@@ -84,8 +74,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       orderBy: [desc(storyMessages.createdAt)],
       limit: 30,
     });
-    const story = recent.find((m) => !isActionNote(m.content));
-    directSubject = story?.content.trim().slice(0, 1500) ?? "";
+    directSubject = latestStoryText(recent).slice(0, 1500);
     if (!directSubject) {
       return NextResponse.json({ error: "Önce bir hikaye/metin yaz ya da ne üretileceğini kutuya yaz." }, { status: 400 });
     }
