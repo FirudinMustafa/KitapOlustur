@@ -2,6 +2,7 @@ import { Text, View, Image } from "@react-pdf/renderer";
 import type { ContentBlock, GeneratedPage } from "@/lib/ai/schemas";
 import { ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, type Look } from "./blocks";
+import { stripExerciseNumber } from "@/lib/exercise-numbers";
 import { NOTO_SANS } from "./fonts";
 
 // Faz 1 "Tasarım sistemi": PDF renderers for each layout template in
@@ -352,7 +353,8 @@ export function TemplatedPageBody(props: TemplateProps) {
                 <View style={{ position: "absolute", top: -8, left: 10, width: 20, height: 20, borderRadius: 10, backgroundColor: look.palette.accent, alignItems: "center", justifyContent: "center" }}>
                   <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 10, color: "#ffffff" }}>{i + 1}</Text>
                 </View>
-                <BlockCard block={b} look={look} showAnswerKey={showAnswerKey} frameless />
+                {/* the badge carries the number */}
+                <BlockCard block={{ ...b, heading: stripExerciseNumber(b.heading) }} look={look} showAnswerKey={showAnswerKey} frameless />
               </View>
             ))}
           </View>

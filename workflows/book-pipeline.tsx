@@ -117,6 +117,7 @@ import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
 import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
+import { numberExercises } from "@/lib/exercise-numbers";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, writerBlueprint } from "@/lib/source-blueprint";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
@@ -2455,10 +2456,11 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // wrote without their gap (fixPrepositionItems), and map questions whose
 // answers contradict the drawn map (fixMapAnswers), and labelling grids
 // whose key and word bank name things differently (reconcileWordBank),
-// puzzles whose words do not fit their grid (repairPuzzle).
+// puzzles whose words do not fit their grid (repairPuzzle), and the
+// exercises on each page numbered 1, 2, 3... (numberExercises).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   const fix = (pages?: GeneratedPage[]) =>
-    pages?.map((page) => fixMapAnswers({ ...page, blocks: page.blocks.map((b) => repairPuzzle(reconcileWordBank(fixPrepositionItems(b)))) }).page);
+    pages?.map((page) => numberExercises(fixMapAnswers({ ...page, blocks: page.blocks.map((b) => repairPuzzle(reconcileWordBank(fixPrepositionItems(b)))) }).page));
   return {
     ...unit,
     studentBookPages: fix(unit.studentBookPages) ?? unit.studentBookPages,

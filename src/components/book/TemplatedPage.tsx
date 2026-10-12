@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { ContentBlock, GeneratedPage, ListeningAudio } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
 import { ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
+import { stripExerciseNumber } from "@/lib/exercise-numbers";
 import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
 
 // Faz 1 "Tasarım sistemi": web twin of src/lib/pdf/templates.tsx. Draws a
@@ -338,7 +339,7 @@ export function TemplatedPage({
                 >
                   {i + 1}
                 </span>
-                {renderBlock(b, { frameless: true })}
+                {renderBlock({ ...b, heading: stripExerciseNumber(b.heading) }, { frameless: true })}
               </div>
             ))}
           </div>

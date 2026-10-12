@@ -12,7 +12,14 @@ export type CourseUnitSummary = {
   keyTerms: string;
   objectives: string;
   level: string;
+  /** Faz B5: printed page range of the unit ("pp. 10-17"), filled by renderBookFitted. */
+  pages?: { from: number; to: number };
 };
+
+export function pageRangeLabel(pages?: { from: number; to: number }): string {
+  if (!pages) return "";
+  return pages.to > pages.from ? `pp. ${pages.from}-${pages.to}` : `p. ${pages.from}`;
+}
 
 const styles = StyleSheet.create({
   page: { padding: 44, fontSize: 10, fontFamily: NOTO_SERIF, color: "#1f2937" },
@@ -109,6 +116,7 @@ export function ContentsPageContent({
             <View style={[styles.unitBadge, { backgroundColor: palette.primary }]}>
               <Text style={styles.unitBadgeText}>{unit.number}</Text>
             </View>
+            {unit.pages ? <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 7.5, color: palette.primaryDark, marginTop: 3 }}>{pageRangeLabel(unit.pages)}</Text> : null}
           </View>
           <View style={styles.colTitle}>
             <Text style={[styles.cellTitle, { color: palette.primaryDark }]}>{unit.title}</Text>
@@ -122,7 +130,7 @@ export function ContentsPageContent({
 
       <View style={[styles.footer, bleed ? { left: 44 + bleed, right: 44 + bleed, bottom: (styles.footer.bottom as number) + bleed } : {}]} fixed>
         <Text>{bookTitle} · Contents</Text>
-        <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+        <Text render={({ pageNumber }) => `${pageNumber}`} />
       </View>
     </Page>
   );
