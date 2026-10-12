@@ -40,6 +40,9 @@ const MAX_CROSSWORD = 15;
 // places the most words - then the most compact one - wins.
 export function buildCrossword(answers: string[], locale = "en"): Crossword {
   const entries = answers.map((a, item) => ({ item, letters: puzzleLetters(a, locale) })).filter((e) => e.letters.length >= 2);
+  // No usable word (empty key, one-letter answers): an empty grid, never a
+  // crash - live run 2026-10-13 lost a whole unit to one bad crossword.
+  if (!entries.length) return { rows: 0, cols: 0, words: [], unplaced: answers.map((_, i) => i) };
   const longestFirst = [...entries].sort((a, b) => b.letters.length - a.letters.length || a.item - b.item);
   const rand = seededRandom(answers.join("|"));
   const orders = [longestFirst];

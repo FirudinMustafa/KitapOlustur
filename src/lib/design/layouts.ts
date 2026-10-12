@@ -174,7 +174,7 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
     h += (b.items ?? []).reduce((n, i) => n + textHeight(i, inner - 20, size) + 6, 0);
   } else if (b.items?.length || b.interactive || b.activity) {
     h += frameless ? 8 : 44;
-    const act = activityHeight(b, inner - 24, size);
+    const act = safeActivityHeight(b, inner - 24, size);
     const dia = diagramHeight(b);
     h += act.extra + (dia.replacesItems ? dia.extra : 0);
     if (!act.replacesItems && !dia.replacesItems) for (const i of b.items ?? []) h += textHeight(i, inner - 24, size) + 3;
@@ -184,6 +184,16 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
     if (it?.type === "fill_blank") h += textHeight(it.template, inner - 24, size) + 6;
   }
   return h;
+}
+
+// An estimate must never take a run down (live run 2026-10-13: one bad
+// crossword threw inside the fit check and failed the whole unit).
+function safeActivityHeight(b: BlockLike, width: number, size: number): { extra: number; replacesItems: boolean } {
+  try {
+    return activityHeight(b, width, size);
+  } catch {
+    return { extra: 0, replacesItems: false };
+  }
 }
 
 function stack(blocks: BlockLike[], width: number, size: number): number {

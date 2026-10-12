@@ -27,6 +27,12 @@ describe("buildCrossword", () => {
     expect(cw.unplaced).toEqual([2]);
   });
 
+  it("survives a crossword with no usable words", () => {
+    expect(buildCrossword([])).toEqual({ rows: 0, cols: 0, words: [], unplaced: [] });
+    expect(buildCrossword(["a", ""]).unplaced).toEqual([0, 1]);
+    expect(buildWordSearch([], "x").grid.length).toBeGreaterThan(0);
+  });
+
   it("is deterministic", () => {
     expect(buildCrossword(["apple", "pear", "plum", "lemon"])).toEqual(buildCrossword(["apple", "pear", "plum", "lemon"]));
   });
