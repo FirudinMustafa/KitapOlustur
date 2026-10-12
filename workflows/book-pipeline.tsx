@@ -41,6 +41,7 @@ import {
   bookOutlineSchema,
   improvementPlanSchema,
   generatedMirroredSideSchema,
+  contentBlockSchema,
   generatedPageSchema,
   pictureBookPagesSchema,
   generatedComplementarySideSchema,
@@ -123,6 +124,7 @@ import { numberExercises } from "@/lib/exercise-numbers";
 import { titleCopiesSource } from "@/lib/title-guard";
 import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
 import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
+import { appendExercises, exercisesToAdd, topUpPrompt } from "@/lib/exercise-topup";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import {
   BLUEPRINT_INSTRUCTIONS,
@@ -1732,6 +1734,55 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
 // Last resort for exercises still printing without answers after the
 // structural retries: answer just those blocks in one small call. Answers
 // are applied only where there is exactly one per item (applyAnswerKeys).
+// Faz B: pages still short of their source page's exercises after the
+// shape-check rewrites get them added by one small call per page (see
+// src/lib/exercise-topup.ts). Best-effort: a failed call leaves the page.
+async function topUpExercises(
+  runId: string,
+  unit: GeneratedUnit,
+  contentLanguage: string,
+  rubricsByPage: Record<number, string[]>,
+): Promise<GeneratedUnit> {
+  "use step";
+
+  let added = 0;
+  const fill = async (pages: GeneratedPage[] | undefined) => {
+    if (!pages) return pages;
+    const out: GeneratedPage[] = [];
+    for (const page of pages) {
+      const count = exercisesToAdd(page);
+      if (!count) {
+        out.push(page);
+        continue;
+      }
+      try {
+        const { object, usage } = await withObjectDiagnostics(() =>
+          generateObject({
+            model: toTextModel(resolveFinalTextModel()),
+            schema: z.object({ blocks: z.array(contentBlockSchema) }),
+            system: "You are an exercise writer for a language coursebook. You write short, clear, complete exercises.",
+            prompt: topUpPrompt(page, count, rubricsByPage[page.sourcePageNumber] ?? [], contentLanguage),
+          }),
+        );
+        await recordUsage(runId, "unitGeneration", usage);
+        const next = appendExercises(page, object.blocks.slice(0, count).map(dropLeakingTable));
+        added += next.blocks.length - page.blocks.length;
+        out.push(numberExercises(next));
+      } catch {
+        out.push(page);
+      }
+    }
+    return out;
+  };
+  const result: GeneratedUnit = {
+    ...unit,
+    studentBookPages: (await fill(unit.studentBookPages)) ?? unit.studentBookPages,
+    workbookPages: (await fill(unit.workbookPages)) ?? unit.workbookPages,
+  };
+  if (added) await logRunWarning(runId, `Ünite ${unit.unitNumber}: kaynağın alıştırma sayısına ulaşmak için ${added} alıştırma eklendi.`);
+  return result;
+}
+
 async function fillMissingAnswerKeys(runId: string, unit: GeneratedUnit, contentLanguage: string): Promise<GeneratedUnit> {
   "use step";
 
@@ -3577,6 +3628,10 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       const n = outlineUnit.number;
       const unitPlan = improvementPlan.unitPlans.find((p) => p.unitNumber === n);
       const improvements = unitPlan?.improvements ?? [];
+      // The source series' exercise instructions per page (topUpExercises).
+      const rubricsByPage: Record<number, string[]> = Object.fromEntries(
+        pageMap.pages.filter((p) => p.layout?.exerciseRubrics.length).map((p) => [p.pageNumber, p.layout!.exerciseRubrics]),
+      );
       const unitSourcePages = pageMap.pages.filter(
         (p) => p.pageNumber >= outlineUnit.sourcePageRange.start && p.pageNumber <= outlineUnit.sourcePageRange.end,
       );
@@ -3781,6 +3836,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         generated = normalizeLayoutTemplates(applyDiagramFixes(applyFallbackImagePrompts(generated)));
         if (!isPictureBook) {
           generated = await fillMissingPictures(runId, generated);
+          generated = await topUpExercises(runId, generated, outline.contentLanguage, rubricsByPage);
           generated = await fillMissingAnswerKeys(runId, generated, outline.contentLanguage);
         }
       } else {
@@ -3803,6 +3859,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
             }
             unit = normalizeLayoutTemplates(applyDiagramFixes(applyFallbackImagePrompts(unit)));
             unit = await fillMissingPictures(runId, unit);
+            unit = await topUpExercises(runId, unit, outline.contentLanguage, rubricsByPage);
             unit = await fillMissingAnswerKeys(runId, unit, outline.contentLanguage);
             const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
