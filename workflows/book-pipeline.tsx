@@ -119,7 +119,7 @@ import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
 import { numberExercises } from "@/lib/exercise-numbers";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
-import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, writerBlueprint } from "@/lib/source-blueprint";
+import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, complementaryPlan, writerBlueprint } from "@/lib/source-blueprint";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
 import { ACTIVITY_PROMPT, activityIssues, reconcileWordBank, repairPuzzle } from "@/lib/activities";
 import { DIAGRAM_PROMPT, diagramIssues, fixPrepositionItems } from "@/lib/diagrams";
@@ -970,6 +970,7 @@ async function generateComplementarySide(
         ...unitGenerationPromptHeader(input),
         `Here is the already-written "${input.sourceBookType}" content for this unit, for reference:\n${JSON.stringify(input.mirroredPages)}`,
         `Produce "pages" as the "${input.complementaryType}" content for this unit: original, independent material of comparable page count, complementary to (not a duplicate of) the reference content above.`,
+        complementaryPlan(input.unitSourcePages, input.complementaryType),
         "For any page that should carry a photo or illustration, set imagePrompt to a vivid description of a NEW, original image - never a copy of any source image.",
       ]
         .filter(Boolean)
@@ -3550,7 +3551,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         const complementaryRaw = await generateComplementarySide(runId, {
           ...genContext,
           complementaryType,
-          mirroredPages: mirrored.pages,
+          // layout bookkeeping is noise to the writer
+          mirroredPages: mirrored.pages.map((p) => ({ ...p, zonePlan: undefined })),
         });
         // The model numbers these pages itself; see renumberSidePages.
         const complementary = { ...complementaryRaw, pages: renumberSidePages(complementaryRaw.pages, outlineUnit.number, "complementary") };

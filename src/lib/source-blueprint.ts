@@ -55,3 +55,36 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
     };
   });
 }
+
+// Faz B6: the complementary book (the Workbook when a Student Book was
+// uploaded, or the reverse) had no plan beyond "comparable page count", so
+// it came out generic. It now gets a shape derived from the measured source
+// unit: how many pages, how many exercises and items per page, and the
+// exercise formats the series uses - and it follows the unit's pages in
+// order, the way a real workbook page practises its student-book lesson.
+export function complementaryPlan(sourcePages: SourcePage[], complementaryType: "student_book" | "workbook"): string | null {
+  const measured = sourcePages.filter((p) => p.layout);
+  if (!measured.length) return null;
+  const exercisePages = measured.filter((p) => (p.layout?.exerciseCount ?? 0) > 0);
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const exercisesPerPage = Math.round(mean(exercisePages.map((p) => p.layout!.exerciseCount)));
+  const items = mean(exercisePages.filter((p) => p.layout!.exerciseCount).map((p) => p.layout!.itemCount / p.layout!.exerciseCount));
+  const formats = [...new Set(measured.flatMap((p) => p.layout!.exerciseRubrics))].slice(0, 12);
+  const n = sourcePages.length;
+  const pages = complementaryType === "workbook" ? Math.max(2, Math.round(n * 0.6)) : Math.max(2, Math.round(n * 1.5));
+  const lines =
+    complementaryType === "workbook"
+      ? [
+          `Write ${pages} workbook pages for this unit. Workbook page k practises the reference pages in order (the first workbook page practises the first lesson, and so on) - same vocabulary, same grammar, new sentences.`,
+          `Each workbook page carries ${Math.min(6, Math.max(3, exercisesPerPage + 1))} numbered exercises with about ${Math.max(4, Math.round(items) || 5)} items each - a workbook page is denser than a student-book page and mostly exercises, with at most a short instruction or example.`,
+          "Vary the exercise formats across the unit using the activity formats (picture_label, word_bank, crossword, wordsearch, unscramble, odd_one_out, tick_cross, ordering, match_lines, write_lines...) - a workbook unit typically has at least one puzzle (crossword or wordsearch) and ends with a short writing task.",
+        ]
+      : [
+          `Write ${pages} student-book pages for this unit, presenting what the reference workbook pages practise, in the same order.`,
+          `Each student-book page opens with a presentation (a short reading text, a dialogue, or a grammar table) and then has ${Math.max(2, Math.min(4, exercisesPerPage))} numbered exercises; most pages carry a picture.`,
+        ];
+  if (formats.length) {
+    lines.push(`The source series uses these exercise instructions (reproduce the FORMATS with your own wording, never copy them): ${JSON.stringify(formats)}`);
+  }
+  return lines.join("\n");
+}
