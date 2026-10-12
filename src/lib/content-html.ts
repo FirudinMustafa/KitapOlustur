@@ -2,6 +2,7 @@ import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schema
 import { mapGrid, prepositionScene, sceneSvgMarkup } from "@/lib/diagrams";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { itemText } from "@/lib/item-text";
+import { buildCrossword, buildWordSearch, crosswordCells, oddOneOutOptions, scrambleWord } from "@/lib/puzzles";
 
 // Shared (X)HTML-rendering helpers for the two container formats that both
 // turn a GeneratedUnit[] into real HTML content: EPUB (src/lib/epub/BookEpub.ts)
@@ -114,6 +115,46 @@ function renderInteractiveHtml(block: ContentBlock, showAnswerKey: boolean): str
 // and the web reader's preview (BookReader.tsx) - EPUB/Common Cartridge
 // always render every block in plain reading order, same as before this
 // field existed.
+// Faz B4: puzzle and marking formats as reflowable HTML - grids as tables,
+// the same grids/scrambles/order as the PDF (src/lib/puzzles.ts).
+function renderPuzzleHtml(block: ContentBlock): string | null {
+  const type = block.activity?.type;
+  const items = block.items ?? [];
+  const answers = block.answerKey ?? [];
+  switch (type) {
+    case "crossword": {
+      const cw = buildCrossword(answers);
+      const grid = crosswordCells(cw)
+        .map((row) => `<tr>${row.map((c) => (c ? `<td class="cw-cell">${c.starts.length ? `<sup>${c.starts.join("/")}</sup>` : ""}</td>` : `<td class="cw-blank"></td>`)).join("")}</tr>`)
+        .join("");
+      const clues = (dir: "across" | "down", label: string) => {
+        const words = cw.words.filter((w) => w.dir === dir);
+        return words.length ? `<p><strong>${label}</strong></p><ul>${words.map((w) => `<li>${w.item + 1} ${escapeXml(itemText(items[w.item] ?? ""))}</li>`).join("")}</ul>` : "";
+      };
+      return `<table class="crossword">${grid}</table>${clues("across", "Across")}${clues("down", "Down")}`;
+    }
+    case "wordsearch": {
+      const words = answers.length ? answers : items;
+      const ws = buildWordSearch(words, block.heading);
+      return `<table class="wordsearch">${ws.grid.map((row) => `<tr>${row.map((l) => `<td>${escapeXml(l)}</td>`).join("")}</tr>`).join("")}</table><p>${words.map(escapeXml).join(" · ")}</p>`;
+    }
+    case "unscramble":
+      return `<ol class="items">${items.map((item, i) => `<li><strong>${escapeXml(scrambleWord(answers[i] ?? "", block.heading))}</strong> ________ ${escapeXml(itemText(item))}</li>`).join("")}</ol>`;
+    case "odd_one_out":
+      return `<ol class="items">${items.map((item) => `<li>${oddOneOutOptions(item).map(escapeXml).join(" &#160; &#160; ")}</li>`).join("")}</ol>`;
+    case "tick_cross":
+      return `<ol class="items">${items.map((item) => `<li>${escapeXml(itemText(item))} &#9744;</li>`).join("")}</ol>`;
+    case "ordering":
+      return `<ul class="items">${items.map((item) => `<li>&#9744; ${escapeXml(itemText(item))}</li>`).join("")}</ul>`;
+    case "match_lines": {
+      const right = seededShuffle(answers, block.heading);
+      return `<table class="match">${items.map((item, i) => `<tr><td>${i + 1} ${escapeXml(itemText(item))}</td><td>${String.fromCharCode(97 + i)} ${escapeXml(right[i] ? itemText(right[i]) : "")}</td></tr>`).join("")}</table>`;
+    }
+    default:
+      return null;
+  }
+}
+
 export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): string {
   // Workbook activities (src/lib/activities.ts) reflow as text: the word
   // bank as a line, pictures as their emoji (e-readers draw them natively).
@@ -125,7 +166,10 @@ export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): st
   // Code-drawn diagrams (src/lib/diagrams.ts): scenes as inline SVG, the
   // town map as a table of its street grid.
   const scenes = block.diagram?.type === "prepositions" ? (block.diagram.scenes ?? []) : [];
-  const items = block.items?.length
+  const puzzle = renderPuzzleHtml(block);
+  const items = puzzle
+    ? puzzle
+    : block.items?.length
     ? `<ol class="items">${block.items
         .map((item, i) => `<li>${scenes[i] ? `${sceneSvgMarkup(prepositionScene(scenes[i]), 78)} ` : ""}${escapeXml(itemLabel(item, i))}</li>`)
         .join("")}</ol>`
@@ -152,9 +196,22 @@ export function renderBlockHtml(block: ContentBlock, showAnswerKey: boolean): st
           .map((a) => `<li>${escapeXml(itemText(a))}</li>`)
           .join("")}</ol></div>`
       : "";
-  return `<section class="block block-${block.kind}">
+  // Audit 2026-10-12: dialogues, tables and callouts were dropped from
+  // EPUB/LMS - a dialogue page lost its conversation (the writer keeps the
+  // body to a one-line lead-in when there is one).
+  const dialogue = block.dialogue?.length
+    ? `<div class="dialogue">${block.dialogue.map((d) => `<p><strong>${escapeXml(d.speaker)}:</strong> ${escapeXml(d.line)}</p>`).join("")}</div>`
+    : "";
+  const table = block.table
+    ? `<table class="content-table"><tr>${block.table.headers.map((h) => `<th>${escapeXml(h)}</th>`).join("")}</tr>${block.table.rows
+        .map((row) => `<tr>${block.table!.headers.map((_, c) => `<td>${escapeXml(row[c] ?? "")}</td>`).join("")}</tr>`)
+        .join("")}</table>`
+    : "";
+  return `<section class="block block-${block.kind}${block.callout ? ` callout callout-${block.callout}` : ""}">
     <h3>${escapeXml(block.heading)}</h3>
     ${paragraphs(block.body)}
+    ${dialogue}
+    ${table}
     ${townMap}
     ${wordBank}
     ${items}

@@ -7,7 +7,8 @@ import { BLOCK_COLORS } from "@/lib/block-colors";
 import { itemText } from "@/lib/item-text";
 import { isChecklistBlock } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, speakerColorMap, type DesignTheme, type ThemePalette } from "@/lib/design/themes";
-import { NOTO_SANS, NOTO_SERIF, pdfFontFamily } from "./fonts";
+import { NOTO_SANS, NOTO_SERIF, pdfFontFamily, withSymbols } from "./fonts";
+import { CrosswordView, MarkingList, MatchLinesView, WordSearchView } from "./puzzle-blocks";
 
 // Faz 1 "Tasarım sistemi": the per-block print pieces, split out of
 // BookDocument.tsx so the page templates (./templates.tsx) and the original
@@ -17,8 +18,9 @@ import { NOTO_SANS, NOTO_SERIF, pdfFontFamily } from "./fonts";
 export type Look = {
   theme: DesignTheme;
   palette: ThemePalette;
-  headingFont: string;
-  bodyFont: string;
+  /** Theme family + the ✓/✗ symbol fallback (withSymbols). */
+  headingFont: string[];
+  bodyFont: string[];
   /** emoji -> image src for activity pictures (filled by the book renderer when icons are available). */
   pictureSrc?: Record<string, string>;
   /** Tighter activity/diagram sizes - set by renderBookFitted for a page that still ran over. */
@@ -34,8 +36,8 @@ export function makeLook(theme: DesignTheme, palette: ThemePalette): Look {
   return {
     theme,
     palette,
-    headingFont: pdfFontFamily(theme.headingFont),
-    bodyFont: pdfFontFamily(theme.bodyFont),
+    headingFont: withSymbols(pdfFontFamily(theme.headingFont)),
+    bodyFont: withSymbols(pdfFontFamily(theme.bodyFont)),
   };
 }
 
@@ -423,6 +425,14 @@ function ActivityItems({ block, look, columns }: { block: ContentBlock; look: Lo
         <PictureLabelGrid block={block} look={look} columns={columns} />
       ) : a?.type === "picture_match" ? (
         <PictureMatch block={block} look={look} />
+      ) : a?.type === "crossword" ? (
+        <CrosswordView block={block} look={look} />
+      ) : a?.type === "wordsearch" ? (
+        <WordSearchView block={block} look={look} />
+      ) : a?.type === "match_lines" ? (
+        <MatchLinesView block={block} look={look} />
+      ) : a && ["unscramble", "odd_one_out", "tick_cross", "ordering"].includes(a.type) ? (
+        <MarkingList block={block} look={look} />
       ) : (
         <ItemList block={block} look={look} />
       )}

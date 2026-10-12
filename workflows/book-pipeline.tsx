@@ -120,7 +120,7 @@ import { renumberSidePages } from "@/lib/page-numbers";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, writerBlueprint } from "@/lib/source-blueprint";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
-import { ACTIVITY_PROMPT, activityIssues, reconcileWordBank } from "@/lib/activities";
+import { ACTIVITY_PROMPT, activityIssues, reconcileWordBank, repairPuzzle } from "@/lib/activities";
 import { DIAGRAM_PROMPT, diagramIssues, fixPrepositionItems } from "@/lib/diagrams";
 import { buildEpub } from "@/lib/epub/BookEpub";
 
@@ -2454,10 +2454,11 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // Deterministic backstops for diagrams: preposition items the writer still
 // wrote without their gap (fixPrepositionItems), and map questions whose
 // answers contradict the drawn map (fixMapAnswers), and labelling grids
-// whose key and word bank name things differently (reconcileWordBank).
+// whose key and word bank name things differently (reconcileWordBank),
+// puzzles whose words do not fit their grid (repairPuzzle).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   const fix = (pages?: GeneratedPage[]) =>
-    pages?.map((page) => fixMapAnswers({ ...page, blocks: page.blocks.map((b) => reconcileWordBank(fixPrepositionItems(b))) }).page);
+    pages?.map((page) => fixMapAnswers({ ...page, blocks: page.blocks.map((b) => repairPuzzle(reconcileWordBank(fixPrepositionItems(b)))) }).page);
   return {
     ...unit,
     studentBookPages: fix(unit.studentBookPages) ?? unit.studentBookPages,

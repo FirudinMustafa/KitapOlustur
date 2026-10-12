@@ -12,11 +12,17 @@ const TURKISH = "ıİşŞğĞçÇöÖüÜâÂîÎûÛ";
 
 describe("book fonts", () => {
   it("every font file covers Turkish", () => {
-    for (const file of readdirSync(FONTS_DIR).filter((f) => f.endsWith(".ttf"))) {
+    // NotoSansSymbols2 only backs up ✓/✗ (withSymbols) - it sets no text.
+    for (const file of readdirSync(FONTS_DIR).filter((f) => f.endsWith(".ttf") && !f.startsWith("NotoSansSymbols2"))) {
       const font = fontkit.openSync(path.join(FONTS_DIR, file));
       const missing = [...TURKISH].filter((c) => !font.hasGlyphForCodePoint(c.codePointAt(0)!));
       expect(missing, file).toEqual([]);
     }
+  });
+
+  it("the symbol fallback has the tick and cross marks", () => {
+    const font = fontkit.openSync(path.join(FONTS_DIR, "NotoSansSymbols2-Regular.ttf"));
+    for (const c of "✓✔✗✘") expect(font.hasGlyphForCodePoint(c.codePointAt(0)!), c).toBe(true);
   });
 
   // The variable Noto files used to print bold in the regular weight - no

@@ -292,7 +292,7 @@ export const contentBlockSchema = z.object({
     })
     .optional()
     .describe(
-      "Optional workbook activity format: picture_label, picture_match, word_bank, write_lines or draw_box. Leave unset for a plain numbered exercise.",
+      `Optional workbook activity format: ${ACTIVITY_TYPES.join(", ")}. Leave unset for a plain numbered exercise.`,
     ),
   // Code-drawn diagrams (src/lib/diagrams.ts) - additive like `activity`.
   diagram: z

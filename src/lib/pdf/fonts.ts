@@ -28,6 +28,15 @@ export const NOTO_SERIF = "Noto Serif";
 export const BALOO = "Baloo 2";
 export const ANDIKA = "Andika";
 export const NUNITO = "Nunito";
+// Faz B4: tick and cross marks (✓ ✗) for "tick or cross" exercises - no
+// text family has both. Used only as a per-glyph fallback (TEXT_FALLBACK).
+export const SYMBOLS = "Noto Sans Symbols 2";
+
+// A theme family followed by the symbol fallback, for react-pdf's
+// per-glyph font fallback (fontFamily as an array).
+export function withSymbols(family: string): string[] {
+  return [family, SYMBOLS];
+}
 
 const ROLE_FAMILY: Record<FontRole, string> = {
   sans: NOTO_SANS,
@@ -87,6 +96,14 @@ export function registerBookFonts() {
     ],
   });
   Font.register({
+    family: SYMBOLS,
+    fonts: [
+      { src: path.join(FONTS_DIR, "NotoSansSymbols2-Regular.ttf"), fontWeight: 400 },
+      { src: path.join(FONTS_DIR, "NotoSansSymbols2-Regular.ttf"), fontWeight: 700 },
+      { src: path.join(FONTS_DIR, "NotoSansSymbols2-Regular.ttf"), fontStyle: "italic", fontWeight: 400 },
+    ],
+  });
+  Font.register({
     family: NUNITO,
     fonts: [
       { src: path.join(FONTS_DIR, "Nunito-Regular.ttf"), fontWeight: 400 },
@@ -116,7 +133,7 @@ type ResettableFontSource = { data: unknown; loadResultPromise: unknown };
 export function resetBookFonts() {
   registerBookFonts();
   const families = Font.getRegisteredFonts() as Record<string, { sources: ResettableFontSource[] }>;
-  for (const family of [NOTO_SANS, NOTO_SERIF, BALOO, ANDIKA, NUNITO]) {
+  for (const family of [NOTO_SANS, NOTO_SERIF, BALOO, ANDIKA, NUNITO, SYMBOLS]) {
     for (const source of families[family]?.sources ?? []) {
       source.data = null;
       source.loadResultPromise = null;

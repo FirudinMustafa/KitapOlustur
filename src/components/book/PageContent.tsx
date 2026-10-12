@@ -7,6 +7,7 @@ import { BLOCK_COLORS } from "@/lib/block-colors";
 import { blocksForRender } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
 import { isEmoji, letterFor, twemojiUrl, type ActivityPicture } from "@/lib/activities";
+import { PUZZLE_TYPES, PuzzleView } from "./PuzzleViews";
 import { SCENE_H, SCENE_W, mapGrid, prepositionScene, type Shape } from "@/lib/diagrams";
 import { isChecklistBlock, resolvePageTemplate } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, DESIGN_THEMES, speakerColorMap } from "@/lib/design/themes";
@@ -423,6 +424,7 @@ function TownMap({ block, primary }: { block: ContentBlock; primary: string }) {
 
 function ActivityView({ block, primary, light }: { block: ContentBlock; primary: string; light: string }) {
   const a = block.activity!;
+  if (PUZZLE_TYPES.has(a.type)) return <PuzzleView block={block} primary={primary} />;
   const items = block.items ?? [];
   const pictures = a.pictures ?? [];
   return (

@@ -5,7 +5,7 @@ import { encodeEan13 } from "@/lib/barcode/ean13";
 import { formatIsbn13 } from "@/lib/isbn";
 import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 import { resolvePageImageUrl, resolvePageImageUrls } from "@/lib/page-image";
-import { registerBookFonts, NOTO_SANS, NOTO_SERIF } from "./fonts";
+import { registerBookFonts, NOTO_SANS, NOTO_SERIF, withSymbols } from "./fonts";
 import { derivePaletteFromColors } from "./derive-palette";
 import { withUnitGlossary } from "@/lib/unit-glossary";
 import { blocksForRender, clampLayoutToPage } from "@/lib/layout-merge";
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   sectionKicker: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 8.5, letterSpacing: 1.5, marginBottom: 6 },
 
   item: { marginBottom: 3, marginLeft: 4, lineHeight: 1.4 },
-  answerKeyLabel: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 7.5, color: "#6b7280", letterSpacing: 1, marginBottom: 3 },
+  answerKeyLabel: { fontFamily: withSymbols(NOTO_SANS), fontWeight: 700, fontSize: 7.5, color: "#6b7280", letterSpacing: 1, marginBottom: 3 },
 
   // Footer / answer key page
   footer: {

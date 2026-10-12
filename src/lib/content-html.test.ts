@@ -94,3 +94,35 @@ describe("seededShuffle", () => {
     expect(shuffled.sort()).toEqual([...input].sort());
   });
 });
+
+describe("renderBlockHtml - formats added after the audit", () => {
+  it("keeps dialogues, tables and callouts", () => {
+    const html = renderBlockHtml(
+      {
+        kind: "explanation",
+        heading: "At the shop",
+        body: "Listen and read.",
+        dialogue: [
+          { speaker: "Ann", line: "Can I help you?" },
+          { speaker: "Tom", line: "Yes, please." },
+        ],
+        table: { headers: ["I", "you"], rows: [["am", "are"]] },
+        callout: "tip",
+      },
+      false,
+    );
+    expect(html).toContain("<strong>Ann:</strong> Can I help you?");
+    expect(html).toContain("<th>you</th>");
+    expect(html).toContain("callout-tip");
+  });
+
+  it("draws puzzles from their answers", () => {
+    const html = renderBlockHtml(
+      { kind: "practice", heading: "Crossword", body: "", items: ["a pet", "it barks"], answerKey: ["cat", "dog"], activity: { type: "crossword" } },
+      false,
+    );
+    expect(html).toContain('class="crossword"');
+    expect(html).toContain("<strong>Across</strong>");
+    expect(html).not.toContain(">cat<");
+  });
+});
