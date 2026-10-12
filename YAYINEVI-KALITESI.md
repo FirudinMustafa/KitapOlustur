@@ -78,6 +78,34 @@ Daha önceki işler (6 fazlık yeniden tasarım, Süreç Günlüğü, onay kapı
 
 Hiçbir denemede sahne görseli üretilemedi (Cloudflare kotası). Uyarılar Süreç Günlüğü'nde görünüyor.
 
+### Gerçek Student Book ile canlı test (2026-10-12)
+
+**Kaynak:** `i_5_team_2.pdf` (Express Publishing, 25 sayfa). **Ayarlar:** A2, klasik tema, sayfa boyutu "kaynakla aynı", ünite sınırı 1, ücretsiz mod (Gemini flash-lite + Cloudflare flux).
+
+| Deneme | Proje | Sonuç |
+|---|---|---|
+| KIYAS-6 (1. çalıştırma) | `0823d36d…` | ❌ Ünite yazımında başarısız. Sebep: `zonePlan` alanı yazar modelin şemasına girmişti, Gemini reddetti (HTTP 400). Düzeltme `c014536`, ayrıca tüm model şemaları için kalıcı test eklendi |
+| KIYAS-6 (yeniden çalıştırma) | `f15dab2c…` | ✅ Uçtan uca tamamlandı: 25/25 sayfa ölçüldü, boyut otomatik 220×280 seçildi, kitap adı koruması kaynak adını yakaladı ("Bright Sparks Explorer"), karakterler, kapak, görsel inceleme, tasarım denetimi, son onay, PDF/baskı PDF/EPUB. **Yapısal benzerlik ~%39**: yazar model ölçülmüş plana uymadı (5 alıştırma yerine 1–2, resim promptu yok) |
+| KIYAS-7 | `08aff180…` | 🟡 Plana uyma kontrolü (`df6dffe`) ile tekrar. Varyant 2 kaynağa belirgin biçimde yakın (alıştırma 1/4/2/3/3/3, kaynak 2/5/3/3/3/3; resimli sayfalarda resim promptları tam). İçerik onayında bekliyor: geliştirme sunucusu düşük bellek yüzünden durduruldu. Sunucu yeniden başlayınca onaylayıp `scripts/fidelity.mts` ile puanlanacak |
+
+**Canlı testte bulunup düzeltilenler:**
+- Gemini şema hatası (`zonePlan` → saklama şeması).
+- Eşzamanlı onayların ikisinin de kabul edilmesi (atomik kapı, migration 0041).
+- Kaynak kitap adının kopyalanması (`title-guard.ts`).
+- Stüdyoda görselin hikâye yerine onay notundan üretilmesi ve yanlış sahne çizilmesi.
+- "Kitaba dönüştür"ün onay notunu taşıması.
+- Clerk butonunun hydration hatası (formdaki girdiyi siliyordu).
+- Kapak görseline başlığın yanlış yazılması ("EXPLOPER").
+- "1 units".
+- mupdf'in iş akışı paketine girip geliştirme sunucusunu çökertmesi.
+
+**Arayüzde tıklanarak doğrulananlar:**
+- 102 sayfalık link taraması, hepsi 200.
+- Tüm onay kapıları (yanlış durumda 409), "Kararın iletildi" kilidi, durdur + sil.
+- ISBN ve ünite sınırı doğrulaması, "kaynakla aynı" boyut seçeneği.
+- Okuyucu (liste / sayfa çevir / 3D), Dizilim (kaydet + yeniden derle), arama, tema, stüdyo.
+- DOCX ve LMS dışa aktarma; yeniden derlenen PDF'te sayfa aralıklı içindekiler.
+
 ---
 
 ## 4. Kalanlar (öncelik sırasıyla)
