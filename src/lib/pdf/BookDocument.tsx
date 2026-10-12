@@ -4,7 +4,7 @@ import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument"
 import { encodeEan13 } from "@/lib/barcode/ean13";
 import { formatIsbn13 } from "@/lib/isbn";
 import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
-import { resolvePageImageUrl } from "@/lib/page-image";
+import { resolvePageImageUrl, resolvePageImageUrls } from "@/lib/page-image";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF } from "./fonts";
 import { derivePaletteFromColors } from "./derive-palette";
 import { withUnitGlossary } from "@/lib/unit-glossary";
@@ -648,11 +648,13 @@ export function BookDocument({
       {units.flatMap((unit) =>
         withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((page, idx) => {
           const imageSrc = resolvePageImageUrl(page, pageImages);
+          const imageSrcs = resolvePageImageUrls(page, pageImages);
           const pageLook = compact?.has(`${unit.unitNumber}:${idx}`) ? { ...look, compact: true } : look;
           const template = forcePlain?.has(`${unit.unitNumber}:${idx}`)
             ? "standard"
             : resolvePageTemplate(page, !!imageSrc, {
                 isUnitFirstPage: idx === 0,
+                pictureCount: imageSrcs.length,
                 metrics: { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
               });
           const edgeToEdge = template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template);
@@ -688,6 +690,7 @@ export function BookDocument({
                   unit={unit}
                   isUnitFirstPage={idx === 0 && !isPictureBook}
                   imageSrc={imageSrc}
+                  imageSrcs={imageSrcs}
                   look={pageLook}
                   showAnswerKey={inlineAnswers}
                   pageSize={pageSize}

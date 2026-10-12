@@ -14,7 +14,7 @@ const Book3DReader = dynamic(() => import("@/components/book/Book3DReader"), {
   ssr: false,
   loading: () => <p className="text-sm text-muted-foreground">3D görünüm yükleniyor…</p>,
 });
-import { resolvePageImageUrl } from "@/lib/page-image";
+import { resolvePageImageUrl, resolvePageImageUrls } from "@/lib/page-image";
 import { resolveLogoPositionStyle } from "@/lib/logo-position";
 import { derivePaletteFromColors } from "@/lib/pdf/derive-palette";
 import { withUnitGlossary } from "@/lib/unit-glossary";
@@ -248,6 +248,7 @@ export function BookReader({
                 page={page}
                 showAnswerKey={showAnswerKey}
                 imageUrl={resolvePageImageUrl(page, pageImages)}
+                imageUrls={resolvePageImageUrls(page, pageImages)}
                 listeningAudio={current.listeningAudio}
                 look={look}
                 unit={current}

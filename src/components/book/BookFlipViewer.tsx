@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import type { GeneratedPage, ListeningAudio } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT } from "@/lib/pdf/page-geometry";
-import { resolvePageImageUrl } from "@/lib/page-image";
+import { resolvePageImageUrl, resolvePageImageUrls } from "@/lib/page-image";
 import { PageView, type WebLook } from "@/components/book/PageContent";
 import { Button } from "@/components/ui/button";
 import "./flipbook.css";
@@ -133,6 +133,7 @@ export function BookFlipViewer({
                   page={page}
                   showAnswerKey={showAnswerKey}
                   imageUrl={resolvePageImageUrl(page, pageImages)}
+                  imageUrls={resolvePageImageUrls(page, pageImages)}
                   listeningAudio={listeningAudioByUnit(unitNumber)}
                   look={look}
                   unit={{ unitNumber, title: unitTitle }}

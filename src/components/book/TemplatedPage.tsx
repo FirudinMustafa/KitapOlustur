@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { ContentBlock, GeneratedPage, ListeningAudio } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
-import { isExerciseBlock, type LayoutTemplateId } from "@/lib/design/layouts";
+import { ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
 import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
 
 // Faz 1 "Tasarım sistemi": web twin of src/lib/pdf/templates.tsx. Draws a
@@ -103,14 +103,17 @@ export function TemplatedPage({
   unit,
   isUnitFirstPage,
   imageUrl,
+  imageUrls,
   look,
   renderBlock,
 }: {
-  template: LayoutTemplateId;
+  template: DesignedTemplate;
   page: GeneratedPage;
   unit: { unitNumber: number; title: string };
   isUnitFirstPage: boolean;
   imageUrl?: string;
+  /** Faz B3: every picture of the page, main picture first (source-zones). */
+  imageUrls?: string[];
   look: WebLook;
   renderBlock: RenderBlock;
   listeningAudio?: ListeningAudio[];
@@ -141,6 +144,88 @@ export function TemplatedPage({
 
   let body: ReactNode;
   switch (template) {
+    case "source-zones": {
+      // Web twin of the PDF's source-zones (src/lib/pdf/templates.tsx) -
+      // same plan, same block distribution.
+      const pictures = imageUrls ?? (imageUrl ? [imageUrl] : []);
+      const { bands, pictureScale, contentHeight } = planZones(page, pictures.length, !!heading, {
+        width: PAGE_WIDTH_PT,
+        height: H,
+        bodySize: look.theme.bodySize,
+      });
+      const pictureHeight = (h: number) => Math.round(h * contentHeight * pictureScale);
+      body = (
+        <>
+          {heading}
+          {kicker}
+          {bands.map((band, i) => {
+            if (band.kind === "pictures") {
+              const h = pictureHeight(band.height);
+              return (
+                <div key={i} className="flex" style={{ gap: ZONE_GAP, marginBottom: ZONE_GAP }}>
+                  {band.pictures.map((p, k) => (
+                    <div key={k} className="min-w-0" style={{ flex: band.widths[k] }}>
+                      <Illustration src={pictures[p]} height={h} look={look} style={{ marginBottom: 0 }} />
+                    </div>
+                  ))}
+                </div>
+              );
+            }
+            if (band.kind === "split") {
+              const h = pictureHeight(band.height);
+              const each = Math.round((h - ZONE_GAP * (band.pictures.length - 1)) / band.pictures.length);
+              const imageColumn = (
+                <div className="flex shrink-0 flex-col" style={{ width: `${band.imageWidth * 100}%`, gap: ZONE_GAP }}>
+                  {band.pictures.map((p, k) => (
+                    <Illustration key={k} src={pictures[p]} height={each} look={look} style={{ marginBottom: 0 }} />
+                  ))}
+                </div>
+              );
+              return (
+                <div key={i} className="flex" style={{ gap: ZONE_GAP, marginBottom: ZONE_GAP }}>
+                  {band.side === "left" && imageColumn}
+                  <div className="min-w-0 flex-1">{blocks(band.blocks, true)}</div>
+                  {band.side === "right" && imageColumn}
+                </div>
+              );
+            }
+            if (band.kind === "columns") {
+              return (
+                <div key={i} className="grid grid-cols-2 gap-4" style={{ marginBottom: ZONE_GAP }}>
+                  {band.columns.map((items, c) => (
+                    <div key={c} className="flex min-w-0 flex-col" style={{ gap: ZONE_GAP }}>
+                      {items.map((item, k) =>
+                        item.kind === "picture" ? (
+                          <Illustration key={k} src={pictures[item.picture]} height={pictureHeight(item.height)} look={look} style={{ marginBottom: 0 }} />
+                        ) : (
+                          <div key={k}>{blocks(item.blocks, true)}</div>
+                        ),
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            }
+            if (band.columns === 2) {
+              const [left, right] = splitColumnsWeb(band.blocks);
+              return (
+                <div key={i} className="grid grid-cols-2 gap-4" style={{ marginBottom: ZONE_GAP }}>
+                  <div>{blocks(left, true)}</div>
+                  <div>{blocks(right, true)}</div>
+                </div>
+              );
+            }
+            return (
+              <div key={i} style={{ marginBottom: ZONE_GAP }}>
+                {blocks(band.blocks, true)}
+              </div>
+            );
+          })}
+          {glossaryCards(3)}
+        </>
+      );
+      break;
+    }
     case "unit-opener-hero": {
       const hero = Math.round(H * 0.42);
       body = (

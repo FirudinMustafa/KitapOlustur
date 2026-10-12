@@ -1,6 +1,6 @@
 import { Text, View, Image } from "@react-pdf/renderer";
 import type { ContentBlock, GeneratedPage } from "@/lib/ai/schemas";
-import { isExerciseBlock, type LayoutTemplateId } from "@/lib/design/layouts";
+import { ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, type Look } from "./blocks";
 import { NOTO_SANS } from "./fonts";
 
@@ -11,11 +11,13 @@ import { NOTO_SANS } from "./fonts";
 // the page's outer edge (react-pdf), which the full-bleed templates rely on.
 
 export type TemplateProps = {
-  template: LayoutTemplateId;
+  template: DesignedTemplate;
   page: GeneratedPage;
   unit: { unitNumber: number; title: string };
   isUnitFirstPage: boolean;
   imageSrc?: string;
+  /** Faz B3: every picture of the page, main picture first (source-zones). */
+  imageSrcs?: string[];
   look: Look;
   showAnswerKey: boolean;
   pageSize: { width: number; height: number };
@@ -26,11 +28,23 @@ export type TemplateProps = {
 };
 
 // Templates that paint to the page edge and draw their own header area.
-export const EDGE_TO_EDGE_TEMPLATES: LayoutTemplateId[] = ["unit-opener-hero", "full-bleed-illustration"];
+export const EDGE_TO_EDGE_TEMPLATES: DesignedTemplate[] = ["unit-opener-hero", "full-bleed-illustration"];
 
-function Illustration({ src, height, look, fit = "cover" }: { src: string; height: number | string; look: Look; fit?: "cover" | "contain" }) {
+function Illustration({
+  src,
+  height,
+  look,
+  fit = "cover",
+  gap = 12,
+}: {
+  src: string;
+  height: number | string;
+  look: Look;
+  fit?: "cover" | "contain";
+  gap?: number;
+}) {
   return (
-    <View style={{ height, borderRadius: look.theme.radius, overflow: "hidden", backgroundColor: look.palette.primaryLight, marginBottom: 12 }} wrap={false}>
+    <View style={{ height, borderRadius: look.theme.radius, overflow: "hidden", backgroundColor: look.palette.primaryLight, marginBottom: gap }} wrap={false}>
       {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
       <Image src={src} style={{ width: "100%", height: "100%", objectFit: fit }} />
     </View>
@@ -111,11 +125,102 @@ function SectionKicker({ text, look }: { text?: string; look: Look }) {
 }
 
 export function TemplatedPageBody(props: TemplateProps) {
-  const { template, page, unit, isUnitFirstPage, imageSrc, look, showAnswerKey, pageSize, unitKicker, sectionKicker, bleed = 0 } = props;
+  const { template, page, unit, isUnitFirstPage, imageSrc, imageSrcs, look, showAnswerKey, pageSize, unitKicker, sectionKicker, bleed = 0 } = props;
   const heading = isUnitFirstPage && !EDGE_TO_EDGE_TEMPLATES.includes(template) ? <UnitHeading unit={unit} look={look} kicker={unitKicker} /> : null;
   const contentWidth = pageSize.width - 88;
 
   switch (template) {
+    case "source-zones": {
+      // Faz B2: the source page's arrangement (see src/lib/design/zones.ts).
+      // Heights are shares of the content area; text flows naturally inside
+      // each band, and a page whose content outgrows the plan was already
+      // sent to another template by resolvePageTemplate.
+      const pictures = imageSrcs ?? (imageSrc ? [imageSrc] : []);
+      const { bands, pictureScale, contentHeight } = planZones(page, pictures.length, !!heading, {
+        width: pageSize.width,
+        height: pageSize.height,
+        bodySize: look.theme.bodySize,
+      });
+      const pictureHeight = (h: number) => Math.round(h * contentHeight * pictureScale);
+      return (
+        <>
+          {heading}
+          <SectionKicker text={sectionKicker} look={look} />
+          {bands.map((band, i) => {
+            if (band.kind === "pictures") {
+              const h = pictureHeight(band.height);
+              return (
+                <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom: ZONE_GAP }} wrap={false}>
+                  {band.pictures.map((p, k) => (
+                    <View key={k} style={{ width: (contentWidth - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k] }}>
+                      <Illustration src={pictures[p]} height={h} look={look} gap={0} />
+                    </View>
+                  ))}
+                </View>
+              );
+            }
+            if (band.kind === "split") {
+              const h = pictureHeight(band.height);
+              const imageColumn = (
+                <View style={{ width: contentWidth * band.imageWidth }}>
+                  {band.pictures.map((p, k) => (
+                    <Illustration key={k} src={pictures[p]} height={Math.round((h - ZONE_GAP * (band.pictures.length - 1)) / band.pictures.length)} look={look} gap={k < band.pictures.length - 1 ? ZONE_GAP : 0} />
+                  ))}
+                </View>
+              );
+              return (
+                <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom: ZONE_GAP }}>
+                  {band.side === "left" && imageColumn}
+                  <View style={{ flex: 1 }}>
+                    <Blocks frameless blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
+                  </View>
+                  {band.side === "right" && imageColumn}
+                </View>
+              );
+            }
+            if (band.kind === "columns") {
+              return (
+                <View key={i} style={{ flexDirection: "row", gap: 16, marginBottom: ZONE_GAP }}>
+                  {band.columns.map((items, c) => (
+                    <View key={c} style={{ flex: 1 }}>
+                      {items.map((item, k) =>
+                        item.kind === "picture" ? (
+                          <Illustration key={k} src={pictures[item.picture]} height={pictureHeight(item.height)} look={look} gap={ZONE_GAP} />
+                        ) : (
+                          <View key={k} style={{ marginBottom: ZONE_GAP }}>
+                            <Blocks frameless blocks={item.blocks} look={look} showAnswerKey={showAnswerKey} />
+                          </View>
+                        ),
+                      )}
+                    </View>
+                  ))}
+                </View>
+              );
+            }
+            if (band.columns === 2) {
+              const [left, right] = splitColumns(band.blocks);
+              return (
+                <View key={i} style={{ flexDirection: "row", gap: 16, marginBottom: ZONE_GAP }}>
+                  <View style={{ flex: 1 }}>
+                    <Blocks frameless blocks={left} look={look} showAnswerKey={showAnswerKey} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Blocks frameless blocks={right} look={look} showAnswerKey={showAnswerKey} />
+                  </View>
+                </View>
+              );
+            }
+            return (
+              <View key={i} style={{ marginBottom: ZONE_GAP }}>
+                <Blocks frameless blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
+              </View>
+            );
+          })}
+          <GlossaryGrid glossary={page.glossary} look={look} columns={3} />
+        </>
+      );
+    }
+
     case "unit-opener-hero": {
       const heroHeight = Math.round(pageSize.height * 0.42);
       return (

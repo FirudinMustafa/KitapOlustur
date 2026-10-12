@@ -1,5 +1,6 @@
 import { diagramHeight, type Diagram } from "@/lib/diagrams";
 import { activityHeight, type Activity } from "@/lib/activities";
+import { layoutZones, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
 // Faz 1 "Tasarım sistemi": named page-layout templates. The writer model
 // picks one per page (generatedPageSchema.layoutTemplate) and every renderer
 // (BookDocument.tsx for PDF, PageContent.tsx for the web reader/Dizilim)
@@ -26,7 +27,10 @@ export type LayoutTemplateId = (typeof LAYOUT_TEMPLATE_IDS)[number];
 // What a page actually renders with: a template, or "standard" (the original
 // single-column flow - used for legacy pages and whenever a template's
 // requirements aren't met, see resolvePageTemplate).
-export type ResolvedTemplate = LayoutTemplateId | "standard";
+// "source-zones" (Faz B2) lays the page out like its source page
+// (page.zonePlan, see zones.ts). Never chosen by the writer.
+export type ResolvedTemplate = LayoutTemplateId | "standard" | "source-zones";
+export type DesignedTemplate = Exclude<ResolvedTemplate, "standard">;
 
 type TemplateSpec = {
   label: string;
@@ -108,6 +112,7 @@ type PageLike = {
   blocks: BlockLike[];
   glossary?: unknown[];
   imageLayout?: unknown;
+  zonePlan?: ZonePlan | null;
 };
 
 // A self-assessment list ("I can introduce myself.") rather than an
@@ -150,9 +155,11 @@ function textHeight(text: string, width: number, size: number): number {
   return lines * size * LINE;
 }
 
-export function estimateBlockHeight(b: BlockLike, width: number, size: number): number {
-  const inner = width - 24;
-  let h = 30 + (b.heading ? size * 1.9 : 0) + textHeight(b.body, inner, size);
+// `frameless`: printed without the card frame and exercise box, the way a
+// published coursebook sets an exercise (source-zones pages).
+export function estimateBlockHeight(b: BlockLike, width: number, size: number, frameless = false): number {
+  const inner = frameless ? width : width - 24;
+  let h = (frameless ? 12 : 30) + (b.heading ? size * 1.9 : 0) + textHeight(b.body, inner, size);
   if (b.dialogue?.length) {
     // avatar row: speaker label + padding + border ≈ 33pt over the text itself
     for (const d of b.dialogue) h += Math.max(30, textHeight(d.line, inner * 0.78 - 20, size) + 33) + 8;
@@ -166,7 +173,7 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number): 
   if (isChecklistBlock(b)) {
     h += (b.items ?? []).reduce((n, i) => n + textHeight(i, inner - 20, size) + 6, 0);
   } else if (b.items?.length || b.interactive || b.activity) {
-    h += 44;
+    h += frameless ? 8 : 44;
     const act = activityHeight(b, inner - 24, size);
     const dia = diagramHeight(b);
     h += act.extra + (dia.replacesItems ? dia.extra : 0);
@@ -198,6 +205,7 @@ const TEMPLATE_SAFETY: Partial<Record<ResolvedTemplate, number>> = {
   "reading-with-sidebar": 1.12,
   "image-left-text-right": 1.12,
   "exercise-grid": 1.08,
+  "source-zones": 1.3,
   // Plain flow stacks a picture, unit heading and every block full-width;
   // in the sample it spilled from an estimated 73%.
   standard: 1.4,
@@ -209,9 +217,72 @@ export function estimateTemplateFit(
   hasImage: boolean,
   isUnitFirstPage: boolean,
   m: PageMetrics = A4_METRICS,
+  pictureCount = hasImage ? 1 : 0,
 ): { needed: number; available: number } {
-  const raw = rawTemplateFit(page, template, hasImage, isUnitFirstPage, m);
+  const raw = template === "source-zones" ? zoneFit(page, pictureCount, isUnitFirstPage, m) : rawTemplateFit(page, template, hasImage, isUnitFirstPage, m);
   return { needed: raw.needed * (TEMPLATE_SAFETY[template] ?? 1), available: raw.available };
+}
+
+// Gap between zone bands, and between a split band's picture and text.
+export const ZONE_GAP = 12;
+
+// The one place a zoned page is measured, shared by the fit estimate and
+// both renderers so they agree: the bands with their blocks, and how far the
+// pictures are scaled down (to at most half their source height) so the
+// text fits beside and between them.
+export function planZones<B extends BlockLike>(
+  page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
+  pictureCount: number,
+  isUnitFirstPage: boolean,
+  m: PageMetrics,
+): { bands: ZonedBand<B>[]; pictureScale: number; contentHeight: number; needed: number } {
+  const cw = m.width - MARGIN_X * 2;
+  const size = m.bodySize;
+  const contentHeight = m.height - MARGIN_TOP - MARGIN_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0);
+  if (!page.zonePlan) return { bands: [], pictureScale: 1, contentHeight, needed: Infinity };
+  const height = (b: B, w: number) => estimateBlockHeight(b, w, size, true);
+  const column = (blocks: B[], w: number) => blocks.reduce((n, b) => n + height(b, w), 0);
+  const bands = layoutZones(page.zonePlan, page.blocks, pictureCount, (b) => height(b, cw));
+  const neededAt = (scale: number) => {
+    let needed = glossaryHeight(page, 3);
+    for (const band of bands) {
+      if (band.kind === "pictures") needed += band.height * contentHeight * scale + ZONE_GAP;
+      else if (band.kind === "split") {
+        const textW = cw * (1 - band.imageWidth) - ZONE_GAP;
+        needed += Math.max(band.height * contentHeight * scale, column(band.blocks, textW)) + ZONE_GAP;
+      } else if (band.columns === 2) {
+        const col = (cw - 16) / 2;
+        const heights = band.blocks.map((b) => height(b, col));
+        const total = heights.reduce((a, b) => a + b, 0);
+        let left = 0;
+        let right = 0;
+        for (const h of heights) {
+          if (left < total / 2) left += h;
+          else right += h;
+        }
+        needed += Math.max(left, right) + ZONE_GAP;
+      } else if (band.kind === "columns") {
+        const col = (cw - 16) / 2;
+        const heights = band.columns.map((items) =>
+          items.reduce((n, i) => n + (i.kind === "picture" ? i.height * contentHeight * scale : column(i.blocks, col)) + ZONE_GAP, 0),
+        );
+        needed += Math.max(...heights);
+      } else needed += column(band.blocks, cw) + ZONE_GAP;
+    }
+    return needed * (TEMPLATE_SAFETY["source-zones"] ?? 1);
+  };
+  for (const scale of [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
+    const needed = neededAt(scale);
+    if (needed <= contentHeight || scale === 0.5) return { bands, pictureScale: scale, contentHeight, needed };
+  }
+  return { bands, pictureScale: 0.5, contentHeight, needed: neededAt(0.5) };
+}
+
+function zoneFit(page: PageLike, pictureCount: number, isUnitFirstPage: boolean, m: PageMetrics): { needed: number; available: number } {
+  const { needed, contentHeight } = planZones(page, pictureCount, isUnitFirstPage, m);
+  // planZones already applies the safety factor; undo the one
+  // estimateTemplateFit adds on top.
+  return { needed: needed / (TEMPLATE_SAFETY["source-zones"] ?? 1), available: contentHeight };
 }
 
 function rawTemplateFit(
@@ -286,6 +357,8 @@ function rawTemplateFit(
       return { needed: stack(blocks, cw, size) + glossaryHeight(page, 2), available };
     case "standard":
       return { needed: img(0.27) + stack(blocks, cw, size) + glossaryHeight(page, 2), available };
+    case "source-zones":
+      return zoneFit(page, hasImage ? 1 : 0, isUnitFirstPage, m);
   }
 }
 
@@ -316,9 +389,19 @@ export function inferTemplate(page: PageLike, hasImage: boolean, isUnitFirstPage
 export function resolvePageTemplate(
   page: PageLike,
   hasImage: boolean,
-  { isUnitFirstPage = false, metrics = A4_METRICS }: { isUnitFirstPage?: boolean; metrics?: PageMetrics } = {},
+  {
+    isUnitFirstPage = false,
+    metrics = A4_METRICS,
+    pictureCount = hasImage ? 1 : 0,
+  }: { isUnitFirstPage?: boolean; metrics?: PageMetrics; pictureCount?: number } = {},
 ): ResolvedTemplate {
   if (page.imageLayout || page.blocks.some((b) => b.layout)) return "standard";
+  // Faz B2: a mirrored page is laid out like its source page whenever its
+  // pictures exist and the content fits that arrangement.
+  if (page.zonePlan && pictureCount > 0) {
+    const fit = estimateTemplateFit(page, "source-zones", hasImage, isUnitFirstPage, metrics, pictureCount);
+    if (fit.needed <= fit.available) return "source-zones";
+  }
   let id: LayoutTemplateId =
     page.layoutTemplate && page.layoutTemplate in LAYOUT_TEMPLATES ? page.layoutTemplate : inferTemplate(page, hasImage, isUnitFirstPage);
   if (LAYOUT_TEMPLATES[id].needsImage && !hasImage) id = "two-column";

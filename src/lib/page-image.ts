@@ -14,3 +14,23 @@ export function resolvePageImageUrl(
   const key = page.imageOverrideSourcePageNumber ?? page.sourcePageNumber;
   return pageImages?.[key];
 }
+
+// Faz B3: a page's additional pictures (extraImagePrompts) live in the same
+// pageImages map under negative keys, so they can never collide with a real
+// sourcePageNumber: picture k (1-based) of page n is -(n * 10 + k).
+export function extraImageKey(sourcePageNumber: number, k: number): number {
+  return -(sourcePageNumber * 10 + k);
+}
+
+// Every picture a page shows, main picture first. Extra pictures follow the
+// page's own number (they are never moved in Dizilim).
+export function resolvePageImageUrls(
+  page: Pick<GeneratedPage, "sourcePageNumber" | "imageOverrideSourcePageNumber" | "extraImagePrompts">,
+  pageImages: Record<number, string> | null | undefined,
+): string[] {
+  const main = resolvePageImageUrl(page, pageImages);
+  const extras = (page.extraImagePrompts ?? [])
+    .map((_, i) => pageImages?.[extraImageKey(page.sourcePageNumber, i + 1)])
+    .filter((u): u is string => !!u);
+  return main ? [main, ...extras] : extras;
+}

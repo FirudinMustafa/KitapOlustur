@@ -104,6 +104,9 @@ import {
   type PageDesignGrade,
 } from "@/lib/design/page-review";
 import { countPdfPages, forEachRasterizedPage, rasterizePdf } from "@/lib/pdf/rasterize";
+import { pdfPageTexts, slicePdf } from "@/lib/pdf/split";
+import { analyzeSourceLayout, type SourcePageLayout } from "@/lib/source-layout";
+import { mergePageMap } from "@/lib/page-map-merge";
 import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeCharactersForPrompt } from "@/lib/ai/characters";
 import type { CharacterSheet } from "@/db/schema";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
@@ -114,6 +117,8 @@ import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
 import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
+import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
+import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, writerBlueprint } from "@/lib/source-blueprint";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
 import { ACTIVITY_PROMPT, activityIssues, reconcileWordBank } from "@/lib/activities";
 import { DIAGRAM_PROMPT, diagramIssues, fixPrepositionItems } from "@/lib/diagrams";
@@ -413,8 +418,45 @@ async function saveSourceStyleMeta(
     .where(eq(generationRuns.id, runId));
 }
 
-async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
+// Faz B1: the page map is built from two sources. mupdf measures every page
+// (layout, pictures, exercises, trim) and reads its text layer verbatim; the
+// model only classifies and describes. Long books go to the model in chunks
+// of PAGE_MAP_CHUNK pages - one call over a whole coursebook hit the output
+// cap and silently dropped the tail of the book.
+const PAGE_MAP_CHUNK = 12;
+
+async function measureSourcePdf(pdfUrl: string): Promise<{ pageCount: number; layouts: SourcePageLayout[]; hasTextLayer: boolean }> {
   "use step";
+
+  const pdf = await fetchPdfBytes(pdfUrl);
+  const layouts = await analyzeSourceLayout(pdf);
+  const words = layouts.reduce((sum, l) => sum + l.wordCount, 0);
+  // A scan has (almost) no text layer - then the model must transcribe.
+  return { pageCount: layouts.length, layouts, hasTextLayer: words >= layouts.length * 20 };
+}
+
+async function fetchPdfBytes(pdfUrl: string): Promise<Uint8Array> {
+  const res = await fetch(pdfUrl);
+  if (!res.ok) throw new Error(`Kaynak PDF indirilemedi (${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+async function extractPageMapChunk(
+  runId: string,
+  pdfUrl: string,
+  from: number,
+  to: number,
+  totalPages: number,
+  transcribe: boolean,
+): Promise<PageMap["pages"]> {
+  "use step";
+
+  const whole = from === 1 && to === totalPages;
+  const pdf = await fetchPdfBytes(pdfUrl);
+  const data = whole ? pdf : await slicePdf(pdf, from, to);
+  const scope = whole
+    ? `this ${totalPages}-page PDF`
+    : `the attached PDF, which holds pages ${from}-${to} of a ${totalPages}-page book. Its first page is book page ${from} - number pages ${from} to ${to} (pageNumber is the book page, not the position in this excerpt)`;
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
@@ -430,19 +472,47 @@ async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
           content: [
             {
               type: "text",
-              text: "Go through this PDF page by page, in order, and classify EVERY page (cover, contents, unit_opener, content, exercise, glossary, review, answer_key, assessment, back_cover, or other). For each page, note which unit number it belongs to (or null if it isn't part of a unit), summarize what's on it, and if it carries a photo or illustration, describe it precisely - subject, scene, style - so it could be reimagined later as new artwork. Also transcribe the page's substantive running text into sourceText (headings, body copy, exercise prompts, dialogue) as closely to verbatim as practical - this is reference material for a later originality check, not a paraphrase; omit it only for pages with no real body text. Additionally, fill in visualStyle for each page from what you can actually see: the page's dominant colors, whether a logo/brand mark (distinct from a content photo) is present and roughly where, whether the page reads as compact/dense or spacious, and its coarse layoutZone (image_top_text_bottom, image_bottom_text_top, image_left_text_right, image_right_text_left, two_column, full_width_text, or full_width_image - pick the closest match, this is a shape classification, not a measurement) - this is used only to pick a color palette, layout density, and rough block arrangement for the new book, never to copy the source's actual design pixel-for-pixel. Do not skip any pages: totalPages must equal the number of page entries you return.",
+              text: [
+                `Go through ${scope}, page by page, in order, and classify EVERY page (cover, contents, unit_opener, content, exercise, glossary, review, answer_key, assessment, back_cover, or other). For each page, note which unit number it belongs to (or null if it isn't part of a unit; use the book's own unit/module numbering), summarize what's on it - including which exercise formats it uses (e.g. "circle the word", "match pictures to words", "listen and number", "complete the table", "crossword") - and if it carries photos or illustrations, describe them precisely - subject, scene, style - so they could be reimagined later as new artwork.`,
+                transcribe
+                  ? "Also transcribe the page's substantive running text into sourceText (headings, body copy, exercise prompts, dialogue) as closely to verbatim as practical - this is reference material for a later originality check, not a paraphrase; omit it only for pages with no real body text."
+                  : "Leave sourceText empty - the page text is read from the PDF separately.",
+                "Additionally, fill in visualStyle for each page from what you can actually see: the page's dominant colors, whether a logo/brand mark (distinct from a content photo) is present and roughly where, and whether the page reads as compact/dense or spacious - used only to pick a color palette and density for the new book, never to copy the source's design.",
+                `Do not skip any pages: return exactly ${to - from + 1} page entries.`,
+              ].join("\n\n"),
             },
-            { type: "file", mediaType: "application/pdf", data: new URL(pdfUrl) },
+            { type: "file", mediaType: "application/pdf", data: whole ? new URL(pdfUrl) : data },
           ],
         },
       ],
     }),
   );
-
   await recordUsage(runId, "pageMap", usage);
-  await db.insert(sourcePageMaps).values({ runId, totalPages: object.totalPages, pages: object.pages });
 
-  return object;
+  const texts = transcribe ? [] : await pdfPageTexts(pdf, from, to);
+  return object.pages
+    .filter((p) => p.pageNumber >= from && p.pageNumber <= to)
+    .map((p) => (transcribe ? p : { ...p, sourceText: texts[p.pageNumber - from] || p.sourceText }));
+}
+
+async function saveSourcePageMap(runId: string, pageMap: PageMap) {
+  "use step";
+
+  await db.insert(sourcePageMaps).values({ runId, totalPages: pageMap.totalPages, pages: pageMap.pages });
+}
+
+async function extractPageMap(runId: string, pdfUrl: string): Promise<PageMap> {
+  const { pageCount, layouts, hasTextLayer } = await measureSourcePdf(pdfUrl);
+
+  const described: PageMap["pages"] = [];
+  for (let from = 1; from <= pageCount; from += PAGE_MAP_CHUNK) {
+    const to = Math.min(pageCount, from + PAGE_MAP_CHUNK - 1);
+    described.push(...(await extractPageMapChunk(runId, pdfUrl, from, to, pageCount, !hasTextLayer)));
+  }
+
+  const pageMap = { totalPages: pageCount, pages: mergePageMap(pageCount, described, layouts) };
+  await saveSourcePageMap(runId, pageMap);
+  return pageMap;
 }
 
 async function extractOutline(
@@ -775,9 +845,10 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
         "You are an expert instructional materials writer and editor for the given subject. You write complete, publication-quality content for a single unit, mirroring a source book's page-by-page structure while writing entirely original content - you draw inspiration from the source's topics and structure, but never copy it verbatim.",
       prompt: [
         ...unitGenerationPromptHeader(input),
-        `The uploaded source book was the "${input.sourceBookType}". Here is the page-by-page blueprint of THIS unit's pages from that source:\n${JSON.stringify(input.unitSourcePages)}`,
+        `The uploaded source book was the "${input.sourceBookType}". Here is the page-by-page blueprint of THIS unit's pages from that source:\n${JSON.stringify(writerBlueprint(input.unitSourcePages))}`,
+        BLUEPRINT_INSTRUCTIONS,
         `Produce "pages" with exactly one generated page per source page listed above, in the same order, using the same sourcePageNumber and the same pageType. Write entirely new, original content for each page, inspired by (never copied from) its summary and topic.`,
-        "For any page that should carry a photo or illustration (mirroring one that had an image in the source, or wherever it naturally helps), set imagePrompt to a vivid description of a NEW, original image reimagining that scene - never a copy of the source image.",
+        "For any page that should carry a photo or illustration (mirroring one that had an image in the source, or wherever it naturally helps), set imagePrompt to a vivid description of a NEW, original image reimagining that scene - never a copy of the source image. Pages whose blueprint has no \"measured\" may still get one where it naturally helps.",
         // Faz B ("kaynağa yakın bölge-tabanlı mirroring", 2026-09-28): the
         // source page's own visualStyle.layoutZone is already included
         // verbatim in the unitSourcePages JSON above - this line just tells
@@ -785,7 +856,7 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
         // deterministically computing real pixel coordinates for an
         // arbitrary number of generated blocks isn't reliable without
         // knowing their rendered text height in advance.
-        "Each source page's visualStyle.layoutZone (if present) describes its coarse image/text arrangement (e.g. image_left_text_right, two_column, full_width_image). Let it guide how many blocks you write and how much weight text vs. image gets on that generated page - a full_width_image source page should get a short, light generated page dominated by its image; a two_column source page should get content that reads naturally as two short, parallel blocks rather than one long block. This shapes the generated page's feel to match the source's rhythm; it does not mean positioning anything at exact coordinates.",
+        "Each source page's layoutZone (present for pages without \"measured\") describes its coarse image/text arrangement (e.g. image_left_text_right, two_column, full_width_image). Let it guide how many blocks you write and how much weight text vs. image gets on that generated page - a full_width_image source page should get a short, light generated page dominated by its image; a two_column source page should get content that reads naturally as two short, parallel blocks rather than one long block. This shapes the generated page's feel to match the source's rhythm; it does not mean positioning anything at exact coordinates.",
         // Faz 3: the same coarse zone also suggests the page design template.
         "Use the source page's layoutZone as the starting point for layoutTemplate: image_left_text_right/image_right_text_left -> image-left-text-right, two_column -> two-column, full_width_image -> unit-opener-hero on a unit's first page (full-bleed-illustration elsewhere), image_top_text_bottom -> two-column with an imagePrompt, full_width_text -> reading-with-sidebar or exercise-grid depending on the content. Override it when the content clearly suits another template better.",
         "If content includes a dialogue, story, or a listening/read-aloud passage, also add a matching entry to listeningAudio with the exact text to be read aloud. If it's a dialogue between two or more named speakers, also fill dialogueLines with each turn broken out by speaker, in order - this lets each character be voiced distinctly instead of one narrator reading every line. Leave dialogueLines empty for a single-narrator passage.",
@@ -1419,6 +1490,7 @@ function withoutPageBookkeeping(unit: GeneratedUnit) {
       unitNumber: undefined,
       imageLayout: undefined,
       imageOverrideSourcePageNumber: undefined,
+      zonePlan: undefined,
       blocks: page.blocks.map((block) => ({ ...block, layout: undefined })),
     }));
   return {
@@ -1990,6 +2062,33 @@ async function generateUnitImages(
       console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: image skipped -`, err instanceof Error ? err.message : err);
       failures.push(errorText(err));
     }
+
+    // Faz B3: the page's further pictures - square, they fill small frames.
+    for (const [i, prompt] of (page.extraImagePrompts ?? []).entries()) {
+      const key = extraImageKey(page.sourcePageNumber, i + 1);
+      if (!prompt.trim() || images[key]) continue;
+      attempted++;
+      if (reuse[key]) {
+        images[key] = reuse[key];
+        continue;
+      }
+      try {
+        images[key] = await generateReviewedImage(
+          runId,
+          unit.unitNumber,
+          key,
+          pageImageContext(unit, page),
+          prompt,
+          `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}-${i + 1}.png`,
+          qualityMode,
+          EXTRA_PICTURE_SIZE,
+          { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
+        );
+      } catch (err) {
+        console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber} picture ${i + 1}: image skipped -`, err instanceof Error ? err.message : err);
+        failures.push(errorText(err));
+      }
+    }
   }
 
   if (failures.length) {
@@ -2076,6 +2175,8 @@ async function saveImagesForReview(
 // every image, just for one specific (unit, page) instead of a whole
 // unit's pages. Requires the page still be findable in `units` (it always
 // is - units is the same in-memory array built earlier this run).
+const EXTRA_PICTURE_SIZE: typeof BOOK_PIPELINE_INTERIOR_IMAGE_SIZE = "1024x1024";
+
 async function regenerateFlaggedImage(
   runId: string,
   units: GeneratedUnit[],
@@ -2088,23 +2189,38 @@ async function regenerateFlaggedImage(
   "use step";
 
   const unit = units.find((u) => u.unitNumber === unitNumber);
-  const page = [
+  const pages = [
     ...(unit?.studentBookPages ?? []),
     ...(unit?.workbookPages ?? []),
     ...(unit?.teacherBookPages ?? []),
     ...(unit?.testBookletPages ?? []),
-  ].find((p) => p.sourcePageNumber === pageNumber);
-  if (!unit || !page?.imagePrompt) return null;
+  ];
+  // A negative number is one of a page's extra pictures (extraImageKey).
+  let page = pages.find((p) => p.sourcePageNumber === pageNumber);
+  let prompt = page?.imagePrompt;
+  let size: typeof BOOK_PIPELINE_INTERIOR_IMAGE_SIZE = BOOK_PIPELINE_INTERIOR_IMAGE_SIZE;
+  if (pageNumber < 0) {
+    for (const p of pages) {
+      const i = (p.extraImagePrompts ?? []).findIndex((_, k) => extraImageKey(p.sourcePageNumber, k + 1) === pageNumber);
+      if (i >= 0) {
+        page = p;
+        prompt = p.extraImagePrompts?.[i];
+        size = EXTRA_PICTURE_SIZE;
+        break;
+      }
+    }
+  }
+  if (!unit || !page || !prompt) return null;
 
   return generateReviewedImage(
     runId,
     unitNumber,
     pageNumber,
     pageImageContext(unit, page),
-    page.imagePrompt,
+    prompt,
     `generated/${runId}/unit-${unitNumber}-page-${pageNumber}.png`,
     qualityMode,
-    BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
+    size,
     { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
   );
 }
@@ -2268,11 +2384,23 @@ export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics 
           `${label}, page ${page.sourcePageNumber}: exercise text refers to an image the learner should look at, but imagePrompt is not set on this page - add a vivid imagePrompt describing exactly that image.`,
         );
       }
+      // Faz B2: a mirrored page that outgrows its source page's arrangement
+      // falls back to a generic template - ask for content that fits the
+      // source's shape instead.
+      if (page.zonePlan) {
+        const pictures = (page.imagePrompt ? 1 : 0) + (page.extraImagePrompts?.length ?? 0);
+        const fit = estimateTemplateFit(page, "source-zones", !!page.imagePrompt, pageIndex === 0, metrics, pictures);
+        if (pictures > 0 && fit.needed > fit.available * 1.05) {
+          issues.push(
+            `${label}, page ${page.sourcePageNumber}: content is too long for this page's layout, which follows the source page (about ${Math.round((fit.needed / fit.available) * 100)}% of the space available). Tighten the wording of this page's blocks so it fits - keep every exercise.`,
+          );
+        }
+      }
       // Faz 1 "Tasarım sistemi": a designed page that can't hold its
       // content would fall back to the plain flow and spill onto a second
       // page - it looks unfinished, so ask for a tighter rewrite. Same
       // estimate the renderers use (resolvePageTemplate).
-      if (page.layoutTemplate) {
+      if (page.layoutTemplate && !page.zonePlan) {
         const spec = LAYOUT_TEMPLATES[page.layoutTemplate];
         if (spec?.needsImage && !page.imagePrompt) {
           issues.push(
@@ -2550,6 +2678,9 @@ async function rewritePageToFit(
     imageCharacters: page.imageCharacters,
     imageLayout: page.imageLayout,
     imageOverrideSourcePageNumber: page.imageOverrideSourcePageNumber,
+    // Pictures already exist for these; the plan comes from the source page.
+    extraImagePrompts: page.extraImagePrompts,
+    zonePlan: page.zonePlan,
     // Strip any coordinates the model invents (same rule as unit generation).
     blocks: object.blocks.map((b) => ({ ...b, layout: undefined })),
   });
@@ -3405,9 +3536,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           : ctx.run.isFromScratch
             ? DEFAULT_SCRATCH_UNIT_SKELETON
             : null;
-        const mirrored = effectiveSkeleton
+        const mirroredRaw = effectiveSkeleton
           ? await generateSkeletonSide(runId, genContext, effectiveSkeleton)
           : await generateMirroredSide(runId, genContext);
+        // Faz B2: mirrored pages are laid out like their source pages.
+        const mirrored = effectiveSkeleton ? mirroredRaw : { ...mirroredRaw, pages: applyZonePlans(mirroredRaw.pages, unitSourcePages) };
         if (!effectiveSkeleton) {
           await checkOriginality(runId, outlineUnit.number, mirrored.pages, unitSourcePages);
         }
@@ -3901,7 +4034,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           // resolvePageTemplate also refuses a template the content doesn't
           // fit (measured against this book's trim size), so a switch can't
           // push the page onto a second sheet.
-          const fitOptions = { isUnitFirstPage: proofPage.pageIndex === 0, metrics: layoutMetrics };
+          const fitOptions = {
+            isUnitFirstPage: proofPage.pageIndex === 0,
+            metrics: layoutMetrics,
+            pictureCount: resolvePageImageUrls(target, pageImages).length,
+          };
           if (action === "switch_template" && (!grade.suggestedTemplate || resolvePageTemplate({ ...target, layoutTemplate: grade.suggestedTemplate }, hasImage, fitOptions) !== grade.suggestedTemplate)) {
             action = "enrich_content";
           }
@@ -3912,7 +4049,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               next = await rewritePageToFit(runId, target, grade.issues.map((i) => i.description), outline.contentLanguage, "enrich");
               // Live E2E 2026-10-09: enriched pages with pictures ran onto a
               // second page. Only keep a rewrite that still fits.
-              const fit = estimateTemplateFit(next, resolvePageTemplate(next, hasImage, fitOptions), hasImage, proofPage.pageIndex === 0, layoutMetrics);
+              const fit = estimateTemplateFit(next, resolvePageTemplate(next, hasImage, fitOptions), hasImage, proofPage.pageIndex === 0, layoutMetrics, fitOptions.pictureCount);
               if (fit.needed > fit.available) continue;
             } catch {
               continue;

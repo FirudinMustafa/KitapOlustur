@@ -713,6 +713,7 @@ export function PageView({
   page,
   showAnswerKey,
   imageUrl,
+  imageUrls,
   listeningAudio,
   renderBlockWrapper,
   look,
@@ -722,6 +723,8 @@ export function PageView({
   page: GeneratedPage;
   showAnswerKey: boolean;
   imageUrl?: string;
+  /** Faz B3: every picture of the page (resolvePageImageUrls), main first. */
+  imageUrls?: string[];
   listeningAudio?: ListeningAudio[];
   renderBlockWrapper?: BlockWrapper;
   /** Faz 1: the book's theme; templated pages fall back to the classic look without it. */
@@ -734,7 +737,7 @@ export function PageView({
   // Faz 1 "Tasarım sistemi": same decision BookDocument.tsx makes, so the
   // reader shows the page the way it prints. Dizilim's block-dragging mode
   // (renderBlockWrapper) always gets the free-form canvas below.
-  const template = !hasLayout && !renderBlockWrapper && unit ? resolvePageTemplate(page, !!imageUrl, { isUnitFirstPage }) : "standard";
+  const template = !hasLayout && !renderBlockWrapper && unit ? resolvePageTemplate(page, !!imageUrl, { isUnitFirstPage, pictureCount: imageUrls?.length ?? (imageUrl ? 1 : 0) }) : "standard";
   if (template !== "standard" && unit) {
     const pageLook = look ?? CLASSIC_WEB_LOOK;
     return (
@@ -744,6 +747,7 @@ export function PageView({
         unit={unit}
         isUnitFirstPage={isUnitFirstPage}
         imageUrl={imageUrl}
+        imageUrls={imageUrls}
         look={pageLook}
         renderBlock={(block, { frameless }) => (
           <BlockView
