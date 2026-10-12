@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { ClerkLoaded, UserButton } from "@clerk/nextjs";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { UserButton } from "@clerk/nextjs";
+
+// False during the server render and hydration, true afterwards.
+const noopSubscribe = () => () => {};
+function useHydrated(): boolean {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
 import {
   BookMarkedIcon,
   BookOpenTextIcon,
@@ -67,6 +73,7 @@ type RecentStory = { id: string; title: string };
 const PROJECT_ID_PATTERN = /^\/projects\/([^/]+)/;
 
 export function AppSidebar() {
+  const hydrated = useHydrated();
   const pathname = usePathname();
   const [allProjects, setAllProjects] = useState<RecentProject[] | null>(null);
   const [recentStories, setRecentStories] = useState<RecentStory[] | null>(null);
@@ -250,13 +257,11 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <div className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-              {/* Clerk draws the button only on the client; rendering it before Clerk
-                  loads made the server and client HTML differ (hydration error). */}
-              <span className="flex size-7 shrink-0 items-center justify-center">
-                <ClerkLoaded>
-                  <UserButton />
-                </ClerkLoaded>
-              </span>
+              {/* Clerk's button renders differently on the server and the client;
+                  the hydration error that caused made React rebuild the whole
+                  page and wipe whatever the user had already typed into a form
+                  (live test 2026-10-12). Drawn only after hydration. */}
+              <span className="flex size-7 shrink-0 items-center justify-center">{hydrated ? <UserButton /> : null}</span>
               <span className="text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">Hesabım</span>
             </div>
           </SidebarMenuItem>
