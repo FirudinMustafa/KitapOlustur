@@ -94,3 +94,28 @@ export function complementaryPlan(sourcePages: SourcePage[], complementaryType: 
   }
   return lines.join("\n");
 }
+
+// Faz B: a mirrored side must have one page per source page. Live run
+// 2026-10-13: a 14-page unit came back as 2 pages - nothing checked the
+// count. Long units are written in chunks of MIRROR_CHUNK source pages and
+// any page still missing is asked for once more.
+export const MIRROR_CHUNK = 6;
+
+export function chunkSourcePages<P>(pages: P[], size = MIRROR_CHUNK): P[][] {
+  const out: P[][] = [];
+  for (let i = 0; i < pages.length; i += size) out.push(pages.slice(i, i + size));
+  return out;
+}
+
+export function missingSourcePages(pages: { sourcePageNumber: number }[], sourcePages: { pageNumber: number }[]): number[] {
+  const have = new Set(pages.map((p) => p.sourcePageNumber));
+  return sourcePages.map((s) => s.pageNumber).filter((n) => !have.has(n));
+}
+
+// The generated pages in source order, one per source page (first wins),
+// dropping any page the writer numbered outside the unit.
+export function orderBySource<T extends { sourcePageNumber: number }>(pages: T[], sourcePages: { pageNumber: number }[]): T[] {
+  const byNumber = new Map<number, T>();
+  for (const p of pages) if (!byNumber.has(p.sourcePageNumber)) byNumber.set(p.sourcePageNumber, p);
+  return sourcePages.flatMap((s) => (byNumber.has(s.pageNumber) ? [byNumber.get(s.pageNumber)!] : []));
+}

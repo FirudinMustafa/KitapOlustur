@@ -56,6 +56,7 @@ import {
   type BookOutline,
   type ImprovementPlan,
   type GeneratedUnit,
+  type GeneratedMirroredSide,
   type GeneratedPage,
   type StyleBible,
 } from "@/lib/ai/schemas";
@@ -123,7 +124,15 @@ import { titleCopiesSource } from "@/lib/title-guard";
 import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
 import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
-import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, complementaryPlan, writerBlueprint } from "@/lib/source-blueprint";
+import {
+  BLUEPRINT_INSTRUCTIONS,
+  applyZonePlans,
+  chunkSourcePages,
+  complementaryPlan,
+  missingSourcePages,
+  orderBySource,
+  writerBlueprint,
+} from "@/lib/source-blueprint";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
 import { ACTIVITY_PROMPT, activityIssues, reconcileWordBank, repairPuzzle } from "@/lib/activities";
 import { DIAGRAM_PROMPT, diagramIssues, fixPrepositionItems } from "@/lib/diagrams";
@@ -909,6 +918,38 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
 
   await recordUsage(runId, "unitGeneration", usage);
   return object;
+}
+
+// Faz B: one generated page per source page. A long unit is written in
+// chunks of source pages (one step each), and source pages still missing
+// afterwards are asked for once more - live run 2026-10-13: a 14-page unit
+// came back from a single call as 2 pages. Workflow-level, not a step: it
+// only sequences generateMirroredSide steps.
+async function generateMirroredInChunks(runId: string, input: UnitGenerationContext): Promise<GeneratedMirroredSide> {
+  const parts: GeneratedMirroredSide[] = [];
+  for (const chunk of chunkSourcePages(input.unitSourcePages)) {
+    parts.push(await generateMirroredSide(runId, { ...input, unitSourcePages: chunk }));
+  }
+  let pages = parts.flatMap((p) => p.pages);
+  const missing = missingSourcePages(pages, input.unitSourcePages);
+  if (missing.length) {
+    const retry = await generateMirroredSide(runId, {
+      ...input,
+      unitSourcePages: input.unitSourcePages.filter((p) => missing.includes(p.pageNumber)),
+      feedback: [
+        ...(input.feedback ?? []),
+        `The previous answer left out these source pages: ${missing.join(", ")}. Write exactly one page for each of them now, with that sourcePageNumber.`,
+      ],
+    });
+    parts.push(retry);
+    pages = [...pages, ...retry.pages];
+  }
+  const glossary = parts.flatMap((p) => p.glossary).filter((g, i, all) => all.findIndex((o) => o.term.toLowerCase() === g.term.toLowerCase()) === i);
+  return {
+    pages: orderBySource(pages, input.unitSourcePages),
+    glossary,
+    listeningAudio: parts.flatMap((p) => p.listeningAudio ?? []),
+  };
 }
 
 // Faz "Sabit Ünite İskeleti" (2026-09-21, ROADMAP.md): opt-in alternative to
@@ -3619,7 +3660,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
             : null;
         const mirroredRaw = effectiveSkeleton
           ? await generateSkeletonSide(runId, genContext, effectiveSkeleton)
-          : await generateMirroredSide(runId, genContext);
+          : await generateMirroredInChunks(runId, genContext);
         // Faz B2: mirrored pages are laid out like their source pages.
         const mirrored = effectiveSkeleton ? mirroredRaw : { ...mirroredRaw, pages: applyZonePlans(mirroredRaw.pages, unitSourcePages) };
         if (!effectiveSkeleton) {

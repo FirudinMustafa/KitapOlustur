@@ -51,3 +51,14 @@ describe("complementaryPlan", () => {
     expect(complementaryPlan([{ pageNumber: 1, pageType: "content", unitNumber: 1, summary: "s", hasImage: false }], "workbook")).toBeNull();
   });
 });
+
+describe("mirrored page count", () => {
+  it("chunks long units and finds missing pages", async () => {
+    const { chunkSourcePages, missingSourcePages, orderBySource } = await import("./source-blueprint");
+    const source = Array.from({ length: 14 }, (_, i) => ({ pageNumber: 12 + i }));
+    expect(chunkSourcePages(source).map((c) => c.length)).toEqual([6, 6, 2]);
+    expect(missingSourcePages([{ sourcePageNumber: 12 }, { sourcePageNumber: 13 }], source)).toHaveLength(12);
+    const ordered = orderBySource([{ sourcePageNumber: 14 }, { sourcePageNumber: 12 }, { sourcePageNumber: 99 }, { sourcePageNumber: 12 }], source);
+    expect(ordered.map((p) => p.sourcePageNumber)).toEqual([12, 14]);
+  });
+});
