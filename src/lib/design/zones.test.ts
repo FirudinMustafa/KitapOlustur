@@ -82,12 +82,14 @@ describe("layoutZones", () => {
     expect(bands.map((b) => b.kind)).toEqual(["text", "pictures", "split", "text"]);
   });
 
-  it("drops picture slots without a picture and never prints an empty frame", () => {
+  it("puts the main picture in the largest slot and never prints an empty frame", () => {
     const bands = layoutZones(plan, blocks, 1, () => 1);
     const pictures = bands.flatMap(zonedPictures);
     expect(pictures).toEqual([0]);
-    // the split band lost its picture and became plain text
-    expect(bands.some((b) => b.kind === "split")).toBe(false);
+    // the one picture is the main one: it takes the largest slot (the
+    // split band), and the picture row it can't fill disappears
+    expect(bands.some((b) => b.kind === "pictures")).toBe(false);
+    expect(bands.find((b) => b.kind === "split")).toMatchObject({ pictures: [0] });
     expect(bands.flatMap(zonedBlocks)).toEqual(blocks);
   });
 });

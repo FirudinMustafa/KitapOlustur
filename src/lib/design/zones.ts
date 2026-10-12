@@ -179,10 +179,26 @@ type Slotted =
 // and an empty text area disappears - so the result never prints an empty
 // frame.
 export function layoutZones<B>(plan: ZonePlan, blocks: B[], pictureCount: number, weightOf: (b: B) => number): ZonedBand<B>[] {
-  let next = 0;
+  // Picture slots in reading order with their size. The page's main picture
+  // (imagePrompt, index 0 - the scene) goes into the largest slot, as in
+  // the source; the others fill the remaining slots in reading order.
+  const slotAreas = plan.bands.flatMap((band) => {
+    if (band.kind === "pictures") return band.widths.map((w) => band.height * w);
+    if (band.kind === "split") return Array.from({ length: band.pictures }, () => (band.height * band.imageWidth) / band.pictures);
+    if (band.kind === "columns") return band.columns.flat().flatMap((i) => (i.kind === "picture" ? [i.height * 0.5] : []));
+    return [];
+  });
+  const assignment: (number | undefined)[] = slotAreas.map(() => undefined);
+  if (pictureCount > 0 && slotAreas.length) {
+    const largest = slotAreas.indexOf(Math.max(...slotAreas));
+    assignment[largest] = 0;
+    let p = 1;
+    for (let i = 0; i < assignment.length && p < pictureCount; i++) if (i !== largest) assignment[i] = p++;
+  }
+  let slot = 0;
   const take = (n: number) => {
     const out: number[] = [];
-    while (out.length < n && next < pictureCount) out.push(next++);
+    for (let k = 0; k < n; k++, slot++) if (assignment[slot] !== undefined) out.push(assignment[slot]!);
     return out;
   };
 

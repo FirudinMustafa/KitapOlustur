@@ -99,7 +99,7 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
     const y = (l.bbox ?? l.block.bbox).y / H;
     return y >= 0.06 && y <= 0.94; // not the folio
   });
-  const isHeadingNumber = (l: StextLine) => bodyFontPt !== null && (l.font?.size ?? 0) >= bodyFontPt * 1.2;
+  const isHeadingNumber = (l: StextLine) => bodyFontPt !== null && (l.font?.size ?? 0) >= bodyFontPt * 1.15;
   const headings = numbered.filter(isHeadingNumber);
   const exerciseCount = headings.length;
   const itemCount = numbered.length - headings.length;
@@ -170,7 +170,7 @@ function countColumns(blocks: { box: Box; words: number }[]): 1 | 2 | 3 {
   for (let i = 0; i < 100; i++) {
     if (bins[i] <= max * 0.08) continue;
     const last = runs[runs.length - 1];
-    if (last && i - last.to <= 2) {
+    if (last && i - last.to <= 1) {
       last.to = i;
       last.mass += bins[i];
     } else runs.push({ from: i, to: i, mass: bins[i] });
