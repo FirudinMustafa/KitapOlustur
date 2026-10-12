@@ -50,6 +50,9 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
     const sourceShape = { exercises: layout.exerciseCount, pictures: plan ? zonePictureCount(plan) : 0 };
     if (!plan) return { ...page, sourceShape };
     const extraSlots = Math.max(0, zonePictureCount(plan) - 1);
+    // The source page has no picture - neither does the mirrored page (a
+    // prompt here would be paid for and never printed).
+    if (!zonePictureCount(plan)) return { ...page, sourceShape, zonePlan: plan, imagePrompt: undefined, extraImagePrompts: undefined };
     return {
       ...page,
       sourceShape,

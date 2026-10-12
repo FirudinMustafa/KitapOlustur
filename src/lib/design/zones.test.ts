@@ -17,8 +17,10 @@ const layout = (images: SourcePageLayout["images"], textColumns: 1 | 2 = 1): Sou
 });
 
 describe("buildZonePlan", () => {
-  it("is null for a text-only page (the text templates handle those)", () => {
-    expect(buildZonePlan(layout([]))).toBeNull();
+  it("lays a text-only page out in the source's columns, with no picture frames", () => {
+    const plan = buildZonePlan(layout([], 2))!;
+    expect(plan.bands).toEqual([{ kind: "text", columns: 2, weight: 1 }]);
+    expect(zonePictureCount(plan)).toBe(0);
   });
 
   it("turns side-by-side pictures into a picture row and a side picture into a split band", () => {

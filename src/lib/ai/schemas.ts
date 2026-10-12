@@ -281,7 +281,7 @@ export const contentBlockSchema = z.object({
     .object({ headers: z.array(z.string()).min(1), rows: z.array(z.array(z.string())).min(1) })
     .optional()
     .describe(
-      "For grammar/conjugation/comparison content that is naturally a table (e.g. subject | verb | example). Each row has exactly one cell per header.",
+      "For grammar/conjugation/comparison content that is naturally a table (e.g. subject | verb | example). Each row has exactly one cell per header. Never put an exercise's answers in its table - the items are the questions and the answers belong only in answerKey.",
     ),
   // Print-workbook activity formats (src/lib/activities.ts). Additive:
   // a block without it prints as the numbered list it always did.

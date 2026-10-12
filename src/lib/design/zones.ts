@@ -41,12 +41,13 @@ export function zonePictureCount(plan: ZonePlan): number {
   }, 0);
 }
 
-// Null when the source page has no pictures: the text-only templates
-// (exercise-grid, two-column, reading-with-sidebar) already lay such pages
-// out better than a bare text band would.
+// A source page without pictures is still laid out like its source: its
+// text in the source's one or two columns, printed frameless. Live test
+// 2026-10-12: such pages went to the framed templates, ran over and came
+// out as two half-empty sheets each.
 export function buildZonePlan(layout: SourcePageLayout): ZonePlan | null {
   const images = layout.images.slice(0, MAX_ZONE_PICTURES);
-  if (!images.length) return null;
+  if (!images.length) return { bands: [{ kind: "text", columns: layout.textColumns >= 2 ? 2 : 1, weight: 1 }] };
   if (layout.textColumns >= 2) return buildColumnPlan(images);
   const columns = 1 as const;
 

@@ -1,6 +1,6 @@
 import { diagramHeight, type Diagram } from "@/lib/diagrams";
 import { activityHeight, type Activity } from "@/lib/activities";
-import { layoutZones, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
+import { layoutZones, zonePictureCount, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
 // Faz 1 "Tasarım sistemi": named page-layout templates. The writer model
 // picks one per page (generatedPageSchema.layoutTemplate) and every renderer
 // (BookDocument.tsx for PDF, PageContent.tsx for the web reader/Dizilim)
@@ -415,7 +415,8 @@ export function resolvePageTemplate(
   if (page.imageLayout || page.blocks.some((b) => b.layout)) return "standard";
   // Faz B2: a mirrored page is laid out like its source page whenever its
   // pictures exist and the content fits that arrangement.
-  if (page.zonePlan && pictureCount > 0) {
+  // A plan without picture frames (a text-only source page) needs none.
+  if (page.zonePlan && (pictureCount > 0 || zonePictureCount(page.zonePlan) === 0)) {
     const fit = estimateTemplateFit(page, "source-zones", hasImage, isUnitFirstPage, metrics, pictureCount);
     if (fit.needed <= fit.available) return "source-zones";
   }

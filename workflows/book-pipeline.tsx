@@ -121,6 +121,7 @@ import { renumberSidePages } from "@/lib/page-numbers";
 import { numberExercises } from "@/lib/exercise-numbers";
 import { titleCopiesSource } from "@/lib/title-guard";
 import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
+import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, complementaryPlan, writerBlueprint } from "@/lib/source-blueprint";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
@@ -2076,7 +2077,10 @@ async function generateUnitImages(
   let attempted = 0;
 
   for (const original of allPages) {
-    const page = original.imagePrompt || !studentPages.has(original) ? original : { ...original, imagePrompt: fallbackImagePrompt(original, characterSheets) };
+    // ...except a mirrored page whose source page has no picture.
+    const noPicture = original.sourceShape?.pictures === 0;
+    const page =
+      original.imagePrompt || !studentPages.has(original) || noPicture ? original : { ...original, imagePrompt: fallbackImagePrompt(original, characterSheets) };
     if (!page.imagePrompt || images[page.sourcePageNumber]) continue;
     attempted++;
     if (reuse[page.sourcePageNumber]) {
@@ -2410,6 +2414,8 @@ export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics 
       for (const block of page.blocks) {
         for (const issue of diagramIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
         for (const issue of activityIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
+        const leak = answerLeakIssue(block, `${label}, page ${page.sourcePageNumber}`);
+        if (leak) issues.push(leak);
         // "I can..." self-assessment lists print with tick boxes and have
         // no correct answers - see isChecklistBlock.
         if (block.items?.length && !isChecklistBlock(block) && block.items.length !== (block.answerKey?.length ?? 0)) {
@@ -2508,7 +2514,7 @@ export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   const fix = (pages?: GeneratedPage[]) =>
     pages?.map((page) =>
       fillZonePictures(
-        numberExercises(fixMapAnswers({ ...page, blocks: page.blocks.map((b) => repairPuzzle(reconcileWordBank(fixPrepositionItems(b)))) }).page),
+        numberExercises(fixMapAnswers({ ...page, blocks: page.blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) }).page),
         (p) => fallbackImagePrompt(p, []),
       ),
     );
