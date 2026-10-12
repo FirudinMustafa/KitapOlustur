@@ -17,7 +17,7 @@
 | Fontlar (gerçek kalın, Türkçe, çocuk teması fontları) | ✅ Var |
 | **Sahne görselleri (kapak, karakter, ünite görselleri)** | ⏳ **Test edilemedi** — Cloudflare günlük ücretsiz kotası doldu |
 | Kaynak kitapla canlı kıyas | 🟡 Yapı/düzen seviyesi ✅, görsel zenginlik ⏳ |
-| **Kaynağın formatını yakalama** (yerleşim, alıştırma biçimleri, sayfa başına çoklu görsel) | ❌ **Yok** — bkz. §2b denetim |
+| **Kaynağın formatını yakalama** (yerleşim, alıştırma biçimleri, sayfa başına çoklu görsel) | 🟡 Kod tamam (Faz B, §4); canlı üretimle doğrulanmadı |
 
 **Denetim sonrası düzeltilmiş cevap (2026-10-12):** Çıktı kaynağın formatında değil; sabit bir tasarım sistemi (9 şablon, 5 tema, sayfa başına tek görsel) kaynaktan alınan sayfa sırası/türü ve kaba ipuçlarıyla dolduruluyor. Gerçekçi "aynı format, farklı içerik" benzerliği: Workbook ≈ %30–40, Student Book ≈ %20–30. Boşluğun çoğu koddan; ücretli kota formatı değil, görsel/yazı kalitesini artırır.
 
@@ -82,14 +82,18 @@ Hiçbir denemede sahne görseli üretilemedi (Cloudflare kotası). Uyarılar Sü
 
 ## 4. Kalanlar (öncelik sırasıyla)
 
-**Faz B — kaynağın formatını yakalamak (asıl hedef, denetimden):**
-- B1. Deterministik kaynak analizi: mupdf metin blokları, görsel kutuları ve yazı boyutları + sayfa görüntüsüyle yapılandırılmış "sayfa planı" (alıştırma türü, numaralandırma, görsel sayısı/konumu). Büyük PDF için parçalı işleme.
-- B2. `zone-layout.ts`: sayfa planındaki bölgeler react-pdf konumlarına çevrilecek; 9 şablon yalnızca yedek.
-- B3. Sayfa başına çoklu görsel slotu; slot oranında görsel üretimi.
-- B4. Yeni alıştırma türleri: crossword, wordsearch, unscramble, odd-one-out, tick/cross, ordering, look-and-number, iki sütunlu noktalı eşleştirme, numaralı boşluklu cloze, hikâye şeridi.
-- B5. Kaynaktan sayfa boyutu; sayfa numaralı içindekiler + beceri matrisi; sürekli alıştırma numaralandırması.
-- B6. Tamamlayıcı kitap için kaynak blueprint'i.
-- B7. `i_5_team_2.pdf` (25 sayfa gerçek Student Book) ile yan yana kıyas ölçütü.
+**Faz B — kaynağın formatını yakalamak (2026-10-12, yapıldı, canlı üretimle henüz doğrulanmadı):**
+| | Ne yapıldı | Commit |
+|---|---|---|
+| B1 ✅ | `src/lib/source-layout.ts`: her kaynak sayfa mupdf ile **ölçülüyor**. Ölçülenler: içerik görselleri (arka plan, şerit, ikon ve üst/alt bantlar ayıklanıyor), metin sütunları, kelime sayısı, numaralı alıştırma başlıkları ile madde numaralarının ayrımı, alıştırma yönergeleri, font boyutları, sayfa boyutu. Sayfa haritası 12'şer sayfalık parçalarla çıkarılıyor; uzun kitapta kesilme yok. Sayfa metni artık modelin yazdığı değil, PDF'in metin katmanı. Atlanan sayfa için taslak kayıt açılıyor. | `4867fad` |
+| B2 ✅ | `src/lib/design/zones.ts`: ölçülen sayfadan **bölge planı** çıkıyor. Bant türleri: resim satırı, yanda resim + metin, metin, resimleri sütun içinde olan iki bağımsız sütun. Bu plana göre dizilen "source-zones" düzeni PDF ve web okuyucuda ortak; sığmazsa resimler %50'ye kadar küçülüyor, yine sığmazsa şablona düşüyor. Bu sayfalarda alıştırmalar çerçevesiz basılıyor, yayınevi gibi. Yazara ölçülen plan gidiyor: resim, alıştırma ve madde sayısı, sütun, kelime, alıştırma biçimleri. | `4867fad` |
+| B3 ✅ | Sayfa başına birden çok görsel (`extraImagePrompts`, `extraImageKey`); üretim, yeniden üretim, PDF ve okuyucu destekliyor. Ana görsel en büyük yuvaya yerleşiyor. | `4867fad`, `b3fcd21` |
+| B4 ✅ | 7 yeni alıştırma türü: crossword, wordsearch, unscramble, odd_one_out, tick_cross, ordering, match_lines. Izgaralar kodla ve deterministik üretiliyor. Doğrulama ve onarım adımları var. PDF, web ve EPUB destekli. ✓/✗ işaretleri Noto Sans Symbols 2 ile basılıyor. EPUB'da diyalog, tablo ve bilgi kutuları artık kaybolmuyor. | `73ade97` |
+| B5 🟡 | İçindekilerde ünite sayfa aralıkları ("pp. 4-12") var; alıştırmalar sayfa içinde 1, 2, 3 diye numaralanıyor. **Kaynağın sayfa boyutu henüz uygulanmadı:** DB enum'una yeni değer (ör. 220×280 mm) eklemek için migrasyon gerekiyor, kullanıcı onayı bekleniyor. Beceri matrisi (Vocabulary/Grammar/Skills sütunları) yapılmadı. | `c8a9fb8` |
+| B6 ✅ | Tamamlayıcı kitap ölçülen kaynak üniteden plan alıyor: sayfa sayısı, sayfa başına alıştırma ve madde, serinin alıştırma biçimleri, ders sırasına bağlılık. | `90b8ffc` |
+| B7 ✅ | `scripts/fidelity.mts` + `src/lib/fidelity.ts`: üretilen PDF de aynı analizciyle ölçülüp kaynakla sayfa sayfa puanlanıyor (resim, alıştırma, sütun, yerleşim). Kaynak kendisine karşı %100. Örnek render'da (kaynak s.17 ve s.13 planıyla, kasıtlı az içerikle) %65 çıktı; aradaki farkı içerik yaratıyor (7'ye karşı 3 alıştırma). | `b3fcd21` |
+
+**Sıradaki adım:** `i_5_team_2.pdf` ile canlı üretim (KIYAS-6), ardından `npx tsx scripts/fidelity.mts i_5_team_2.pdf <üretilen.pdf>` ile puanlama.
 
 **Önceki liste:**
 
