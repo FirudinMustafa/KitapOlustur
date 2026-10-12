@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { checkPrintReadiness } from "@/lib/print-readiness";
 import { PERSONA_LABELS, type PersonaReviewSummary } from "@/lib/personas";
 import { DeleteButton } from "@/components/app/delete-button";
+import { CancelRunButton } from "@/components/app/cancel-run-button";
 import { ThemePicker } from "@/components/app/theme-picker";
 import type { CharacterSheet, CoverMockup, PrintReport } from "@/db/schema";
 import dynamic from "next/dynamic";
@@ -182,6 +183,12 @@ type ProjectData = {
   designReview?: DesignReviewSummary | null;
   // Süreç Günlüğü (src/lib/process-log.ts).
   processLog?: ProcessLog | null;
+  // The decision for the current approval gate was already delivered; the
+  // workflow keeps the awaiting_* status while it works on it.
+  gateSubmitted?: boolean;
+  // `books` come from the last finished run because the newest run has not
+  // finished (see deliveredBooks in src/lib/project-runs.ts).
+  booksFromEarlierRun?: boolean;
 };
 
 const TERMINAL_STATUSES = new Set(["done", "failed", "changes_requested"]);
@@ -359,7 +366,9 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
     approvingContent ||
     submittingImageReview ||
     approvingFinal ||
-    submittingLogo;
+    submittingLogo ||
+    retheming;
+  const gateLocked = Boolean(data.gateSubmitted);
 
   async function refresh() {
     const fresh = await fetch(`/api/projects/${projectId}`);
@@ -632,6 +641,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
             )}
           </div>
         </div>
+        {run && !TERMINAL_STATUSES.has(run.status) && <CancelRunButton projectId={projectId} onCancelled={refresh} />}
         {(!run || TERMINAL_STATUSES.has(run.status)) && (
           <DeleteButton
             endpoint={`/api/projects/${projectId}`}
@@ -829,7 +839,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
-      {run?.status === "awaiting_outline_approval" && outlineData && (
+      {run?.status === "awaiting_outline_approval" && !gateLocked && outlineData && (
         <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Üretime başlamadan önce dizelgeyi onayla
@@ -916,11 +926,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
-      {run?.status === "awaiting_character_approval" && !!run.characterSheets?.length && (
+      {run?.status === "awaiting_character_approval" && !gateLocked && !!run.characterSheets?.length && (
         <CharacterApproval projectId={projectId} sheets={run.characterSheets} waitingSince={run.updatedAt} onDone={refresh} />
       )}
 
-      {run?.status === "awaiting_logo_upload" && (
+      {run?.status === "awaiting_logo_upload" && !gateLocked && (
         <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Kaynak PDF&apos;te bir logo tespit edildi
@@ -968,7 +978,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
-      {run?.status === "awaiting_variant_selection" && run.pendingVariants && (
+      {run?.status === "awaiting_variant_selection" && !gateLocked && run.pendingVariants && (
         <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Ünite {run.pendingVariants.unitNumber} için bir varyant seç
@@ -1029,7 +1039,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
-      {run?.status === "awaiting_content_approval" && pendingContentApproval && (
+      {run?.status === "awaiting_content_approval" && !gateLocked && pendingContentApproval && (
         <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Görsel üretimine geçmeden önce tüm ünitelerin içeriğini onayla
@@ -1168,7 +1178,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         </div>
       )}
 
-      {run?.status === "awaiting_image_review" && pendingImageReview && (
+      {run?.status === "awaiting_image_review" && !gateLocked && pendingImageReview && (
         <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Otomatik kalite kontrolünden geçemeyen görseller
@@ -1247,7 +1257,17 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
         <DesignQualityPanel summary={data.designReview} />
       )}
 
-      {run?.status === "awaiting_final_approval" && (
+      {gateLocked && run?.status.startsWith("awaiting_") && (
+        <div className="mt-5 rounded-2xl border bg-card p-5 text-sm text-card-foreground shadow-xs">
+          <p className="font-medium text-foreground">Kararın iletildi</p>
+          <p className="mt-1 text-muted-foreground">
+            İş akışı bu adımdaki kararını işliyor; sonraki adıma geçince sayfa kendiliğinden güncellenecek. Tekrar onay
+            vermene gerek yok.
+          </p>
+        </div>
+      )}
+
+      {run?.status === "awaiting_final_approval" && !gateLocked && (
         <div data-approval-gate className="relative mt-5 scroll-mt-20 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/50 p-5 pl-6 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-warning">
           <h2 className="font-heading text-lg font-medium text-foreground">
             Nihai onay - kitaplar henüz derlenmedi
@@ -1513,6 +1533,11 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               taşındı (bkz. ArrangementEditor.tsx'in sayfa konumlandırma
               modu), ayrı bir editör olarak kalmadı. */}
           <h2 className="font-heading text-2xl font-medium text-foreground">Üretilen kitaplar</h2>
+          {data.booksFromEarlierRun && (
+            <p className="text-sm text-muted-foreground">
+              Son tamamlanan üretimin dosyaları gösteriliyor; yeni üretim bitince bunların yerini alacak.
+            </p>
+          )}
           {books.map((book) => {
             const audioTracks = audioTracksFor(book);
             return (

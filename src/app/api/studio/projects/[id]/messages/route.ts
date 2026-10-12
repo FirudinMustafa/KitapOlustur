@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateText, tool, stepCountIs, type ModelMessage } from "ai";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
@@ -21,6 +21,10 @@ Elinde üç araç var: generateImage (bir sahnenin/betimlemenin görselini üret
 
 type CreatedArtifact = {
   id: string;
+  // The chat bubble shows artifacts by messageId - without these two fields
+  // a fresh result only appeared after a page reload.
+  messageId: string | null;
+  prompt: string | null;
   type: "image" | "audio" | "video";
   status: "pending" | "done" | "failed";
   url: string | null;
@@ -56,6 +60,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "Mesaj boş olamaz" }, { status: 400 });
   }
 
+  // "Bunun görselini/sesini üret" with an empty box means "of the latest
+  // story text". The literal placeholder used to be sent to the paid image /
+  // speech models instead.
+  let directSubject = userText;
+  if (directAction && directAction !== "video" && !directSubject) {
+    const lastAssistant = await db.query.storyMessages.findFirst({
+      where: and(eq(storyMessages.storyProjectId, id), eq(storyMessages.role, "assistant")),
+      orderBy: [desc(storyMessages.createdAt)],
+    });
+    directSubject = lastAssistant?.content.trim().slice(0, 1500) ?? "";
+    if (!directSubject) {
+      return NextResponse.json({ error: "Önce bir hikaye/metin yaz ya da ne üretileceğini kutuya yaz." }, { status: 400 });
+    }
+  }
+
   const [userMessage] = await db
     .insert(storyMessages)
     .values({ storyProjectId: id, role: "user", content: userText || `(${directAction} üretimi istendi)` })
@@ -84,6 +103,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       .returning();
     const artifact: CreatedArtifact = {
       id: row.id,
+      messageId: row.messageId,
+      prompt: row.prompt,
       type,
       status: result.status,
       url: row.url,
@@ -118,6 +139,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         .returning();
       const artifact: CreatedArtifact = {
         id: row.id,
+        messageId: row.messageId,
+        prompt: row.prompt,
         type: "video",
         status: "failed",
         url: null,
@@ -151,6 +174,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       .returning();
     const artifact: CreatedArtifact = {
       id: row.id,
+      messageId: row.messageId,
+      prompt: row.prompt,
       type: "video",
       status: result.status,
       url: row.url,
@@ -164,7 +189,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   if (directAction) {
-    const prompt = userText || "Sohbetteki en son hikaye/metin içeriği";
+    const prompt = directSubject;
     const artifact =
       directAction === "video"
         ? await persistVideo(userText, directVideoProvider)

@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
-import { resumeApprovalHook } from "@/lib/approval";
+import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
 import { isOwnBlobUrl } from "@/lib/blob-url";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -34,7 +34,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "Geçersiz logo adresi" }, { status: 400 });
   }
 
-  const failure = await resumeApprovalHook(run.id, `logo-upload:${run.id}`, { logoUrl, skip });
+  const failure = await resumeApprovalHook(run, currentGateToken(run)!, { logoUrl, skip });
   if (failure) return failure;
 
   await logHumanDecision(run.id, `awaiting_logo_upload`, skip || !logoUrl ? "Logo adımı atlandı" : "Kendi logosu yüklendi");

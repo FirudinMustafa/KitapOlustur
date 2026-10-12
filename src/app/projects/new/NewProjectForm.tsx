@@ -271,6 +271,10 @@ export function NewProjectForm({
         setError(`Lütfen 1-${MAX_UNIT_LIMIT} arası bir ünite sayısı girin.`);
         return;
       }
+      if (isbn.trim() && !isValidIsbn13(isbn)) {
+        setError("Girilen ISBN geçerli bir ISBN-13 değil (sağlama toplamı tutmuyor).");
+        return;
+      }
 
       setSubmitting(true);
       try {
@@ -281,6 +285,7 @@ export function NewProjectForm({
             mode: "scratch",
             name,
             level,
+            isbn: isbn.trim() || null,
             bookType,
             customNotes,
             brief: brief.trim() || null,

@@ -1,7 +1,7 @@
 # Yayınevi Kalitesinde Çıktı — Canlı Takip
 
 > **Amaç:** İnternetten bulunan bir Workbook / Student Book PDF'ini sisteme yüklediğimizde, yayınevi kalitesinde **benzer** (birebir kopya değil, özgün) bir kitap almak.
-> Bu dosya her çalışma adımında güncellenir. Son güncelleme: **2026-10-10**. Branch: `redesign/ui`.
+> Bu dosya her çalışma adımında güncellenir. Son güncelleme: **2026-10-12**. Branch: `redesign/ui`.
 
 ---
 
@@ -17,8 +17,11 @@
 | Fontlar (gerçek kalın, Türkçe, çocuk teması fontları) | ✅ Var |
 | **Sahne görselleri (kapak, karakter, ünite görselleri)** | ⏳ **Test edilemedi** — Cloudflare günlük ücretsiz kotası doldu |
 | Kaynak kitapla canlı kıyas | 🟡 Yapı/düzen seviyesi ✅, görsel zenginlik ⏳ |
+| **Kaynağın formatını yakalama** (yerleşim, alıştırma biçimleri, sayfa başına çoklu görsel) | ❌ **Yok** — bkz. §2b denetim |
 
-**Kısa cevap:** Alıştırma yapısı, sayfa düzeni ve cevap doğruluğu bakımından kaynağın profesyonel bir benzeri çıkıyor. Görsel zenginlik (sahne illüstrasyonları) görsel servis kotasına bağlı ve henüz görselli bir tam test yapılmadı.
+**Denetim sonrası düzeltilmiş cevap (2026-10-12):** Çıktı kaynağın formatında değil; sabit bir tasarım sistemi (9 şablon, 5 tema, sayfa başına tek görsel) kaynaktan alınan sayfa sırası/türü ve kaba ipuçlarıyla dolduruluyor. Gerçekçi "aynı format, farklı içerik" benzerliği: Workbook ≈ %30–40, Student Book ≈ %20–30. Boşluğun çoğu koddan; ücretli kota formatı değil, görsel/yazı kalitesini artırır.
+
+**Önceki kısa cevap:** Alıştırma yapısı, sayfa düzeni ve cevap doğruluğu bakımından kaynağın profesyonel bir benzeri çıkıyor. Görsel zenginlik (sahne illüstrasyonları) görsel servis kotasına bağlı ve henüz görselli bir tam test yapılmadı.
 
 ---
 
@@ -34,6 +37,29 @@
 | `79be43b` | **Canlı testten:** Resim seçilmeyen alıştırmalar için `fillMissingPictures` adımı; yer edatı maddeleri boşluk (`___`) içermek zorunda. |
 | `3d7a539` | **Canlı testten (en ciddisi):** Tasarım döngüsünün sayfa yeniden yazımı alıştırmaları, resimleri ve tüm cevap anahtarını siliyordu → `mergePageRewrite` (`src/lib/design/merge-rewrite.ts`). Harita cevapları ızgaradan hesaplanıp düzeltiliyor (`src/lib/map-answers.ts`). |
 | `4b8f13e` | **Canlı testten:** Yer edatı cevapları çizimden alınıyor; kelime kutusu ile cevap uyumlu hâle getiriliyor (`reconcileWordBank`); hâlâ taşan sayfa için sıkıştırılmış 3. dizme geçişi; cevap anahtarında satır sonu kısa çizgi sorunu giderildi. |
+
+## 2b. Uçtan uca denetim (2026-10-12)
+
+Üç ajan frontend, backend ve üretim hattını salt-okuma inceledi (plan: `~/.claude/plans/projeyi-bastan-sona-tum-wild-rose.md`).
+- **Frontend:** tüm linkler/butonlar çalışıyor, onay kapıları API ile uyumlu.
+- **Backend:** başka kullanıcının verisine erişim (IDOR) yok, şema↔migration uyumlu.
+- **Üretim hattı:** kaynak PDF deterministik ayrıştırılmıyor (tümü LLM'e gidiyor). `schemas.ts`'te anılan `zone-layout.ts` hiç yazılmamış. Gerçek workbook alıştırmalarının çoğu yok (bulmaca, kelime avı, tick/cross, look-and-number, hikâye şeridi…). Tamamlayıcı kitap kaynaktan yapı almıyor. Büyük PDF'te sayfa haritası kesilir.
+
+**Faz A — güven/stabilite düzeltmeleri (yapıldı):**
+| Sorun | Düzeltme |
+|---|---|
+| Hook henüz kayıtlı değilken gelen onay çalışan run'ı "başarısız" yapıyordu | `src/lib/approval.ts`: gerçek iş akışı durumu (`getRun().status`) kontrol ediliyor; canlıysa "tekrar dene" |
+| Onaydan sonra aynı kapı aktif butonlarla geri geliyordu, 2. karar sessizce kayboluyordu | İletilen karar `run_events` (kind `gate`) ile işaretleniyor; ikinci gönderim 409, sayfa "Kararın iletildi" gösteriyor |
+| Varyant seçimi ünite no'sunu istemciden alıyordu | Tüm kapı token'ları sunucuda `currentGateToken(run)` ile üretiliyor |
+| `start()` hatası run'ı sonsuza dek `pending` bırakıyordu; iptal yoktu | `src/lib/start-run.ts` (`launchRun`) + `POST /api/projects/[id]/cancel` + "Üretimi durdur" butonu |
+| Yeni/başarısız run bitmiş kitapların indirmelerini gizliyordu | `deliveredBooks` + DOCX/LMS export son *tamamlanmış* run'dan |
+| Ana hat onayında geçersiz ünite limiti "tüm üniteler" oluyordu | 1–30 doğrulaması, aksi 400 |
+| Sıfırdan modunda ISBN gönderilmiyordu | Gönderiliyor + doğrulanıyor |
+| Stüdyo boş girdiyle ücretli anlamsız görsel/ses üretiyordu; yeni sonuçlar sohbette görünmüyordu | Son hikâye metni kullanılıyor (yoksa 400); `messageId`/`prompt` dönüyor |
+| PDF'te makine izleri | Kapakta "Generated with…" ve "PRACTICE" rozet yazısı kaldırıldı; sayfa no yalnızca "n" |
+| Tamamlayıcı/öğretmen/test sayfaları görsel numarasıyla çakışabiliyordu | `renumberSidePages` (`src/lib/page-numbers.ts`) |
+
+Doğrulama: `tsc` temiz, `vitest` 46 dosya / 293 test geçti (yeni: `approval.test.ts`, `page-numbers.test.ts`). Canlı onay-kapısı testi henüz yapılmadı (gerçek üretim gerektiriyor).
 
 Daha önceki işler (6 fazlık yeniden tasarım, Süreç Günlüğü, onay kapısı düzeltmesi vb.) için: `git log`, `ROADMAP.md`.
 
@@ -55,6 +81,17 @@ Hiçbir denemede sahne görseli üretilemedi (Cloudflare kotası). Uyarılar Sü
 ---
 
 ## 4. Kalanlar (öncelik sırasıyla)
+
+**Faz B — kaynağın formatını yakalamak (asıl hedef, denetimden):**
+- B1. Deterministik kaynak analizi: mupdf metin blokları, görsel kutuları ve yazı boyutları + sayfa görüntüsüyle yapılandırılmış "sayfa planı" (alıştırma türü, numaralandırma, görsel sayısı/konumu). Büyük PDF için parçalı işleme.
+- B2. `zone-layout.ts`: sayfa planındaki bölgeler react-pdf konumlarına çevrilecek; 9 şablon yalnızca yedek.
+- B3. Sayfa başına çoklu görsel slotu; slot oranında görsel üretimi.
+- B4. Yeni alıştırma türleri: crossword, wordsearch, unscramble, odd-one-out, tick/cross, ordering, look-and-number, iki sütunlu noktalı eşleştirme, numaralı boşluklu cloze, hikâye şeridi.
+- B5. Kaynaktan sayfa boyutu; sayfa numaralı içindekiler + beceri matrisi; sürekli alıştırma numaralandırması.
+- B6. Tamamlayıcı kitap için kaynak blueprint'i.
+- B7. `i_5_team_2.pdf` (25 sayfa gerçek Student Book) ile yan yana kıyas ölçütü.
+
+**Önceki liste:**
 
 1. ⏳ **Görselli tam kıyas testi (KIYAS-5)** — Cloudflare kotası UTC gece yarısı yenilenince aynı ayarlarla yeniden çalıştır; kapak/karakter/ünite görselleri dahil sonucu kaynakla yan yana koy.
 2. 🔍 **Son düzeltmelerin canlı doğrulaması** — `4b8f13e`'deki kesin kurallar (çizimden cevap, kelime kutusu uzlaştırma, sıkıştırılmış dizme) KIYAS-5'te gerçek üretimde gözlemlenmeli.

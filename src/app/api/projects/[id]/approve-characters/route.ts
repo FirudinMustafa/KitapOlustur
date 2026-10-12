@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
-import { resumeApprovalHook } from "@/lib/approval";
+import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
 
 // Faz 2 "Karakter tutarlılığı": resumes the character-sheet approval gate.
 // `approved: true` continues the run with the current sheets; otherwise the
@@ -42,7 +42,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .map((r) => ({ id: r.id, note: typeof r.note === "string" && r.note.trim() ? r.note.trim().slice(0, 500) : undefined }));
   const approved = body?.approved === true && redraw.length === 0;
 
-  const failure = await resumeApprovalHook(run.id, `character-approval:${run.id}:${run.pendingCharacterApproval.round}`, { approved, redraw });
+  const failure = await resumeApprovalHook(run, currentGateToken(run)!, { approved, redraw });
   if (failure) return failure;
 
   await logHumanDecision(run.id, `awaiting_character_approval`, approved ? "Karakterler onaylandı" : `Yeniden çizim istendi: ${redraw.map((r) => (r.note ? `${r.id} ("${r.note}")` : r.id)).join(", ")}`);

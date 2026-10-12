@@ -3,7 +3,7 @@ import { isDesignThemeId } from "@/lib/design/themes";
 import { isArtStyleId } from "@/lib/ai/art-styles";
 import { auth } from "@clerk/nextjs/server";
 import { start } from "workflow/api";
-import { eq } from "drizzle-orm";
+import { launchRun } from "@/lib/start-run";
 
 import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
@@ -178,8 +178,9 @@ export async function POST(request: Request) {
       })
       .returning();
 
-    const workflowRun = await start(bookPipelineWorkflow, [run.id]);
-    await db.update(generationRuns).set({ workflowRunId: workflowRun.runId }).where(eq(generationRuns.id, run.id));
+    // A failed start closes the run as failed (see launchRun); the project
+    // still appears in the list and can be rerun from its page.
+    await launchRun(run.id, () => start(bookPipelineWorkflow, [run.id]));
 
     created.push({ projectId: project.id, runId: run.id });
   }

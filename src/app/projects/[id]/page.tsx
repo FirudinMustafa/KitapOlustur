@@ -30,6 +30,8 @@ import { fetchCoverDimensions } from "@/lib/cover-dimensions";
 import { bookTypesWithContent } from "@/lib/content-book-types";
 import { summarizeDesignReviews } from "@/lib/design/design-summary";
 import { loadProcessLog } from "@/lib/process-log-data";
+import { deliveredBooks } from "@/lib/project-runs";
+import { isCurrentGateSubmitted } from "@/lib/approval";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +63,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const designRowsPromise = run
     ? db.query.pageDesignReviews.findMany({ where: eq(pageDesignReviews.runId, run.id) })
     : Promise.resolve([]);
-  const [outline, books, reviews, coherenceReview, originalityRows, feedback, allUnitReviews, coverDimensions] = run
+  const [outline, runBooks, reviews, coherenceReview, originalityRows, feedback, allUnitReviews, coverDimensions] = run
     ? await Promise.all([
         db.query.extractedOutlines.findFirst({ where: eq(extractedOutlines.runId, run.id) }).then((o) => o ?? null),
         db.query.generatedBooks.findMany({ where: eq(generatedBooks.runId, run.id) }),
@@ -79,6 +81,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         fetchCoverDimensions(run.coverImageUrl),
       ])
     : [null, [], [], null, [], [], [], null];
+
+  const { books, fromRunId } = await deliveredBooks(id, run, runBooks);
+  const gateSubmitted = run ? await isCurrentGateSubmitted(run) : false;
 
   // Faz D: same "latest attempt per image, count still-failing" logic as the
   // /api/projects/[id] route, kept in sync manually (see ROADMAP.md Faz D).
@@ -160,6 +165,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               issues: coherenceReview.issues,
             }
           : null,
+        gateSubmitted,
+        booksFromEarlierRun: Boolean(run && fromRunId && fromRunId !== run.id),
         books: books.map((b) => ({
           id: b.id,
           bookType: b.bookType,

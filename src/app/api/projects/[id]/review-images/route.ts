@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
-import { resumeApprovalHook } from "@/lib/approval";
+import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
 
 type Decision = { unitNumber: number; pageNumber: number; action: "accept" | "regenerate" };
 
@@ -42,7 +42,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       )
     : [];
 
-  const failure = await resumeApprovalHook(run.id, `image-review:${run.id}`, { decisions });
+  const failure = await resumeApprovalHook(run, currentGateToken(run)!, { decisions });
   if (failure) return failure;
 
   await logHumanDecision(run.id, `awaiting_image_review`, `Görsel incelemesi: ${decisions.filter((d) => d.action === "regenerate").length} yeniden üretilecek, ${decisions.filter((d) => d.action === "accept").length} kabul edildi`);

@@ -277,7 +277,7 @@ export function StudioWorkspace({
               <Button
                 variant="outline"
                 onClick={() => sendMessage("image")}
-                disabled={sending}
+                disabled={sending || (!input.trim() && !messages.some((m) => m.role === "assistant"))}
                 className="h-9 rounded-full px-4"
               >
                 Bunun görselini üret
@@ -285,7 +285,7 @@ export function StudioWorkspace({
               <Button
                 variant="outline"
                 onClick={() => sendMessage("audio")}
-                disabled={sending}
+                disabled={sending || (!input.trim() && !messages.some((m) => m.role === "assistant"))}
                 className="h-9 rounded-full px-4"
               >
                 Bunun sesini üret

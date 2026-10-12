@@ -23,6 +23,8 @@ import { fetchCoverDimensions } from "@/lib/cover-dimensions";
 import { bookTypesWithContent } from "@/lib/content-book-types";
 import { summarizeDesignReviews } from "@/lib/design/design-summary";
 import { loadProcessLog } from "@/lib/process-log-data";
+import { deliveredBooks } from "@/lib/project-runs";
+import { isCurrentGateSubmitted } from "@/lib/approval";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -53,7 +55,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const designRowsPromise = run
     ? db.query.pageDesignReviews.findMany({ where: eq(pageDesignReviews.runId, run.id) })
     : Promise.resolve([]);
-  const [outline, books, reviews, coherenceReview, originalityRows, feedback, allUnitReviews, coverDimensions] = run
+  const [outline, runBooks, reviews, coherenceReview, originalityRows, feedback, allUnitReviews, coverDimensions] = run
     ? await Promise.all([
         db.query.extractedOutlines.findFirst({ where: eq(extractedOutlines.runId, run.id) }),
         db.query.generatedBooks.findMany({ where: eq(generatedBooks.runId, run.id) }),
@@ -71,6 +73,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         fetchCoverDimensions(run.coverImageUrl),
       ])
     : [null, [], [], null, [], [], [], null];
+
+  const { books, fromRunId } = await deliveredBooks(id, run, runBooks);
+  const gateSubmitted = run ? await isCurrentGateSubmitted(run) : false;
 
   // Faz D: surface how many illustrations still failed QA after their final
   // retry attempt, so the project page can flag them for manual review
@@ -119,6 +124,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     run,
     outline,
     books,
+    booksFromEarlierRun: Boolean(run && fromRunId && fromRunId !== run.id),
+    gateSubmitted,
     flaggedImageCount,
     coherenceReview,
     flaggedOriginalityCount,

@@ -102,17 +102,6 @@ const s = {
   exerciseBox: { marginTop: 8, marginBottom: 4, padding: 10, borderWidth: 1 },
   badgeRow: { flexDirection: "row" as const, alignItems: "center" as const, marginBottom: 6 },
   iconChip: { width: 18, height: 18, borderRadius: 9, alignItems: "center" as const, justifyContent: "center" as const, marginRight: 6 },
-  badgeLabel: {
-    fontFamily: NOTO_SANS,
-    fontWeight: 700,
-    fontSize: 7,
-    letterSpacing: 0.5,
-    color: "#ffffff",
-    borderRadius: 8,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-    marginRight: 7,
-  },
   answerKeyBox: { marginTop: 6, padding: 8, backgroundColor: "#f9fafb", borderRadius: 4 },
   answerKeyLabel: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 7.5, color: "#6b7280", letterSpacing: 1, marginBottom: 3 },
 };
@@ -468,11 +457,12 @@ function ExerciseBox({
   const colors = BLOCK_COLORS[block.kind];
   return (
     <View style={[s.exerciseBox, { backgroundColor: colors.bg, borderColor: colors.border, borderRadius: look.theme.radius }]}>
+      {/* Rubric icon only - an uppercase "PRACTICE"/"EXPLANATION" label is
+          internal vocabulary that no published coursebook prints. */}
       <View style={s.badgeRow}>
         <View style={[s.iconChip, { backgroundColor: colors.text }]}>
           <BlockIcon kind={block.kind} color="#ffffff" />
         </View>
-        <Text style={[s.badgeLabel, { backgroundColor: colors.text }]}>{block.kind.toUpperCase()}</Text>
       </View>
       <ActivityItems block={block} look={look} columns={4} />
       <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />

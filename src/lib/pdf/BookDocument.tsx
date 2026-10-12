@@ -236,7 +236,8 @@ function Footer({ bookTitle, variantLabel, bleed = 0 }: { bookTitle: string; var
   return (
     <View style={[styles.footer, bleed ? { left: 44 + bleed, right: 44 + bleed, bottom: 22 + bleed } : {}]} fixed>
       <Text>{variantLabel ? `${bookTitle} · ${variantLabel}` : bookTitle}</Text>
-      <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+      {/* A printed book shows the folio alone; "n / total" read as a generated report. */}
+      <Text render={({ pageNumber }) => `${pageNumber}`} />
     </View>
   );
 }
@@ -430,7 +431,6 @@ export function CoverBody(props: CoverProps) {
         )}
         <View style={styles.coverPillRow}>
           {unitCount > 0 && <Text style={styles.coverPill}>{unitCount} units</Text>}
-          <Text style={[styles.coverPill, { color: palette.primaryDark }]}>Generated with Kitap Orkestrası</Text>
         </View>
       </View>
     </>

@@ -113,6 +113,7 @@ import { activityEmojis, loadEmojiIcons } from "@/lib/pdf/emoji-icons";
 import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
 import { fixMapAnswers } from "@/lib/map-answers";
+import { renumberSidePages } from "@/lib/page-numbers";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
 import { ACTIVITY_PROMPT, activityIssues, reconcileWordBank } from "@/lib/activities";
 import { DIAGRAM_PROMPT, diagramIssues, fixPrepositionItems } from "@/lib/diagrams";
@@ -3410,11 +3411,13 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         if (!effectiveSkeleton) {
           await checkOriginality(runId, outlineUnit.number, mirrored.pages, unitSourcePages);
         }
-        const complementary = await generateComplementarySide(runId, {
+        const complementaryRaw = await generateComplementarySide(runId, {
           ...genContext,
           complementaryType,
           mirroredPages: mirrored.pages,
         });
+        // The model numbers these pages itself; see renumberSidePages.
+        const complementary = { ...complementaryRaw, pages: renumberSidePages(complementaryRaw.pages, outlineUnit.number, "complementary") };
 
         const studentBookPages = stripWriterLayoutFields(
           ctx.upload.bookType === "student_book" ? mirrored.pages : complementary.pages,
@@ -3440,8 +3443,12 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           title: outlineUnit.title,
           studentBookPages,
           workbookPages,
-          teacherBookPages: teacherBook?.pages ? stripWriterLayoutFields(teacherBook.pages) : undefined,
-          testBookletPages: testBooklet?.pages ? stripWriterLayoutFields(testBooklet.pages) : undefined,
+          teacherBookPages: teacherBook?.pages
+            ? stripWriterLayoutFields(renumberSidePages(teacherBook.pages, outlineUnit.number, "teacher"))
+            : undefined,
+          testBookletPages: testBooklet?.pages
+            ? stripWriterLayoutFields(renumberSidePages(testBooklet.pages, outlineUnit.number, "test"))
+            : undefined,
           glossary: mirrored.glossary,
           listeningAudio,
         };

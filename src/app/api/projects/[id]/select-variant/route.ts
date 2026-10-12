@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
-import { resumeApprovalHook } from "@/lib/approval";
+import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
@@ -25,14 +25,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const body = await request.json().catch(() => ({}));
-  const unitNumber = body?.unitNumber;
   const selectedIndex = body?.selectedIndex;
+  // The pending unit comes from the run, never from the client: a stale
+  // tab's unit number used to address a hook that no longer existed.
+  const pending = run.pendingVariants as { unitNumber?: number; variants?: unknown[] } | null;
+  const unitNumber = pending?.unitNumber;
+  const token = currentGateToken(run);
 
-  if (!Number.isInteger(unitNumber) || !Number.isInteger(selectedIndex)) {
+  if (!token || !Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= (pending?.variants?.length ?? 0)) {
     return NextResponse.json({ error: "Geçersiz istek" }, { status: 400 });
   }
 
-  const failure = await resumeApprovalHook(run.id, `variant-selection:${run.id}:${unitNumber}`, { selectedIndex });
+  const failure = await resumeApprovalHook(run, token, { selectedIndex });
   if (failure) return failure;
 
   await logHumanDecision(run.id, `awaiting_variant_selection`, `Ünite ${unitNumber} için ${selectedIndex + 1}. varyant seçildi`);

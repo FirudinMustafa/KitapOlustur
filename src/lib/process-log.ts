@@ -85,6 +85,7 @@ export function buildProcessLog(input: {
   // -- status history + human decisions --
   let lastLine = "";
   for (const e of events) {
+    if (e.kind === "gate") continue; // approval delivery marker, see src/lib/approval.ts
     if (e.kind === "warning") {
       timeline.push({ at: iso(e.createdAt), actor: "gorsel_tasarimci", actorLabel: label("gorsel_tasarimci"), tone: "fail", title: e.message ?? "Bir adım tamamlanamadı" });
       continue;

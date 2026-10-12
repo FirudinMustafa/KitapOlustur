@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { start } from "workflow/api";
+import { START_FAILED_MESSAGE, launchRun } from "@/lib/start-run";
 import { and, desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
@@ -115,15 +116,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       })
       .returning();
 
-    const workflowRun = await start(bookPipelineWorkflow, [
-      assembleRun.id,
-      { mode: "assemble", sourceRunId: assembleSource.id },
-    ]);
-
-    await db
-      .update(generationRuns)
-      .set({ workflowRunId: workflowRun.runId })
-      .where(eq(generationRuns.id, assembleRun.id));
+    if (
+      !(await launchRun(assembleRun.id, () =>
+        start(bookPipelineWorkflow, [assembleRun.id, { mode: "assemble", sourceRunId: assembleSource.id }]),
+      ))
+    ) {
+      return NextResponse.json({ error: START_FAILED_MESSAGE }, { status: 502 });
+    }
 
     return NextResponse.json({ runId: assembleRun.id });
   }
@@ -162,15 +161,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   // re-paying for them - see copyForwardExtraction in book-pipeline.tsx.
   // Always safe to pass: if the previous run never got that far, it's a
   // no-op and this behaves exactly like a plain full restart.
-  const workflowRun = await start(
-    bookPipelineWorkflow,
-    previousRun ? [run.id, { mode: "full", resumeFromRunId: previousRun.id }] : [run.id],
+  const launched = await launchRun(run.id, () =>
+    start(bookPipelineWorkflow, previousRun ? [run.id, { mode: "full", resumeFromRunId: previousRun.id }] : [run.id]),
   );
-
-  await db
-    .update(generationRuns)
-    .set({ workflowRunId: workflowRun.runId })
-    .where(eq(generationRuns.id, run.id));
+  if (!launched) {
+    return NextResponse.json({ error: START_FAILED_MESSAGE }, { status: 502 });
+  }
 
   return NextResponse.json({ runId: run.id });
 }

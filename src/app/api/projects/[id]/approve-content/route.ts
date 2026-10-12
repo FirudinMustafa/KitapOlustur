@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
-import { resumeApprovalHook } from "@/lib/approval";
+import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
 
 // Faz "İnsan-onaylı üretim hattı" (ROADMAP.md) - resumes the batched
 // content-approval gate (all units' text at once, before any image
@@ -49,9 +49,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     )
     .map((c) => ({ unitNumber: c.unitNumber, comment: c.comment.trim() }));
 
-  const round = (run.pendingContentApproval as { round?: number } | null)?.round ?? 0;
-
-  const failure = await resumeApprovalHook(run.id, `content-approval:${run.id}:${round}`, { approved, changes });
+  const failure = await resumeApprovalHook(run, currentGateToken(run)!, { approved, changes });
   if (failure) return failure;
 
   await logHumanDecision(run.id, `awaiting_content_approval`, !approved ? "İçerik reddedildi - üretim iptal" : changes.length ? `İçerik onaylandı, ${changes.length} ünite için değişiklik istendi: ${changes.map((c) => `Ünite ${c.unitNumber}: ${c.comment.slice(0, 160)}`).join(" | ")}` : "İçerik onaylandı");

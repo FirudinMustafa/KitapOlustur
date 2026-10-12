@@ -3,7 +3,7 @@ import { isDesignThemeId } from "@/lib/design/themes";
 import { isArtStyleId } from "@/lib/ai/art-styles";
 import { auth } from "@clerk/nextjs/server";
 import { start } from "workflow/api";
-import { eq } from "drizzle-orm";
+import { START_FAILED_MESSAGE, launchRun } from "@/lib/start-run";
 
 import { db } from "@/db/client";
 import { projects, sourceUploads, generationRuns } from "@/db/schema";
@@ -216,12 +216,9 @@ export async function POST(request: Request) {
     })
     .returning();
 
-  const workflowRun = await start(bookPipelineWorkflow, [run.id]);
-
-  await db
-    .update(generationRuns)
-    .set({ workflowRunId: workflowRun.runId })
-    .where(eq(generationRuns.id, run.id));
+  if (!(await launchRun(run.id, () => start(bookPipelineWorkflow, [run.id])))) {
+    return NextResponse.json({ error: START_FAILED_MESSAGE, projectId: project.id }, { status: 502 });
+  }
 
   return NextResponse.json({ projectId: project.id, runId: run.id });
 }

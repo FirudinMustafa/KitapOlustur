@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { put } from "@vercel/blob";
 
 import { db } from "@/db/client";
-import { projects, generationRuns, generatedBooks, type BookType } from "@/db/schema";
+import { projects, generatedBooks, type BookType } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
+import { latestDoneRun } from "@/lib/project-runs";
 import { buildCommonCartridge } from "@/lib/lms-export/CommonCartridge";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
@@ -35,10 +36,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     return NextResponse.json({ error: "Proje bulunamadı" }, { status: 404 });
   }
 
-  const run = await db.query.generationRuns.findFirst({
-    where: eq(generationRuns.projectId, id),
-    orderBy: [desc(generationRuns.createdAt)],
-  });
+  // The newest finished run - a rerun in progress (or a failed one) must not
+  // make an already-built book unexportable.
+  const run = await latestDoneRun(id);
   if (!run) {
     return NextResponse.json({ error: "Bu proje için tamamlanmış bir üretim bulunamadı" }, { status: 404 });
   }
