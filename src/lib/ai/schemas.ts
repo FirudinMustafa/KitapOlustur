@@ -456,7 +456,12 @@ export const generatedPageSchema = z.object({
 // lives here, NOT in generatedPageSchema - that schema is sent to the
 // writer model, and Gemini rejected the plan's numeric literals and tuple
 // outright (live test 2026-10-12: every unit failed with HTTP 400).
-export const storedPageSchema = generatedPageSchema.extend({ zonePlan: zonePlanSchema.optional() });
+export const storedPageSchema = generatedPageSchema.extend({
+  zonePlan: zonePlanSchema.optional(),
+  // The measured source page's numbered exercises and pictures, checked by
+  // validateUnitStructure (src/lib/source-shape.ts).
+  sourceShape: z.object({ exercises: z.number(), pictures: z.number() }).optional(),
+});
 export type GeneratedPage = z.infer<typeof storedPageSchema>;
 
 export const generatedUnitSchema = z.object({

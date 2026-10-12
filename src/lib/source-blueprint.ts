@@ -45,11 +45,14 @@ export const BLUEPRINT_INSTRUCTIONS = [
 export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]): GeneratedPage[] {
   return pages.map((page) => {
     const layout = sourcePages.find((s) => s.pageNumber === page.sourcePageNumber)?.layout;
-    const plan = layout ? buildZonePlan(layout) : null;
-    if (!plan) return page;
+    if (!layout) return page;
+    const plan = buildZonePlan(layout);
+    const sourceShape = { exercises: layout.exerciseCount, pictures: plan ? zonePictureCount(plan) : 0 };
+    if (!plan) return { ...page, sourceShape };
     const extraSlots = Math.max(0, zonePictureCount(plan) - 1);
     return {
       ...page,
+      sourceShape,
       zonePlan: plan,
       extraImagePrompts: page.extraImagePrompts?.length ? page.extraImagePrompts.slice(0, extraSlots) : page.extraImagePrompts,
     };

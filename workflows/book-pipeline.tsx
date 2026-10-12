@@ -120,6 +120,7 @@ import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
 import { numberExercises } from "@/lib/exercise-numbers";
 import { titleCopiesSource } from "@/lib/title-guard";
+import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, complementaryPlan, writerBlueprint } from "@/lib/source-blueprint";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
@@ -2325,11 +2326,14 @@ async function generateCoverImage(
   const coverCast = characterSheets.filter((c) => c.imageUrl).slice(0, 3);
 
   const scenePrompt = coverPage?.imageDescription
-    ? `A book cover illustration inspired by this scene: ${coverPage.imageDescription}. Reimagine it as entirely new, original artwork for "${bookTitle}", a ${subject} coursebook.`
-    : `A warm, professional, modern coursebook cover illustration for "${bookTitle}", a ${subject} coursebook.`;
+    ? `A book cover illustration inspired by this scene: ${coverPage.imageDescription}. Reimagine it as entirely new, original artwork for a ${subject} coursebook.`
+    : `A warm, professional, modern coursebook cover illustration for a ${subject} coursebook.`;
+  // The title is set by the PDF. Quoting it here made the image model paint
+  // it into the artwork, misspelt (live test 2026-10-12: "EXPLOPER").
+  const noTitle = " Draw no title, words or letters - the title is added separately.";
   const castLine = coverCast.length
-    ? ` Feature ${coverCast.map((c) => c.name).join(", ")} prominently and happily in the scene. Leave calm, uncluttered space in the lower third for the title.`
-    : " Leave calm, uncluttered space in the lower third for the title.";
+    ? ` Feature ${coverCast.map((c) => c.name).join(", ")} prominently and happily in the scene. Leave calm, uncluttered space in the lower third for the title.` + noTitle
+    : " Leave calm, uncluttered space in the lower third for the title." + noTitle;
 
   return generateReviewedImage(
     runId,
@@ -2401,6 +2405,8 @@ export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics 
   const issues: string[] = [];
   for (const { label, field } of UNIT_PAGE_ARRAY_FIELDS) {
     for (const [pageIndex, page] of (unit[field] ?? []).entries()) {
+      // Faz B: as many exercises and pictures as the measured source page.
+      issues.push(...shapeIssues(page, label));
       for (const block of page.blocks) {
         for (const issue of diagramIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
         for (const issue of activityIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
@@ -2500,7 +2506,12 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // exercises on each page numbered 1, 2, 3... (numberExercises).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   const fix = (pages?: GeneratedPage[]) =>
-    pages?.map((page) => numberExercises(fixMapAnswers({ ...page, blocks: page.blocks.map((b) => repairPuzzle(reconcileWordBank(fixPrepositionItems(b)))) }).page));
+    pages?.map((page) =>
+      fillZonePictures(
+        numberExercises(fixMapAnswers({ ...page, blocks: page.blocks.map((b) => repairPuzzle(reconcileWordBank(fixPrepositionItems(b)))) }).page),
+        (p) => fallbackImagePrompt(p, []),
+      ),
+    );
   return {
     ...unit,
     studentBookPages: fix(unit.studentBookPages) ?? unit.studentBookPages,

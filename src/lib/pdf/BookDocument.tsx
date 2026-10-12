@@ -430,7 +430,7 @@ export function CoverBody(props: CoverProps) {
           </View>
         )}
         <View style={styles.coverPillRow}>
-          {unitCount > 0 && <Text style={styles.coverPill}>{unitCount} units</Text>}
+          {unitCount > 0 && <Text style={styles.coverPill}>{unitCount === 1 ? "1 unit" : `${unitCount} units`}</Text>}
         </View>
       </View>
     </>
