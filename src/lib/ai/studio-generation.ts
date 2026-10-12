@@ -1,11 +1,13 @@
-import { generateImage, experimental_generateSpeech as generateSpeech } from "ai";
+import { generateImage, generateText, experimental_generateSpeech as generateSpeech } from "ai";
 import { put } from "@vercel/blob";
 import {
   isFreeImageModelActive,
   isFreeSpeechModelActive,
   resolveImageModel,
   resolveSpeechModel,
+  resolveTextModel,
   resolveVeoModel,
+  toTextModel,
   type StudioImageSizeId,
 } from "@/lib/ai/model";
 import { generateImageWithCloudflare } from "@/lib/ai/cloudflare-image";
@@ -40,6 +42,25 @@ async function freeImage(prompt: string) {
   return image;
 }
 
+// Live test 2026-10-12: "make a picture of this" with a Turkish story
+// produced branches and a dome, not the cat and its ball - the image model
+// was handed the whole story in Turkish. A short English description of
+// the story's main scene is written first; on any failure the original
+// text is used as before.
+export async function sceneImagePrompt(text: string): Promise<string> {
+  try {
+    const { text: prompt } = await generateText({
+      model: toTextModel(resolveTextModel("draft")),
+      system:
+        "You turn a story or description (in any language) into ONE English prompt for an image generator, at most 60 words: the main scene's subject(s), what they are doing, the setting, and the mood. Concrete and visual. Output only the prompt.",
+      prompt: text.slice(0, 3000),
+    });
+    return prompt.trim() || text;
+  } catch {
+    return text;
+  }
+}
+
 export type StudioGenerationResult =
   | { status: "done"; url: string; model: string; costUsd: number | null }
   | { status: "failed"; model: string; errorMessage: string };
@@ -61,7 +82,9 @@ export async function generateStoryImage(
   const free = isFreeImageModelActive();
   const model = free ? FREE_IMAGE_MODEL_LABEL : resolveImageModel(qualityMode);
   try {
-    const image = free ? await freeImage(prompt) : (await generateImage({ model, prompt, aspectRatio: "16:9" })).image;
+    const scene = await sceneImagePrompt(prompt);
+    // GPT Image takes a size, not an aspect ratio (see model.ts).
+    const image = free ? await freeImage(scene) : (await generateImage({ model, prompt: scene, size: "1536x1024" })).image;
     const blob = await put(`studio/${storyProjectId}/image-${Date.now()}.png`, Buffer.from(image.uint8Array), {
       access: "public",
       contentType: image.mediaType,

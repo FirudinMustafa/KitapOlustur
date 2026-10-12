@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { UserButton } from "@clerk/nextjs";
+import { ClerkLoaded, UserButton } from "@clerk/nextjs";
 import {
   BookMarkedIcon,
   BookOpenTextIcon,
@@ -250,7 +250,13 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <div className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-              <UserButton />
+              {/* Clerk draws the button only on the client; rendering it before Clerk
+                  loads made the server and client HTML differ (hydration error). */}
+              <span className="flex size-7 shrink-0 items-center justify-center">
+                <ClerkLoaded>
+                  <UserButton />
+                </ClerkLoaded>
+              </span>
               <span className="text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">Hesabım</span>
             </div>
           </SidebarMenuItem>

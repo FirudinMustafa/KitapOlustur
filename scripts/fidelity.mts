@@ -6,9 +6,12 @@
 // generated page 4 - after cover, imprint and contents) and prints the
 // page-by-page comparison and the overall score (src/lib/fidelity.ts).
 import fs from "node:fs";
-import { analyzeSourceLayout } from "../src/lib/source-layout";
+import { analyzeSourceLayout } from "../src/lib/source-layout-pdf";
 import { compareLayouts } from "../src/lib/fidelity";
 
+// Wrapped in main(): the workflow bundler scans the project as CJS, where
+// top-level await fails the dev server.
+async function main() {
 const [sourcePath, generatedPath, s0 = "1", g0 = "4"] = process.argv.slice(2);
 if (!sourcePath || !generatedPath) {
   console.error("usage: npx tsx scripts/fidelity.mts <source.pdf> <generated.pdf> [firstSourcePage] [firstGeneratedPage]");
@@ -29,3 +32,5 @@ for (const p of result.pages) {
 }
 console.log(`\nby aspect: pictures ${pct(result.byAspect.pictures)}, exercises ${pct(result.byAspect.exercises)}, columns ${pct(result.byAspect.columns)}, zone ${pct(result.byAspect.zone)}`);
 console.log(`structural fidelity: ${pct(result.score)}`);
+}
+void main();

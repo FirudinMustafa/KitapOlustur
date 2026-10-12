@@ -41,7 +41,7 @@ export type SourcePageLayout = {
 
 // The subset of mupdf's StructuredText.asJSON() this module reads.
 type StextLine = { text: string; bbox?: Box; font?: { size?: number; weight?: string } };
-type StextBlock =
+export type StextBlock =
   | { type: "image"; bbox: Box }
   | { type: "text"; bbox: Box; lines: StextLine[] };
 export type StextPage = { width: number; height: number; blocks: StextBlock[] };
@@ -185,29 +185,6 @@ function classifyZone(images: Box[], textColumns: number): LayoutZone {
   if (largest.w * largest.h >= 0.45) return "full_width_image";
   if (largest.w >= 0.6) return largest.y + largest.h / 2 < 0.5 ? "image_top_text_bottom" : "image_bottom_text_top";
   return largest.x + largest.w / 2 < 0.5 ? "image_left_text_right" : "image_right_text_left";
-}
-
-// Whole-document pass. mupdf is WebAssembly and imported lazily, as in
-// src/lib/pdf/rasterize.ts.
-export async function analyzeSourceLayout(pdf: Uint8Array): Promise<SourcePageLayout[]> {
-  const mupdf = await import("mupdf");
-  const doc = mupdf.Document.openDocument(pdf, "application/pdf");
-  try {
-    const out: SourcePageLayout[] = [];
-    const total = doc.countPages();
-    for (let i = 0; i < total; i++) {
-      const page = doc.loadPage(i);
-      const [x0, y0, x1, y1] = page.getBounds();
-      const stext = page.toStructuredText("preserve-images");
-      const parsed = JSON.parse(stext.asJSON()) as { blocks: StextBlock[] };
-      out.push(analyzeStextPage({ width: x1 - x0, height: y1 - y0, blocks: parsed.blocks }));
-      stext.destroy();
-      page.destroy();
-    }
-    return out;
-  } finally {
-    doc.destroy();
-  }
 }
 
 // The trim size most pages share, in points (books mix in odd-sized covers).

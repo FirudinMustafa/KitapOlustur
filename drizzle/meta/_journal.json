@@ -288,6 +288,13 @@
       "when": 1791800475677,
       "tag": "0040_trim_size_auto",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791819717755,
+      "tag": "0041_gate_once",
+      "breakpoints": true
     }
   ]
 }

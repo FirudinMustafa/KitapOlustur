@@ -105,7 +105,8 @@ import {
 } from "@/lib/design/page-review";
 import { countPdfPages, forEachRasterizedPage, rasterizePdf } from "@/lib/pdf/rasterize";
 import { pdfPageTexts, slicePdf } from "@/lib/pdf/split";
-import { analyzeSourceLayout, dominantTrim, type SourcePageLayout } from "@/lib/source-layout";
+import { dominantTrim, type SourcePageLayout } from "@/lib/source-layout";
+import { analyzeSourceLayout } from "@/lib/source-layout-pdf";
 import { mergePageMap } from "@/lib/page-map-merge";
 import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeCharactersForPrompt } from "@/lib/ai/characters";
 import type { CharacterSheet } from "@/db/schema";
@@ -118,6 +119,7 @@ import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
 import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
 import { numberExercises } from "@/lib/exercise-numbers";
+import { titleCopiesSource } from "@/lib/title-guard";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import { BLUEPRINT_INSTRUCTIONS, applyZonePlans, complementaryPlan, writerBlueprint } from "@/lib/source-blueprint";
 import { mergePageRewrite } from "@/lib/design/merge-rewrite";
@@ -494,6 +496,35 @@ async function extractPageMapChunk(
   return object.pages
     .filter((p) => p.pageNumber >= from && p.pageNumber <= to)
     .map((p) => (transcribe ? p : { ...p, sourceText: texts[p.pageNumber - from] || p.sourceText }));
+}
+
+// Faz B: a fresh title when the outline reused the source's (see
+// src/lib/title-guard.ts). Saved into the stored outline so reruns keep it.
+async function renameCopiedTitle(runId: string, outline: BookOutline, sourceFrontText: string): Promise<string> {
+  "use step";
+
+  let title = "";
+  try {
+    const { object, usage } = await generateObject({
+      model: toTextModel(resolveFinalTextModel()),
+      schema: z.object({ bookTitle: z.string() }),
+      prompt: [
+        `A new, original coursebook is being written for "${outline.subject}", level ${outline.level}, in language "${outline.contentLanguage}". Invent its title: short, memorable, suitable for the audience (${outline.targetAudience}).`,
+        `It must NOT reuse any word, name or series name of the source book it was modelled on. The source's front pages read:\n${sourceFrontText.slice(0, 1500)}`,
+        `Not acceptable (copies the source): "${outline.bookTitle}".`,
+      ].join("\n\n"),
+    });
+    await recordUsage(runId, "outline", usage);
+    title = object.bookTitle.trim();
+  } catch {
+    // fall through to the plain title below
+  }
+  if (!title || titleCopiesSource(title, sourceFrontText)) title = `${outline.subject} ${outline.level}`;
+  await db
+    .update(extractedOutlines)
+    .set({ outline: sql`jsonb_set(${extractedOutlines.outline}, '{outline,bookTitle}', to_jsonb(${title}::text))` })
+    .where(eq(extractedOutlines.runId, runId));
+  return title;
 }
 
 async function saveProjectTrimSize(projectId: string, trimSize: TrimSizeId) {
@@ -3316,6 +3347,14 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       } else {
         await setRunStatus(runId, "extracting", "Kaynak kitabın yapısı (dizelge) çıkarılıyor");
         outline = await extractOutline(runId, ctx.upload.blobUrl, pageMap, ctx.run.targetLanguage, ctx.project.level);
+      }
+      // The new book must not carry the source's (trademarked) title.
+      const frontText = pageMap.pages
+        .slice(0, 5)
+        .map((p) => p.sourceText ?? "")
+        .join("\n");
+      if (titleCopiesSource(outline.bookTitle, frontText)) {
+        outline = { ...outline, bookTitle: await renameCopiedTitle(runId, outline, frontText) };
       }
     }
 

@@ -8,7 +8,9 @@ import {
   integer,
   boolean,
   real,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const sourceBookTypeEnum = pgEnum("source_book_type", ["student_book", "workbook"]);
 
@@ -422,7 +424,10 @@ export const runEvents = pgTable("run_events", {
   status: text("status").notNull(),
   message: text("message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // One delivered decision per approval gate (src/lib/approval.ts).
+  uniqueIndex("run_events_gate_once").on(t.runId, t.status).where(sql`${t.kind} = 'gate'`),
+]);
 export type RunEventRow = typeof runEvents.$inferSelect;
 
 export const unitFeedback = pgTable("unit_feedback", {

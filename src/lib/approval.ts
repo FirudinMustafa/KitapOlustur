@@ -73,12 +73,23 @@ export async function resumeApprovalHook(
   token: string,
   payload: unknown,
 ): Promise<NextResponse | null> {
-  if (await isGateSubmitted(run.id, token)) {
+  // Claim the gate before resuming: a unique index (run_id, status) on gate
+  // rows makes the claim atomic, so of two simultaneous submissions only
+  // one reaches the workflow (live test 2026-10-12: a click and a second
+  // request both got through when check and record were separate steps).
+  const claimed = await db
+    .insert(runEvents)
+    .values({ runId: run.id, kind: "gate", status: token, message: null })
+    .onConflictDoNothing()
+    .returning({ id: runEvents.id });
+  if (!claimed.length) {
     return NextResponse.json({ error: ALREADY_SUBMITTED }, { status: 409 });
   }
+  const release = () => db.delete(runEvents).where(eq(runEvents.id, claimed[0].id)).catch(() => {});
   try {
     await resumeHook(token, payload);
   } catch (err) {
+    await release();
     const missing = err instanceof Error && err.name === "HookNotFoundError";
     if (!missing || (await isWorkflowAlive(run.workflowRunId))) {
       return NextResponse.json(
@@ -95,7 +106,6 @@ export async function resumeApprovalHook(
     await db.insert(runEvents).values({ runId: run.id, kind: "status", status: "failed", message }).catch(() => {});
     return NextResponse.json({ error: message }, { status: 409 });
   }
-  await db.insert(runEvents).values({ runId: run.id, kind: "gate", status: token, message: null }).catch(() => {});
   return null;
 }
 

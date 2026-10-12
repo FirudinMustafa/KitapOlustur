@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "run_events_gate_once" ON "run_events" USING btree ("run_id","status") WHERE "run_events"."kind" = 'gate';

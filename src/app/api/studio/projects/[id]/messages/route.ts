@@ -19,6 +19,17 @@ const STUDIO_SYSTEM_PROMPT = `Sen yaratıcı bir hikaye/içerik yazım asistanı
 
 Elinde üç araç var: generateImage (bir sahnenin/betimlemenin görselini üretir), generateAudio (bir metnin sesli anlatımını üretir) ve generateVideo (en son üretilen görseli kısa bir videoya dönüştürür - önce bir görsel üretilmiş olmalı, iki sağlayıcıdan biri seçilebilir: "veo" varsayılan, kullanıcı özellikle "higgsfield" isterse o kullanılır). Kullanıcı açıkça bunlardan birini istediğinde, ya da isteği bunu doğal olarak ima ettiğinde ilgili aracı kullan - hikaye yazmadan da tek başına sadece bir görsel/ses/video istenebilir, bu tamamen normal. Video sağlayıcılarından biri hesap kısıtlaması/API key eksikliği yüzünden aktif olmayabilir - aracı çağır, sonucu kullanıcıya olduğu gibi ilet. Bir aracı kullandıktan sonra kullanıcıya kısaca ne ürettiğini anlat.`;
 
+// The short notes posted after a direct image/audio/video action.
+function actionNote(status: "done" | "pending" | "failed", label: string, error: string | null): string {
+  if (status === "done") return `İstediğin ${label} oluşturdum.`;
+  if (status === "pending") return "Video üretimi başladı, hazır olunca burada görünecek.";
+  return `Üzgünüm, ${label} üretimi başarısız oldu: ${error}`;
+}
+
+function isActionNote(text: string): boolean {
+  return /^(İstediğin .{1,30} oluşturdum\.|Video üretimi başladı, hazır olunca burada görünecek\.|Üzgünüm, .{1,30} üretimi başarısız oldu:)/.test(text.trim());
+}
+
 type CreatedArtifact = {
   id: string;
   // The chat bubble shows artifacts by messageId - without these two fields
@@ -65,11 +76,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   // speech models instead.
   let directSubject = userText;
   if (directAction && directAction !== "video" && !directSubject) {
-    const lastAssistant = await db.query.storyMessages.findFirst({
+    // The latest real story text - not the short notes this route itself
+    // posts after a direct action ("İstediğin görsel oluşturdum."), which a
+    // live test turned into a picture of a robot instead of the story.
+    const recent = await db.query.storyMessages.findMany({
       where: and(eq(storyMessages.storyProjectId, id), eq(storyMessages.role, "assistant")),
       orderBy: [desc(storyMessages.createdAt)],
+      limit: 30,
     });
-    directSubject = lastAssistant?.content.trim().slice(0, 1500) ?? "";
+    const story = recent.find((m) => !isActionNote(m.content));
+    directSubject = story?.content.trim().slice(0, 1500) ?? "";
     if (!directSubject) {
       return NextResponse.json({ error: "Önce bir hikaye/metin yaz ya da ne üretileceğini kutuya yaz." }, { status: 400 });
     }
@@ -202,12 +218,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           );
 
     const actionLabel = { image: "görsel", audio: "sesli anlatım", video: "video" }[directAction];
-    const assistantText =
-      artifact.status === "done"
-        ? `İstediğin ${actionLabel} oluşturdum.`
-        : artifact.status === "pending"
-          ? "Video üretimi başladı, hazır olunca burada görünecek."
-          : `Üzgünüm, ${actionLabel} üretimi başarısız oldu: ${artifact.errorMessage}`;
+    const assistantText = actionNote(artifact.status, actionLabel, artifact.errorMessage);
 
     const [assistantMessage] = await db
       .insert(storyMessages)
