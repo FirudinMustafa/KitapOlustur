@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { appendExercises, exercisesToAdd, topUpPrompt } from "./exercise-topup";
 
-const ex = (h: string, n = 3) => ({ kind: "practice", heading: h, body: "", items: Array.from({ length: n }, (_, i) => `i${i}`), answerKey: Array.from({ length: n }, (_, i) => `a${i}`) });
+type Ex = { kind: string; heading: string; body: string; items: string[]; answerKey?: string[] };
+const ex = (h: string, n = 3): Ex => ({ kind: "practice", heading: h, body: "", items: Array.from({ length: n }, (_, i) => `i${i}`), answerKey: Array.from({ length: n }, (_, i) => `a${i}`) });
 
 describe("exercise top-up", () => {
   it("adds up to the source page's count, at most 4 at a time", () => {
@@ -18,9 +19,13 @@ describe("exercise top-up", () => {
     expect(p).toMatch(/Circle the correct word\./);
   });
 
-  it("appends only complete exercises", () => {
+  it("appends exercises with items, leaving a bad answer key to the backfill", () => {
     const page = { sourcePageNumber: 7, blocks: [ex("A")] };
-    const broken = { ...ex("B"), answerKey: ["only one"] };
-    expect(appendExercises(page, [ex("C"), broken]).blocks.map((b) => b.heading)).toEqual(["A", "C"]);
+    const mismatched = { ...ex("B"), answerKey: ["only one"] };
+    const keyless = { ...ex("C"), answerKey: undefined };
+    const empty = { ...ex("D"), items: [] };
+    const out = appendExercises(page, [ex("E"), mismatched, keyless, empty]).blocks;
+    expect(out.map((b) => b.heading)).toEqual(["A", "E", "B", "C"]);
+    expect(out.map((b) => b.answerKey?.length)).toEqual([3, 3, undefined, undefined]);
   });
 });

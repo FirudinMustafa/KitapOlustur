@@ -1768,7 +1768,9 @@ async function topUpExercises(
         const next = appendExercises(page, object.blocks.slice(0, count).map(dropLeakingTable));
         added += next.blocks.length - page.blocks.length;
         out.push(numberExercises(next));
-      } catch {
+      } catch (err) {
+        // Best-effort, but visible: a silent catch hid that nothing was added.
+        console.warn(`[topUpExercises] page ${page.sourcePageNumber}:`, err instanceof Error ? err.message : err);
         out.push(page);
       }
     }

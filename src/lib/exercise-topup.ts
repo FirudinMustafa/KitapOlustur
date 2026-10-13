@@ -34,8 +34,14 @@ export function topUpPrompt(page: TopUpPage & { pageType?: string }, count: numb
   ].join("\n\n");
 }
 
-// The new exercises go after the page's existing blocks.
+// The new exercises go after the page's existing blocks. Live run
+// 2026-10-13: the free model wrote the items but left answerKey out, and
+// requiring a complete key dropped every exercise. An exercise with items is
+// kept; a missing or mismatched key is removed so fillMissingAnswerKeys
+// (the next step) writes one.
 export function appendExercises<P extends TopUpPage>(page: P, blocks: P["blocks"]): P {
-  const usable = blocks.filter((b) => b.items?.length && b.items.length === (b.answerKey?.length ?? 0));
+  const usable = blocks
+    .filter((b) => b.items?.length)
+    .map((b) => (b.answerKey?.length === b.items!.length ? b : { ...b, answerKey: undefined }));
   return usable.length ? { ...page, blocks: [...page.blocks, ...usable] } : page;
 }

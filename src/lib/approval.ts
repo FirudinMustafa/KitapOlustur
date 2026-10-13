@@ -109,6 +109,52 @@ export async function resumeApprovalHook(
   return null;
 }
 
+const TERMINAL_RUN_STATUSES = new Set(["done", "failed", "changes_requested"]);
+const LOST_RUN_GRACE_MS = 2 * 60_000;
+
+export function lostRunMessage(workflowStatus: string | null): string {
+  const cause =
+    workflowStatus === "cancelled"
+      ? "iş akışı iptal edilmiş"
+      : workflowStatus === "failed"
+        ? "iş akışı bir hatayla durmuş (ör. veritabanına ya da AI servisine geçici olarak ulaşılamadı)"
+        : "iş akışının durumu kaybolmuş";
+  return `Bu üretim ilerlemiyor - ${cause}. Üretim durdu olarak işaretlendi; 'Yeniden çalıştır' ile yazılmış içerik yeniden kullanılarak kaldığı yerden devam edebilirsin.`;
+}
+
+// Live run 2026-10-13: the network dropped overnight, every database write of
+// the workflow failed - including the one recording its own failure - and the
+// run sat "Kitap geneli tutarlılık kontrol ediliyor" forever. A run that has
+// not moved for a while is checked against the real workflow state; a
+// workflow that ended (or no longer exists) while the run still looks active
+// closes the run as failed. An unreachable workflow API decides nothing.
+export async function reconcileLostRun<
+  R extends Pick<GenerationRunRow, "id" | "status" | "workflowRunId" | "updatedAt" | "currentStage" | "errorMessage">,
+>(run: R | undefined): Promise<R | undefined> {
+  if (!run || TERMINAL_RUN_STATUSES.has(run.status)) return run;
+  if (Date.now() - run.updatedAt.getTime() < LOST_RUN_GRACE_MS) return run;
+  let workflowStatus: string | null = null;
+  try {
+    if (run.workflowRunId) {
+      const wf = getRun(run.workflowRunId);
+      workflowStatus = (await wf.exists) ? await wf.status : null;
+    }
+  } catch {
+    return run;
+  }
+  if (workflowStatus === "pending" || workflowStatus === "running") return run;
+  const message = lostRunMessage(workflowStatus);
+  const updatedAt = new Date();
+  const closed = await db
+    .update(generationRuns)
+    .set({ status: "failed", currentStage: null, errorMessage: message, updatedAt })
+    .where(and(eq(generationRuns.id, run.id), eq(generationRuns.status, run.status)))
+    .returning({ id: generationRuns.id });
+  if (!closed.length) return run;
+  await db.insert(runEvents).values({ runId: run.id, kind: "status", status: "failed", message }).catch(() => {});
+  return { ...run, status: "failed", currentStage: null, errorMessage: message, updatedAt };
+}
+
 // True while the workflow behind a run can still make progress. Unknown runs
 // (state wiped) and terminal ones are not alive.
 export async function isWorkflowAlive(workflowRunId: string | null): Promise<boolean> {

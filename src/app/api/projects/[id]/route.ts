@@ -24,7 +24,7 @@ import { bookTypesWithContent } from "@/lib/content-book-types";
 import { summarizeDesignReviews } from "@/lib/design/design-summary";
 import { loadProcessLog } from "@/lib/process-log-data";
 import { deliveredBooks } from "@/lib/project-runs";
-import { isCurrentGateSubmitted } from "@/lib/approval";
+import { isCurrentGateSubmitted, reconcileLostRun } from "@/lib/approval";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -42,10 +42,12 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       where: eq(sourceUploads.projectId, id),
       orderBy: [desc(sourceUploads.createdAt)],
     }),
-    db.query.generationRuns.findFirst({
-      where: eq(generationRuns.projectId, id),
-      orderBy: [desc(generationRuns.createdAt)],
-    }),
+    db.query.generationRuns
+      .findFirst({
+        where: eq(generationRuns.projectId, id),
+        orderBy: [desc(generationRuns.createdAt)],
+      })
+      .then(reconcileLostRun),
   ]);
   if (!project) {
     return NextResponse.json({ error: "Proje bulunamadı" }, { status: 404 });
