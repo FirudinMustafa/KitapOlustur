@@ -87,6 +87,9 @@ Hiçbir denemede sahne görseli üretilemedi (Cloudflare kotası). Uyarılar Sü
 | KIYAS-6 (1. çalıştırma) | `0823d36d…` | ❌ Ünite yazımında başarısız. Sebep: `zonePlan` alanı yazar modelin şemasına girmişti, Gemini reddetti (HTTP 400). Düzeltme `c014536`, ayrıca tüm model şemaları için kalıcı test eklendi |
 | KIYAS-6 (yeniden çalıştırma) | `f15dab2c…` | ✅ Uçtan uca tamamlandı: 25/25 sayfa ölçüldü, boyut otomatik 220×280 seçildi, kitap adı koruması kaynak adını yakaladı ("Bright Sparks Explorer"), karakterler, kapak, görsel inceleme, tasarım denetimi, son onay, PDF/baskı PDF/EPUB. **Yapısal benzerlik ~%39**: yazar model ölçülmüş plana uymadı (5 alıştırma yerine 1–2, resim promptu yok) |
 | KIYAS-7 | `08aff180…` | 🟡 Plana uyma kontrolü (`df6dffe`) ile tekrar. Varyant 2 kaynağa belirgin biçimde yakın (alıştırma 1/4/2/3/3/3, kaynak 2/5/3/3/3/3; resimli sayfalarda resim promptları tam). İçerik onayında bekliyor: geliştirme sunucusu düşük bellek yüzünden durduruldu. Sunucu yeniden başlayınca onaylayıp `scripts/fidelity.mts` ile puanlanacak |
+| KIYAS-7 (yeniden dizim) | `08aff180…` | ✅ Tamamlandı. Kayıtlı içerik, cevap sızdıran tablo ve metin-sayfası kurallarıyla yeniden dizildi: **~%78**, 6 kaynak sayfa → 6 sayfa (önce 12) |
+| KIYAS-9 | — | ✅ Temiz üretim (Cloudflare kotası doluydu, görsel yok): **~%54**, 6 sayfa → 6, alıştırma 19 kaynakta → 11 üretimde |
+| KIYAS-10 | `edebe9b3…` | ❌ İçerik onayından sonra gece ağ kesildi; veritabanı yazmaları (hatayı kaydeden dahil) başarısız oldu, proje sonsuza dek "işleniyor" göründü. Düzeltme `9c5bd0f`: `reconcileLostRun` 2 dk ilerlemeyen üretimi gerçek iş akışı durumuyla karşılaştırıp "durdu" olarak kapatıyor (canlı doğrulandı). Aynı commit: alıştırma tamamlama artık cevap anahtarı eksik alıştırmaları atmıyor (anahtarı sonraki adım yazıyor) |
 
 **Canlı testte bulunup düzeltilenler:**
 - Gemini şema hatası (`zonePlan` → saklama şeması).
