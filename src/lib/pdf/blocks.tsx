@@ -100,7 +100,7 @@ export function BlockIcon({ kind, color, size = 10 }: { kind: ContentBlockKind; 
 
 const s = {
   heading: { fontWeight: 700, fontSize: 12.5, marginBottom: 5 },
-  item: { marginBottom: 3, marginLeft: 4, lineHeight: 1.4 },
+  item: { marginBottom: 3, marginLeft: 4 },
   exerciseBox: { marginTop: 8, marginBottom: 4, padding: 10, borderWidth: 1 },
   badgeRow: { flexDirection: "row" as const, alignItems: "center" as const, marginBottom: 6 },
   iconChip: { width: 18, height: 18, borderRadius: 9, alignItems: "center" as const, justifyContent: "center" as const, marginRight: 6 },
@@ -172,7 +172,7 @@ function ChecklistItems({ items, look }: { items: string[]; look: Look }) {
           <Svg viewBox="0 0 12 12" style={{ width: 11, height: 11, marginRight: 8 }}>
             <Rect x="0.75" y="0.75" width="10.5" height="10.5" rx="2" fill="#ffffff" stroke={look.palette.primary} strokeWidth={1.2} />
           </Svg>
-          <Text style={{ flex: 1, lineHeight: 1.35 }}>{itemText(item)}</Text>
+          <Text style={{ flex: 1 }}>{itemText(item)}</Text>
         </View>
       ))}
     </View>
@@ -283,7 +283,7 @@ function PictureMatch({ block, look }: { block: ContentBlock; look: Look }) {
     <View>
       {items.map((item, i) => (
         <View key={i} style={{ flexDirection: "row", alignItems: "center", height: row }} wrap={false}>
-          <Text style={{ flex: 1, lineHeight: 1.3 }}>
+          <Text style={{ flex: 1 }}>
             {i + 1}. {itemText(item)}
           </Text>
           <Dot color={look.palette.primary} />
@@ -361,7 +361,7 @@ function PrepositionList({ block, look }: { block: ContentBlock; look: Look }) {
           <View style={{ width: sceneW + 8, marginRight: 8, borderRadius: Math.max(6, look.theme.radius), backgroundColor: "#ffffff", padding: 2, alignItems: "center" }}>
             {scenes[i] ? <SceneSvg shapes={prepositionScene(scenes[i])} width={sceneW} /> : null}
           </View>
-          <Text style={{ flex: 1, lineHeight: 1.35 }}>
+          <Text style={{ flex: 1 }}>
             {i + 1}. {itemText(item)}
           </Text>
         </View>
@@ -539,7 +539,7 @@ export function DialogueView({ lines, look }: { lines: NonNullable<ContentBlock[
               }}
             >
               <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 7.5, color, marginBottom: 1 }}>{l.speaker}</Text>
-              <Text style={{ lineHeight: 1.4 }}>{l.line}</Text>
+              <Text>{l.line}</Text>
             </View>
           </View>
         );
@@ -582,7 +582,7 @@ function cardFrame(look: Look) {
 function BlockInner({ block, showAnswerKey, look, plain }: { block: ContentBlock; showAnswerKey: boolean; look: Look; plain?: boolean }) {
   return (
     <>
-      {block.body ? <Text style={{ marginBottom: 6, lineHeight: 1.4 }}>{block.body}</Text> : null}
+      {block.body ? <Text style={{ marginBottom: 6 }}>{block.body}</Text> : null}
       {block.dialogue?.length ? <DialogueView lines={block.dialogue} look={look} /> : null}
       {block.table ? <TableView table={block.table} look={look} /> : null}
       {block.diagram?.type === "map" ? <TownMap block={block} look={look} /> : null}

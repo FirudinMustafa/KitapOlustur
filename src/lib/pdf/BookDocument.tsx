@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
   // "Dinleme") for skeleton-mode pages.
   sectionKicker: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 8.5, letterSpacing: 1.5, marginBottom: 6 },
 
-  item: { marginBottom: 3, marginLeft: 4, lineHeight: 1.4 },
+  item: { marginBottom: 3, marginLeft: 4 },
   answerKeyLabel: { fontFamily: withSymbols(NOTO_SANS), fontWeight: 700, fontSize: 7.5, color: "#6b7280", letterSpacing: 1, marginBottom: 3 },
 
   // Footer / answer key page
@@ -730,7 +730,7 @@ export function BookDocument({
                         between answers with a hyphen ("supermarket-"). */}
                     <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                       {(block.answerKey ?? []).map((answer, j) => (
-                        <Text key={j} style={{ lineHeight: 1.5, marginRight: 14 }}>
+                        <Text key={j} style={{ marginRight: 14 }}>
                           <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, color: palette.primary }}>{`${j + 1} `}</Text>
                           {itemText(answer)}
                         </Text>

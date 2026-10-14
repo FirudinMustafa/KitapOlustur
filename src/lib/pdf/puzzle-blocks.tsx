@@ -54,7 +54,7 @@ export function CrosswordView({ block, look }: { block: ContentBlock; look: Look
           <View key={dir} style={{ marginBottom: 4 }}>
             <Text style={{ ...number(look), marginBottom: 2 }}>{dir === "across" ? "Across" : "Down"}</Text>
             {clues(dir).map((w) => (
-              <Text key={w.item} style={{ marginBottom: 2, lineHeight: 1.35 }}>
+              <Text key={w.item} style={{ marginBottom: 2 }}>
                 <Text style={number(look)}>{`${w.item + 1}  `}</Text>
                 {itemText(block.items?.[w.item] ?? "")}
               </Text>
@@ -130,7 +130,7 @@ export function MarkingList({ block, look }: { block: ContentBlock; look: Look }
                 ))}
               </View>
             ) : (
-              <Text style={{ flex: 1, lineHeight: 1.35 }}>{itemText(item)}</Text>
+              <Text style={{ flex: 1 }}>{itemText(item)}</Text>
             )}
             {type === "tick_cross" && (
               <View style={{ marginLeft: 8 }}>
@@ -152,12 +152,12 @@ export function MatchLinesView({ block, look }: { block: ContentBlock; look: Loo
       {left.map((item, i) => (
         <View key={i} style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }} wrap={false}>
           <Text style={{ ...number(look), marginRight: 5 }}>{i + 1}</Text>
-          <Text style={{ flex: 1, lineHeight: 1.35 }}>{itemText(item)}</Text>
+          <Text style={{ flex: 1 }}>{itemText(item)}</Text>
           <Dot color={look.palette.primary} />
           <View style={{ width: 28 }} />
           <Dot color={look.palette.primary} />
           <Text style={{ ...number(look), marginRight: 4 }}>{letterFor(i)}</Text>
-          <Text style={{ flex: 1, lineHeight: 1.35 }}>{right[i] ? itemText(right[i]) : ""}</Text>
+          <Text style={{ flex: 1 }}>{right[i] ? itemText(right[i]) : ""}</Text>
         </View>
       ))}
     </View>
