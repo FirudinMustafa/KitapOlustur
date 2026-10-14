@@ -95,7 +95,8 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
   const headingFontPt = bodyFontPt ? (bySize.find(([size]) => size >= bodyFontPt * 1.25)?.[0] ?? null) : null;
 
   const numbered = lines.filter((l) => {
-    if (!/^\d{1,2}(\s|$)/.test(l.text.trim())) return false;
+    // "1 ", "1." and "1)" - generated books number items "1.".
+    if (!/^\d{1,2}[.)]?(\s|$)/.test(l.text.trim())) return false;
     const y = (l.bbox ?? l.block.bbox).y / H;
     return y >= 0.06 && y <= 0.94; // not the folio
   });
@@ -107,7 +108,7 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
   // when the number stands alone.
   const exerciseRubrics = headings
     .map((l) => {
-      const rest = l.text.trim().replace(/^\d{1,2}\s*/, "");
+      const rest = l.text.trim().replace(/^\d{1,2}[.)]?\s*/, "");
       if (rest) return rest;
       const blockLines = l.block.lines;
       const at = blockLines.findIndex((bl) => bl.text === l.text && bl.bbox === l.bbox);

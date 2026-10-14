@@ -124,7 +124,7 @@ import { numberExercises } from "@/lib/exercise-numbers";
 import { titleCopiesSource } from "@/lib/title-guard";
 import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
 import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
-import { appendExercises, exercisesToAdd, topUpPrompt } from "@/lib/exercise-topup";
+import { appendExercises, exercisesToAdd, extendExercises, extendPrompt, itemsToAdd, topUpPrompt } from "@/lib/exercise-topup";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import {
   BLUEPRINT_INSTRUCTIONS,
@@ -1735,7 +1735,8 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
 // structural retries: answer just those blocks in one small call. Answers
 // are applied only where there is exactly one per item (applyAnswerKeys).
 // Faz B: pages still short of their source page's exercises after the
-// shape-check rewrites get them added by one small call per page (see
+// shape-check rewrites get them added by one small call per page, and
+// exercises much shorter than the source's get items added (see
 // src/lib/exercise-topup.ts). Best-effort: a failed call leaves the page.
 async function topUpExercises(
   runId: string,
@@ -1746,10 +1747,42 @@ async function topUpExercises(
   "use step";
 
   let added = 0;
+  let lengthened = 0;
+  // Short exercises (vs the source's items per exercise) get items added -
+  // one call per page, best-effort like the exercises above.
+  const lengthen = async (page: GeneratedPage): Promise<GeneratedPage> => {
+    const short = page.blocks
+      .map((block, index) => ({ index, block, count: itemsToAdd(block, page.sourceShape?.items) }))
+      .filter((s) => s.count > 0);
+    if (!short.length) return page;
+    try {
+      const { object, usage } = await withObjectDiagnostics(() =>
+        generateObject({
+          model: toTextModel(resolveFinalTextModel()),
+          schema: z.object({
+            exercises: z.array(z.object({ index: z.number(), items: z.array(z.string()), answerKey: z.array(z.string()) })),
+          }),
+          system: "You are an exercise writer for a language coursebook. You write short, clear exercise items.",
+          prompt: extendPrompt(short, contentLanguage),
+        }),
+      );
+      await recordUsage(runId, "unitGeneration", usage);
+      const additions = object.exercises
+        .filter((e) => short.some((s) => s.index === e.index))
+        .map((e) => ({ ...e, items: e.items.slice(0, short.find((s) => s.index === e.index)!.count) }));
+      const next = extendExercises(page, additions);
+      lengthened += next.blocks.reduce((n, b, i) => n + ((b.items?.length ?? 0) - (page.blocks[i].items?.length ?? 0)), 0);
+      return next;
+    } catch (err) {
+      console.warn(`[topUpExercises] lengthen page ${page.sourcePageNumber}:`, err instanceof Error ? err.message : err);
+      return page;
+    }
+  };
   const fill = async (pages: GeneratedPage[] | undefined) => {
     if (!pages) return pages;
     const out: GeneratedPage[] = [];
-    for (const page of pages) {
+    for (const original of pages) {
+      const page = await lengthen(original);
       const count = exercisesToAdd(page);
       if (!count) {
         out.push(page);
@@ -1782,6 +1815,7 @@ async function topUpExercises(
     workbookPages: (await fill(unit.workbookPages)) ?? unit.workbookPages,
   };
   if (added) await logRunWarning(runId, `Ünite ${unit.unitNumber}: kaynağın alıştırma sayısına ulaşmak için ${added} alıştırma eklendi.`);
+  if (lengthened) await logRunWarning(runId, `Ünite ${unit.unitNumber}: kısa kalan alıştırmalara ${lengthened} madde eklendi.`);
   return result;
 }
 

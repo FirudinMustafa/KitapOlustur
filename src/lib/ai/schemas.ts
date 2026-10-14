@@ -459,8 +459,9 @@ export const generatedPageSchema = z.object({
 export const storedPageSchema = generatedPageSchema.extend({
   zonePlan: zonePlanSchema.optional(),
   // The measured source page's numbered exercises and pictures, checked by
-  // validateUnitStructure (src/lib/source-shape.ts).
-  sourceShape: z.object({ exercises: z.number(), pictures: z.number() }).optional(),
+  // validateUnitStructure (src/lib/source-shape.ts); items = items per
+  // exercise, the length topUpExercises brings short exercises up to.
+  sourceShape: z.object({ exercises: z.number(), pictures: z.number(), items: z.number().optional() }).optional(),
 });
 export type GeneratedPage = z.infer<typeof storedPageSchema>;
 

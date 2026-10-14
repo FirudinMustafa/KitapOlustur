@@ -45,3 +45,48 @@ export function appendExercises<P extends TopUpPage>(page: P, blocks: P["blocks"
     .map((b) => (b.answerKey?.length === b.items!.length ? b : { ...b, answerKey: undefined }));
   return usable.length ? { ...page, blocks: [...page.blocks, ...usable] } : page;
 }
+
+// Live comparison 2026-10-14: with the page's exercises in place, the page
+// still printed half empty - the writer gave 3 items where the source's
+// exercises had about 7. Plain exercises (no puzzle, interactive or diagram
+// format, whose items are shaped by that format) are lengthened toward the
+// source's items per exercise.
+type ExtendableBlock = TopUpPage["blocks"][number] & { activity?: unknown; interactive?: unknown; diagram?: unknown };
+
+export function itemsToAdd(block: ExtendableBlock, target: number | undefined): number {
+  if (!target || target < 4 || !block.items?.length) return 0;
+  if (block.activity || block.interactive || block.diagram) return 0;
+  const have = block.items.length;
+  if (have >= Math.ceil(target * 0.75)) return 0;
+  return Math.min(6, target - have);
+}
+
+export function extendPrompt(blocks: { index: number; block: ExtendableBlock; count: number }[], language: string): string {
+  const list = blocks
+    .map(({ index, block, count }) => `Exercise ${index}: "${block.heading}"${block.body ? ` (${block.body.slice(0, 160)})` : ""}\nExisting items:\n${block.items!.map((i) => `- ${i}`).join("\n")}\nAdd ${count} items.`)
+    .join("\n\n");
+  return [
+    `These coursebook exercises (in ${language}) are too short. For each, write the requested number of NEW items in exactly the same format and style as its existing items, on the same topic - no repeats, no numbering.`,
+    list,
+    "Return, for each exercise, its index, the new items and an answerKey with exactly one answer per new item, in order. Answers go ONLY in answerKey.",
+  ].join("\n\n");
+}
+
+// Appends the new items. The block's answer key is extended when both the
+// old key and the new answers line up with their items; otherwise it is
+// dropped so fillMissingAnswerKeys writes a complete one.
+export function extendExercises<P extends TopUpPage>(page: P, additions: { index: number; items: string[]; answerKey?: string[] }[]): P {
+  const blocks = page.blocks.map((block, i) => {
+    const add = additions.find((a) => a.index === i);
+    const items = add?.items.map((t) => t.trim()).filter(Boolean) ?? [];
+    if (!items.length || !block.items?.length) return block;
+    const oldKeyOk = block.answerKey?.length === block.items.length;
+    const newKeyOk = add!.answerKey?.length === items.length;
+    return {
+      ...block,
+      items: [...block.items, ...items],
+      answerKey: oldKeyOk && newKeyOk ? [...block.answerKey!, ...add!.answerKey!.map((t) => t.trim())] : undefined,
+    };
+  });
+  return { ...page, blocks } as P;
+}

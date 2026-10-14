@@ -47,7 +47,11 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
     const layout = sourcePages.find((s) => s.pageNumber === page.sourcePageNumber)?.layout;
     if (!layout) return page;
     const plan = buildZonePlan(layout);
-    const sourceShape = { exercises: layout.exerciseCount, pictures: plan ? zonePictureCount(plan) : 0 };
+    const sourceShape = {
+      exercises: layout.exerciseCount,
+      pictures: plan ? zonePictureCount(plan) : 0,
+      items: layout.exerciseCount ? Math.round(layout.itemCount / layout.exerciseCount) : 0,
+    };
     if (!plan) return { ...page, sourceShape };
     const extraSlots = Math.max(0, zonePictureCount(plan) - 1);
     // The source page has no picture - neither does the mirrored page (a
