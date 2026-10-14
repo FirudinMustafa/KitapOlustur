@@ -91,6 +91,17 @@ Hiçbir denemede sahne görseli üretilemedi (Cloudflare kotası). Uyarılar Sü
 | KIYAS-9 | — | ✅ Temiz üretim (Cloudflare kotası doluydu, görsel yok): **~%54**, 6 sayfa → 6, alıştırma 19 kaynakta → 11 üretimde |
 | KIYAS-10 | `edebe9b3…` | ❌ İçerik onayından sonra gece ağ kesildi; veritabanı yazmaları (hatayı kaydeden dahil) başarısız oldu, proje sonsuza dek "işleniyor" göründü. Düzeltme `9c5bd0f`: `reconcileLostRun` 2 dk ilerlemeyen üretimi gerçek iş akışı durumuyla karşılaştırıp "durdu" olarak kapatıyor (canlı doğrulandı). Aynı commit: alıştırma tamamlama artık cevap anahtarı eksik alıştırmaları atmıyor (anahtarı sonraki adım yazıyor) |
 
+### 2026-10-14 — ölçümle bulunan üç yapısal hata
+| Bulgu | Etki | Düzeltme |
+|---|---|---|
+| Resimler sayfa boyu tek bir arka plan görseline gömülü (çizgi roman kareleri, sınıf fotoğrafı) | `i_5_team_2.pdf`: 25 sayfanın 12'si böyle; 10'u **0 resim** ölçülüp resimsiz üretiliyordu | `252891c`: bu sayfalar render edilip metin dışındaki dokulu bölgeler XY-kesme ile resim kutusu olarak bulunuyor; 12 sayfanın hepsi artık resimli, düz renkli arka planlar 0 kalıyor |
+| react-pdf, birimsiz `lineHeight`'ı yazının kendi puntosu yoksa 18 pt ile çarpıyor | Tüm alıştırma/paragraf metni 10 pt yazıda 25 pt aralıkla basılıyordu: sayfa yarı boş görünüp yine de taşıyordu | `974c050`: bu stiller fontun doğal aralığını kullanıyor. KIYAS-9 yeniden dizildi: taşan sayfa 2 → 0, toplam 10 → 9 sayfa |
+| Alıştırmalar kaynaktan kısa (≈7 yerine 3 madde) | Sayfalar seyrek | `56a0185`: `sourceShape.items` + `topUpExercises` kısa alıştırmalara madde ekliyor (canlı: 3 → 7 madde, cevap anahtarıyla) |
+
+Not: Analizör artık gömülü resimleri saydığı için benzerlik puanları daha katı. KIYAS-9 (görselsiz) yeni ölçüyle %38; eski satır aralığıyla aynı içerik %29. Görselli bir üretimde resim/yerleşim boyutları da puan alacak.
+
+**Açık:** `TEMPLATE_SAFETY` payları (`src/lib/design/layouts.ts`) eski, şişkin satır aralığına göre kalibre edilmişti; artık fazla temkinli. Görselli tam kıyastan sonra gerçek render'a göre yeniden kalibre edilecek.
+
 **Canlı testte bulunup düzeltilenler:**
 - Gemini şema hatası (`zonePlan` → saklama şeması).
 - Eşzamanlı onayların ikisinin de kabul edilmesi (atomik kapı, migration 0041).
