@@ -19,7 +19,7 @@ const VALID_BOOK_TYPES = ["student_book", "workbook", "teacher_book", "test_book
 // doğal bir üst sınır) yok, bir yazım hatası onlarca gerçek AI üretim
 // çağrısını tetikleyebilir. Normal (PDF) modda da aynı sınır uygulanıyor,
 // tutarlılık için.
-const MAX_UNIT_LIMIT = 30;
+import { MAX_UNIT_LIMIT } from "@/lib/gate-limits";
 
 export async function GET() {
   const { userId } = await auth();

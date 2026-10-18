@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { withUnitGlossary } from "@/lib/unit-glossary";
+import { resolvePageImageUrls } from "@/lib/page-image";
 import {
   VARIANT_LABELS,
   escapeXml,
@@ -61,17 +62,19 @@ export async function buildCommonCartridge(input: {
 
     const pageSections: string[] = [];
     for (const page of pages) {
+      // Every picture of the page (Dizilim overrides and Faz B3 extra
+      // pictures included). The image prompt is the alt text, not a printed
+      // caption - it is an instruction to the image model, not book text
+      // (audit 2026-10-18).
       let imageHtml = "";
-      const imageUrl = pageImages?.[page.sourcePageNumber];
-      if (imageUrl) {
+      for (const [k, imageUrl] of resolvePageImageUrls(page, pageImages).entries()) {
         const { buffer, mediaType } = await fetchAsset(imageUrl, "image/png");
         const ext = extensionForMediaType(mediaType);
-        const imagePath = `images/${unitId}-page-${page.sourcePageNumber}.${ext}`;
+        const imagePath = `images/${unitId}-page-${page.sourcePageNumber}${k ? `-${k + 1}` : ""}.${ext}`;
         zip.file(imagePath, buffer);
         fileRefs.push(`<file href="${imagePath}"/>`);
-        imageHtml = `<figure><img src="${imagePath}" alt=""/>${
-          page.imagePrompt ? `<figcaption>${escapeXml(page.imagePrompt)}</figcaption>` : ""
-        }</figure>`;
+        const alt = k === 0 ? page.imagePrompt : page.extraImagePrompts?.[k - 1];
+        imageHtml += `<figure><img src="${imagePath}" alt="${escapeXml(alt ?? "")}"/></figure>`;
       }
       pageSections.push(`
         ${imageHtml}

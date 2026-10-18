@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
-import { generationRuns, generatedBooks } from "@/db/schema";
+import { generatedBooks } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
+import { hasActiveRun, latestDoneRun } from "@/lib/project-runs";
 import { mergePageLayout, type PageArrayField } from "@/lib/layout-merge";
 import { contentBlockSchema, blockLayoutSchema, type GeneratedUnit } from "@/lib/ai/schemas";
 
@@ -18,20 +19,13 @@ const patchBodySchema = z.object({
   imageLayout: blockLayoutSchema.optional(),
 });
 
-async function loadLatestDoneRun(projectId: string) {
-  return db.query.generationRuns.findFirst({
-    where: eq(generationRuns.projectId, projectId),
-    orderBy: [desc(generationRuns.createdAt)],
-  });
-}
-
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
 
   const ownerCheck = await requireProjectOwner(projectId);
   if (ownerCheck instanceof NextResponse) return ownerCheck;
 
-  const run = await loadLatestDoneRun(projectId);
+  const run = await latestDoneRun(projectId);
   if (!run || run.status !== "done") {
     return NextResponse.json({ error: "Bu proje için tamamlanmış bir kitap yok" }, { status: 404 });
   }
@@ -57,7 +51,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const ownerCheck = await requireProjectOwner(projectId);
   if (ownerCheck instanceof NextResponse) return ownerCheck;
 
-  const run = await loadLatestDoneRun(projectId);
+  if (await hasActiveRun(projectId)) {
+    return NextResponse.json(
+      { error: "Bu projede devam eden bir üretim var - bitince dizilimi kaydedebilirsin." },
+      { status: 409 },
+    );
+  }
+
+  const run = await latestDoneRun(projectId);
   if (!run || run.status !== "done") {
     return NextResponse.json({ error: "Bu proje için tamamlanmış bir kitap yok" }, { status: 404 });
   }

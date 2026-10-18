@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
 import { generationRuns, generatedBooks, extractedOutlines } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
+import { hasActiveRun, latestDoneRun } from "@/lib/project-runs";
 import { renumberRealUnits } from "@/lib/arrangement-merge";
 import { generatedUnitSchema, type GeneratedUnit, type BookOutline } from "@/lib/ai/schemas";
 import { isOwnBlobUrl } from "@/lib/blob-url";
@@ -22,13 +23,6 @@ const patchBodySchema = z.object({
   pageImages: z.record(z.string(), z.string().refine(isOwnBlobUrl)).optional(),
 });
 
-async function loadLatestDoneRun(projectId: string) {
-  return db.query.generationRuns.findFirst({
-    where: eq(generationRuns.projectId, projectId),
-    orderBy: [desc(generationRuns.createdAt)],
-  });
-}
-
 // "Dizilim" (2026-09-21, ROADMAP.md): GET/PATCH follow the exact same
 // "latest done run, all generatedBooks rows share one content blob" pattern
 // as src/app/api/projects/[id]/books/layout/route.ts - see that file for the
@@ -43,7 +37,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const ownerCheck = await requireProjectOwner(projectId);
   if (ownerCheck instanceof NextResponse) return ownerCheck;
 
-  const run = await loadLatestDoneRun(projectId);
+  const run = await latestDoneRun(projectId);
   if (!run || run.status !== "done") {
     return NextResponse.json({ error: "Bu proje için tamamlanmış bir kitap yok" }, { status: 404 });
   }
@@ -74,7 +68,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const ownerCheck = await requireProjectOwner(projectId);
   if (ownerCheck instanceof NextResponse) return ownerCheck;
 
-  const run = await loadLatestDoneRun(projectId);
+  if (await hasActiveRun(projectId)) {
+    return NextResponse.json(
+      { error: "Bu projede devam eden bir üretim var - bitince dizilimi kaydedebilirsin." },
+      { status: 409 },
+    );
+  }
+
+  const run = await latestDoneRun(projectId);
   if (!run || run.status !== "done") {
     return NextResponse.json({ error: "Bu proje için tamamlanmış bir kitap yok" }, { status: 404 });
   }

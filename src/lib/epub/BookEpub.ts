@@ -12,7 +12,7 @@ import {
   extensionForMediaType,
 } from "@/lib/content-html";
 import { isValidIsbn13, normalizeIsbn } from "@/lib/isbn";
-import { resolvePageImageUrl } from "@/lib/page-image";
+import { resolvePageImageUrls } from "@/lib/page-image";
 import { withUnitGlossary } from "@/lib/unit-glossary";
 import { itemText } from "@/lib/item-text";
 
@@ -78,7 +78,6 @@ h1, h2, h3 { font-family: sans-serif; }
 .glossary dt { font-weight: bold; margin-top: 0.5em; }
 .glossary dd { margin-left: 0; }
 .page-image { max-width: 100%; }
-.page-image-caption { font-size: 0.85em; font-style: italic; color: #6b7280; }
 figure { margin: 0 0 1em 0; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #d1d5db; padding: 0.4em; text-align: left; font-size: 0.9em; }`,
@@ -134,19 +133,21 @@ th, td { border: 1px solid #d1d5db; padding: 0.4em; text-align: left; font-size:
 
     const pageSections: string[] = [];
     for (const page of pages) {
+      // Every picture of the page (Faz B3 extra pictures included). The
+      // image prompt is the alt text, not a printed caption - it is an
+      // instruction to the image model, not book text (audit 2026-10-18).
       let imageHtml = "";
-      const imageUrl = resolvePageImageUrl(page, pageImages);
-      if (imageUrl) {
+      for (const [k, imageUrl] of resolvePageImageUrls(page, pageImages).entries()) {
         const { buffer, mediaType } = await fetchAsset(imageUrl, "image/png");
         const ext = extensionForMediaType(mediaType);
-        const epubPath = `images/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.${ext}`;
+        const suffix = k ? `-${k + 1}` : "";
+        const epubPath = `images/unit-${unit.unitNumber}-page-${page.sourcePageNumber}${suffix}.${ext}`;
         zip.file(`OEBPS/${epubPath}`, buffer);
         manifestItems.push(
-          `<item id="img-${unit.unitNumber}-${page.sourcePageNumber}" href="${epubPath}" media-type="${mediaType}"/>`,
+          `<item id="img-${unit.unitNumber}-${page.sourcePageNumber}${suffix}" href="${epubPath}" media-type="${mediaType}"/>`,
         );
-        imageHtml = `<figure><img class="page-image" src="${epubPath}" alt=""/>${
-          page.imagePrompt ? `<figcaption class="page-image-caption">${escapeXml(page.imagePrompt)}</figcaption>` : ""
-        }</figure>`;
+        const alt = k === 0 ? page.imagePrompt : page.extraImagePrompts?.[k - 1];
+        imageHtml += `<figure><img class="page-image" src="${epubPath}" alt="${escapeXml(alt ?? "")}"/></figure>`;
       }
 
       let audioHtml = "";

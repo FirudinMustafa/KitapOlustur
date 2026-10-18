@@ -6,13 +6,14 @@ import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
 import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
-
-type Decision = { unitNumber: number; pageNumber: number; action: "accept" | "regenerate" };
+import { normalizeImageDecisions } from "@/lib/gate-limits";
 
 // Faz "İnsan-onaylı üretim hattı" (ROADMAP.md) - resumes the flagged-image
 // review gate. Body: { decisions: Decision[] } - one entry per flagged
 // image the human reviewed; images not mentioned default to "accept" in
 // the workflow (see the hook consumer in workflows/book-pipeline.tsx).
+// Only flagged images are accepted, each once (audit 2026-10-18: any page,
+// any number of times, was a way to regenerate images without limit).
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
 
@@ -31,16 +32,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const body = await request.json().catch(() => ({}));
-  const decisions: Decision[] = Array.isArray(body?.decisions)
-    ? body.decisions.filter(
-        (d: unknown): d is Decision =>
-          typeof d === "object" &&
-          d !== null &&
-          typeof (d as Decision).unitNumber === "number" &&
-          typeof (d as Decision).pageNumber === "number" &&
-          ((d as Decision).action === "accept" || (d as Decision).action === "regenerate"),
-      )
+  const flagged = Array.isArray(run.pendingImageReview)
+    ? (run.pendingImageReview as { unitNumber: number; pageNumber: number }[])
     : [];
+  const decisions = normalizeImageDecisions(body?.decisions, flagged);
 
   const failure = await resumeApprovalHook(run, currentGateToken(run)!, { decisions });
   if (failure) return failure;

@@ -6,6 +6,7 @@ import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
 import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
+import { MAX_CHARACTER_REDRAW_ROUNDS } from "@/lib/gate-limits";
 
 // Faz 2 "Karakter tutarlılığı": resumes the character-sheet approval gate.
 // `approved: true` continues the run with the current sheets; otherwise the
@@ -39,8 +40,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         typeof r === "object" && r !== null && typeof (r as Record<string, unknown>).id === "string",
     )
     .filter((r) => knownIds.has(r.id))
+    .filter((r, i, all) => all.findIndex((o) => o.id === r.id) === i)
     .map((r) => ({ id: r.id, note: typeof r.note === "string" && r.note.trim() ? r.note.trim().slice(0, 500) : undefined }));
   const approved = body?.approved === true && redraw.length === 0;
+  // Rounds are numbered from 2 (round 1 is the first drawing).
+  if (redraw.length && run.pendingCharacterApproval.round - 1 > MAX_CHARACTER_REDRAW_ROUNDS) {
+    return NextResponse.json(
+      { error: `En fazla ${MAX_CHARACTER_REDRAW_ROUNDS} yeniden çizim turu yapılabilir - karakterleri onayla.` },
+      { status: 400 },
+    );
+  }
 
   const failure = await resumeApprovalHook(run, currentGateToken(run)!, { approved, redraw });
   if (failure) return failure;

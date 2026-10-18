@@ -279,18 +279,16 @@ export async function buildDocx(input: {
                   type: "png",
                   data: buffer,
                   transformation: k === 0 ? { width: 400, height: 225 } : { width: 180, height: 180 },
+                  // The image prompt is alt text, not a printed caption - it
+                  // is an instruction to the image model (audit 2026-10-18).
+                  altText: {
+                    name: `unit-${unit.unitNumber}-page-${page.sourcePageNumber}-${k + 1}`,
+                    description: (k === 0 ? page.imagePrompt : page.extraImagePrompts?.[k - 1]) ?? undefined,
+                  },
                 }),
               ],
             }),
           );
-          if (k === 0 && page.imagePrompt) {
-            children.push(
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ text: page.imagePrompt, italics: true, size: 18 })],
-              }),
-            );
-          }
         } catch {
           // Best-effort - a failed image fetch shouldn't fail the whole
           // export, same philosophy as EPUB's per-run best-effort embed.

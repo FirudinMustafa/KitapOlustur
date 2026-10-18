@@ -17,3 +17,16 @@ export function isActionNote(text: string): boolean {
 export function latestStoryText<M extends { role: string; content: string }>(newestFirst: M[]): string {
   return newestFirst.find((m) => m.role === "assistant" && !isActionNote(m.content))?.content.trim() ?? "";
 }
+
+export const DEFAULT_STORY_TITLE = "Yeni Hikaye";
+
+// A story is created as "Yeni Hikaye" and was never renamed, so every story
+// in the list - and every picture book made with "Kitaba dönüştür" - was
+// called that (audit 2026-10-18). The first message the user writes names it.
+export function titleFromFirstMessage(text: string): string {
+  const firstLine = text.trim().split(/\r?\n/)[0].replace(/\s+/g, " ");
+  if (firstLine.length <= 60) return firstLine;
+  const cut = firstLine.slice(0, 60);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 30 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}

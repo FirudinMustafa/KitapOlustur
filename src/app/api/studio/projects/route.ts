@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { storyProjects } from "@/db/schema";
+import { DEFAULT_STORY_TITLE } from "@/lib/studio-notes";
 
 export async function GET() {
   const { userId } = await auth();
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null);
-  const title = body && typeof body.title === "string" && body.title.trim() ? body.title.trim() : "Yeni Hikaye";
+  const title = body && typeof body.title === "string" && body.title.trim() ? body.title.trim() : DEFAULT_STORY_TITLE;
   const qualityMode = body?.qualityMode === "draft" ? "draft" : "final";
 
   const [storyProject] = await db

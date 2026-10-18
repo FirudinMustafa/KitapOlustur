@@ -30,3 +30,16 @@ export async function deliveredBooks(
   const books = await db.query.generatedBooks.findMany({ where: eq(generatedBooks.runId, done.id) });
   return { books, fromRunId: done.id };
 }
+
+// True while the newest run is still working or waiting on an approval.
+// Edits to the finished book are refused then (audit 2026-10-18): a
+// reassembly reads that book's content, so a save in the middle of it would
+// be lost or half-applied.
+export async function hasActiveRun(projectId: string) {
+  const latest = await db.query.generationRuns.findFirst({
+    where: eq(generationRuns.projectId, projectId),
+    orderBy: [desc(generationRuns.createdAt)],
+    columns: { status: true },
+  });
+  return !!latest && !["done", "failed", "changes_requested"].includes(latest.status);
+}

@@ -6,6 +6,7 @@ import { generationRuns } from "@/db/schema";
 import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
 import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
+import { MAX_CONTENT_CHANGE_ROUNDS, normalizeContentChanges } from "@/lib/gate-limits";
 
 // Faz "İnsan-onaylı üretim hattı" (ROADMAP.md) - resumes the batched
 // content-approval gate (all units' text at once, before any image
@@ -37,17 +38,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const body = await request.json().catch(() => ({}));
   const approved = body?.approved === true;
-  const changesRaw: unknown[] = Array.isArray(body?.changes) ? body.changes : [];
-  const changes = changesRaw
-    .filter(
-      (c: unknown): c is { unitNumber: number; comment: string } =>
-        typeof c === "object" &&
-        c !== null &&
-        typeof (c as Record<string, unknown>).unitNumber === "number" &&
-        typeof (c as Record<string, unknown>).comment === "string" &&
-        ((c as Record<string, string>).comment.trim().length > 0),
-    )
-    .map((c) => ({ unitNumber: c.unitNumber, comment: c.comment.trim() }));
+  // Audit 2026-10-18: one change per shown unit, and a cap on change
+  // rounds - each entry is a paid unit rebuild in the workflow.
+  const pending = run.pendingContentApproval as { round?: number; units?: { unitNumber: number }[] } | null;
+  const knownUnits = new Set((pending?.units ?? []).map((u) => u.unitNumber));
+  const changes = approved ? normalizeContentChanges(body?.changes, knownUnits) : [];
+  if (changes.length && (pending?.round ?? 0) >= MAX_CONTENT_CHANGE_ROUNDS) {
+    return NextResponse.json(
+      { error: `En fazla ${MAX_CONTENT_CHANGE_ROUNDS} değişiklik turu yapılabilir - içeriği onayla ya da reddet.` },
+      { status: 400 },
+    );
+  }
 
   const failure = await resumeApprovalHook(run, currentGateToken(run)!, { approved, changes });
   if (failure) return failure;

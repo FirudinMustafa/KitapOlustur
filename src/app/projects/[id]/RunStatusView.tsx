@@ -901,6 +901,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               <Input
                 type="number"
                 min={1}
+                max={30}
                 value={approvalUnitLimit}
                 onChange={(e) => setApprovalUnitLimit(e.target.value)}
                 placeholder="Örn. 4"
@@ -1442,6 +1443,7 @@ export function RunStatusView({ projectId, initial }: { projectId: string; initi
               <Input
                 type="number"
                 min={1}
+                max={30}
                 value={rerunUnitLimit}
                 onChange={(e) => setRerunUnitLimit(e.target.value)}
                 placeholder="Örn. 4"

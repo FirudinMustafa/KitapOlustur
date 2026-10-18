@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import { isUuid } from "@/lib/uuid";
 import { auth } from "@clerk/nextjs/server";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { projects, generationRuns, generatedBooks, extractedOutlines } from "@/db/schema";
+import { projects, generatedBooks, extractedOutlines } from "@/db/schema";
+import { hasActiveRun, latestDoneRun } from "@/lib/project-runs";
 import type { GeneratedUnit, BookOutline } from "@/lib/ai/schemas";
 import { ArrangementEditor } from "./ArrangementEditor";
 
@@ -25,11 +26,21 @@ export default async function ArrangementPage({ params }: { params: Promise<{ id
     notFound();
   }
 
-  const run = await db.query.generationRuns.findFirst({
-    where: eq(generationRuns.projectId, id),
-    orderBy: [desc(generationRuns.createdAt)],
-  });
-  if (!run || run.status !== "done") {
+  // The last finished run, like the reader and exports - a newer run that
+  // failed must not hide the finished book. While a run is active, edits
+  // are refused (the arrangement API answers 409), so say so up front.
+  if (await hasActiveRun(id)) {
+    return (
+      <div className="mx-auto w-full max-w-2xl px-6 py-12">
+        <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">Dizilim</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Bu projede devam eden bir üretim var. Dizilimi, üretim bitince düzenleyebilirsin.
+        </p>
+      </div>
+    );
+  }
+  const run = await latestDoneRun(id);
+  if (!run) {
     return (
       <div className="mx-auto w-full max-w-2xl px-6 py-12">
         <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">Dizilim</h1>

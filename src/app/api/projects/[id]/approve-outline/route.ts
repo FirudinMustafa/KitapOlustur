@@ -7,7 +7,7 @@ import { requireProjectOwner } from "@/lib/auth";
 import { logHumanDecision } from "@/lib/run-events";
 import { currentGateToken, resumeApprovalHook } from "@/lib/approval";
 
-const MAX_UNIT_LIMIT = 30;
+import { MAX_UNIT_LIMIT } from "@/lib/gate-limits";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;

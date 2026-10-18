@@ -11,6 +11,7 @@ import { bookTypesWithContent, type ContentBookType } from "@/lib/content-book-t
 import { BOOK_TYPE_LABELS } from "@/lib/run-status";
 import type { GeneratedUnit } from "@/lib/ai/schemas";
 import { isDesignThemeId } from "@/lib/design/themes";
+import { MAX_UNIT_LIMIT, isValidUnitLimit } from "@/lib/gate-limits";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await context.params;
@@ -47,8 +48,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   // always null when the caller doesn't pass one explicitly) so rerunning a
   // scratch project doesn't silently regenerate with DEFAULT_SCRATCH_UNIT_COUNT
   // units instead of the count the user originally chose.
-  const unitLimit =
-    Number.isInteger(body?.unitLimit) && body.unitLimit > 0 ? body.unitLimit : (previousRun?.unitLimit ?? null);
+  if (body?.unitLimit !== undefined && body?.unitLimit !== null && !isValidUnitLimit(body.unitLimit)) {
+    return NextResponse.json({ error: `Ünite sayısı 1 ile ${MAX_UNIT_LIMIT} arasında olmalı` }, { status: 400 });
+  }
+  const unitLimit = isValidUnitLimit(body?.unitLimit) ? body.unitLimit : (previousRun?.unitLimit ?? null);
 
   // Faz 1 "Tasarım sistemi": a theme switch is an AI-free reassembly -
   // the same content re-typeset with another theme.

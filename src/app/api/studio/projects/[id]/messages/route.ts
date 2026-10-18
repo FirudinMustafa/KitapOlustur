@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { storyProjects, storyMessages, storyArtifacts } from "@/db/schema";
 import { requireStoryProjectOwner } from "@/lib/auth";
-import { actionNote, latestStoryText } from "@/lib/studio-notes";
+import { DEFAULT_STORY_TITLE, actionNote, latestStoryText, titleFromFirstMessage } from "@/lib/studio-notes";
 import { resolveTextModel, toTextModel } from "@/lib/ai/model";
 import {
   generateStoryImage,
@@ -84,6 +84,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .insert(storyMessages)
     .values({ storyProjectId: id, role: "user", content: userText || `(${directAction} üretimi istendi)` })
     .returning();
+
+  if (userText && storyProject.title === DEFAULT_STORY_TITLE) {
+    await db.update(storyProjects).set({ title: titleFromFirstMessage(userText) }).where(eq(storyProjects.id, id));
+  }
 
   const createdArtifacts: CreatedArtifact[] = [];
 
