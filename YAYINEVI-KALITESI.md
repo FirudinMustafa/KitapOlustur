@@ -134,6 +134,24 @@ Renk dağılımı %54 → %46'ya düştü: kaynağın renk dağılımına resiml
 - Kenar boşluğu ölçümü: `MARGIN_X` sabit; değiştirmek tüm tahminleri etkiler.
 - Web okuyucuda font: yalnızca palet uygulanıyor.
 
+**G3 ✅ (`a035808`) — resimler kaynaktaki yerde ve boyutta, yuvaya göre üretiliyor:**
+- Plan resim satırının yatay konumunu ve genişliğini (`left`, `span`) taşıyor; PDF ve web oraya yerleştiriyor.
+- **Hata düzeltmesi:** plandaki resim yükseklikleri sayfa kesri, ama içerik alanıyla çarpılıyordu. Bu yüzden her resim yaklaşık %20 küçük çıkıyordu.
+- `renderBookFitted` her sayfanın altında gerçekte kalan boşluğu ölçüyor (`pageContentBottoms`) ve kaynak düzenindeki sayfaları bu boşlukla yeniden diziyor. Taşan sayfa önceki hâline dönüyor. Maliyeti 1–2 ek render.
+- Resim yuvasının şekline göre üretiliyor (`pictureSlotAspects`):
+  - Ücretli mod: 1536×1024, 1024×1536 veya 1024×1024.
+  - Ücretsiz mod: flux boyut parametresi almıyor (belgeden doğrulandı); kompozisyon prompt'ta tarif ediliyor.
+- Resim çerçevesi en fazla 1.6:1. Daha geniş yuvalarda kare resim şerit gibi kırpılıyordu (top ve sıra yarım).
+- `relayout.mts`, yeni üretimdeki gibi cevap sızdıran tabloları atıyor (`dropLeakingTable`).
+
+KIYAS-7 (yeni üretim kurallarıyla yeniden dizim): yapı %68 → **%73**, görünüm %56 → %57. Düz akışa düşen ya da sıkılaştırılan sayfa yok (önce 1 ve 5).
+
+**Dürüst not:** yapıdaki artışın çoğu sızdıran tabloların atılmasından geliyor. G3'ün etkisi puandan çok doğrulukta:
+- resimler artık kırpılmıyor ve kaynaktaki yerde duruyor
+- s.6'da resim yüksekliği 0.13 → 0.35, s.4'te 0.25 → 0.32 (kaynakta 0.61 ve 0.32)
+
+Resim alanı örtüşmesi %21–25'te kalıyor. Sınırlayan şey sayfadaki metin miktarı: kaynak 184 kelime + sayfanın üçte biri resim sığdırıyor, bizim alıştırma biçimlerimiz kelime başına daha fazla yer kaplıyor. Bu G4'ün işi.
+
 **Faz G — görünümü yakalama (sıradaki, asıl hedef):**
 - **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
   - resim kutusu örtüşmesi
