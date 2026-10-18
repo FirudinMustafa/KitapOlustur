@@ -226,6 +226,22 @@ Karşılaştırma görüntüsü: `.relayout/KIYAS-11-kaynak-vs-uretim.png` (üst
 2. **Resim yönü:** kaynakta sahne resmi olan yuvalara "tam kare, kenardan kenara, renkli sahne" prompt'u; "beyaz zemin üzerinde tek nesne" yalnızca küçük yuvalarda.
 3. **Sayfa rengi:** kaynağın panel tonuyla alıştırma bölgelerine zemin; kaynakta renkli zemin varsa sayfaya da.
 
+**KIYAS-11 sonrası düzeltmeler (`cb90747`):**
+- **Yoğun satır aralığı:** kaynak düzenindeki sayfalarda 1.22, pt olarak veriliyor. Başlık/yönerge satırının kendi aralığı var; ilk denemede iki satıra bölünen başlıklar üst üste biniyordu.
+- **Küçülme sırası:** önce yazı (en fazla %85'e), sonra resim. Resim %50'nin altına yalnızca taştığı ölçülen sayfada iniyor.
+- **Panel:** her ikinci alıştırma kitabın panel tonunda (PDF + web).
+- **Sütun genişliği:** metin sütunlarına sabit genişlik. Sabit genişlikli çizgiyle eşleştirme çizimi yandaki sütunu tek kelimelik şeride sıkıştırıyordu.
+- **Düz akış:** düz akışa düşen kaynak sayfası da yoğun dizimde basılıyor; resmi kırpılmış ve ortalanmış.
+- **`dropWriterLayouts`:** yazar bir bloğa kendiliğinden `layout {width: 10}` yazmıştı. Bu, sayfayı kaynak düzeninden çıkarıyor ve bloğu kelime kelime basıyordu; KIYAS-11'de düz akışa düşen sayfanın gerçek sebebi buydu.
+- **Yazar:** ölçülmüş sayfada kaynakta olmayan tablo ve bilgi kutusu yazmıyor.
+- **Resim çerçevesi (`pictureFraming`):** büyük yuvaya "kenardan kenara renkli sahne", küçük yuvaya "tonlu zeminde büyük tek nesne". Ücretsiz mod prompt'unda stil sınırı 420 → 600 karakter (ipucu kesiliyordu).
+
+KIYAS-11, yeni üretim kurallarıyla yeniden dizim: yapı %62 → **%83**, görünüm %45 → **%56**. Sıkılaştırılan veya düz akışa düşen sayfa yok (önce 4 ve 1).
+
+Görüntü: `.relayout/KIYAS-11-sonra.png`.
+
+Yazar kuralları ve resim çerçeveleri ancak yeni bir canlı üretimde (KIYAS-12) görülebilir. Cloudflare kotası günde yaklaşık iki küçük kitaba yetiyor; bugün biri kullanıldı.
+
 **Faz G — görünümü yakalama (plan):**
 - **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
   - resim kutusu örtüşmesi
