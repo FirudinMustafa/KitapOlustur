@@ -16,10 +16,12 @@ type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forc
 // plain flow paginates naturally. The height estimate keeps most pages
 // designed - this pass guarantees the ones it got wrong never print broken.
 //
-// A page that still runs over in plain flow gets one more pass with
-// tighter activity and diagram sizes (live E2E 2026-10-10: the last row of
-// a preposition exercise printed alone on an otherwise empty page). Kept
-// only for pages it actually pulls back onto one sheet.
+// Faz G2: a page that runs over is first set tighter in its own layout -
+// tighter activity and diagram sizes (live E2E 2026-10-10), and on a
+// mirrored page smaller text and pictures inside the source's arrangement
+// (planZones `tight`). Only what still runs over then goes to plain flow
+// (still tight). Plain flow used to come first, and a measured KIYAS-7
+// lost the source's layout on 5 of its 6 pages that way.
 export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer; flattened: string[]; compacted: string[] }> {
   // Activity pictures are drawn from Twemoji; fetched once per book.
   const props = { ...input, pictureSrc: input.pictureSrc ?? (await loadEmojiIcons(activityEmojis(input.units))) };
@@ -39,12 +41,12 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
   const result = await (async () => {
     const first = await render();
     if (!first.spills.length) return { ...first, flattened: [] as string[], compacted: [] as string[] };
-    const plain = new Set(first.spills);
-    const second = await render(plain);
-    if (!second.spills.length) return { ...second, flattened: [...plain], compacted: [] as string[] };
-    const third = await render(plain, new Set(second.spills));
-    const fixed = second.spills.filter((k) => !third.spills.includes(k));
-    return fixed.length ? { ...third, flattened: [...plain], compacted: fixed } : { ...second, flattened: [...plain], compacted: [] as string[] };
+    const tight = new Set(first.spills);
+    const second = await render(undefined, tight);
+    if (!second.spills.length) return { ...second, flattened: [] as string[], compacted: [...tight] };
+    const plain = new Set(second.spills);
+    const third = await render(plain, tight);
+    return { ...third, flattened: [...plain], compacted: [...tight] };
   })();
 
   // Faz B5: the contents page lists where each unit is printed. The ranges

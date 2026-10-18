@@ -649,12 +649,14 @@ export function BookDocument({
         withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((page, idx) => {
           const imageSrc = resolvePageImageUrl(page, pageImages);
           const imageSrcs = resolvePageImageUrls(page, pageImages);
-          const pageLook = compact?.has(`${unit.unitNumber}:${idx}`) ? { ...look, compact: true } : look;
+          const isCompact = !!compact?.has(`${unit.unitNumber}:${idx}`);
+          const pageLook = isCompact ? { ...look, compact: true } : look;
           const template = forcePlain?.has(`${unit.unitNumber}:${idx}`)
             ? "standard"
             : resolvePageTemplate(page, !!imageSrc, {
                 isUnitFirstPage: idx === 0,
                 pictureCount: imageSrcs.length,
+                tight: isCompact,
                 metrics: { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
               });
           const edgeToEdge = template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template);

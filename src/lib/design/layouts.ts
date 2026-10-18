@@ -1,6 +1,6 @@
 import { diagramHeight, type Diagram } from "@/lib/diagrams";
 import { activityHeight, type Activity } from "@/lib/activities";
-import { layoutZones, zonePictureCount, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
+import { layoutZones, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
 // Faz 1 "Tasarım sistemi": named page-layout templates. The writer model
 // picks one per page (generatedPageSchema.layoutTemplate) and every renderer
 // (BookDocument.tsx for PDF, PageContent.tsx for the web reader/Dizilim)
@@ -215,7 +215,11 @@ const TEMPLATE_SAFETY: Partial<Record<ResolvedTemplate, number>> = {
   "reading-with-sidebar": 1.12,
   "image-left-text-right": 1.12,
   "exercise-grid": 1.08,
-  "source-zones": 1.3,
+  // Faz G2: was 1.3, which sent most mirrored pages to the framed
+  // templates before they were ever tried. A zoned page that does run over
+  // is now measured and set tighter (renderBookFitted), so the estimate
+  // only needs to be roughly right.
+  "source-zones": 1.1,
   // Plain flow stacks a picture, unit heading and every block full-width;
   // in the sample it spilled from an estimated 73%.
   standard: 1.4,
@@ -228,8 +232,9 @@ export function estimateTemplateFit(
   isUnitFirstPage: boolean,
   m: PageMetrics = A4_METRICS,
   pictureCount = hasImage ? 1 : 0,
+  tight = false,
 ): { needed: number; available: number } {
-  const raw = template === "source-zones" ? zoneFit(page, pictureCount, isUnitFirstPage, m) : rawTemplateFit(page, template, hasImage, isUnitFirstPage, m);
+  const raw = template === "source-zones" ? zoneFit(page, pictureCount, isUnitFirstPage, m, tight) : rawTemplateFit(page, template, hasImage, isUnitFirstPage, m);
   return { needed: raw.needed * (TEMPLATE_SAFETY[template] ?? 1), available: raw.available };
 }
 
@@ -241,19 +246,24 @@ export const ZONE_GAP = 12;
 // pictures are scaled down (to at most half their source height) so the
 // text fits beside and between them. A page still too full gets its body
 // text set 10% smaller (textScale), as a dense coursebook page is, before
-// it gives up the source's arrangement.
+// it gives up the source's arrangement. `tight` (a page that was measured
+// running over, see renderBookFitted) goes further - text to 82%, pictures
+// to 40% - before the page is given up to plain flow. Pictures shrink as a
+// whole (width with height), so a scaled picture is never cropped to a
+// strip.
 export function planZones<B extends BlockLike>(
   page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
   pictureCount: number,
   isUnitFirstPage: boolean,
   m: PageMetrics,
+  tight = false,
 ): { bands: ZonedBand<B>[]; pictureScale: number; textScale: number; contentHeight: number; needed: number } {
   const contentHeight = m.height - MARGIN_TOP - MARGIN_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0);
   if (!page.zonePlan) return { bands: [], pictureScale: 1, textScale: 1, contentHeight, needed: Infinity };
   let last = { bands: [] as ZonedBand<B>[], pictureScale: 0.5, textScale: 0.9, contentHeight, needed: Infinity };
-  for (const textScale of [1, 0.9]) {
+  for (const textScale of tight ? [1, 0.9, 0.82] : [1, 0.9]) {
     const { bands, neededAt } = measureZones(page, pictureCount, m, contentHeight, textScale);
-    for (const scale of [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
+    for (const scale of tight ? [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4] : [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
       const needed = neededAt(scale);
       if (needed <= contentHeight) return { bands, pictureScale: scale, textScale, contentHeight, needed };
       last = { bands, pictureScale: scale, textScale, contentHeight, needed };
@@ -279,7 +289,8 @@ function measureZones<B extends BlockLike>(
     for (const band of bands) {
       if (band.kind === "pictures") needed += band.height * contentHeight * scale + ZONE_GAP;
       else if (band.kind === "split") {
-        const textW = cw * (1 - band.imageWidth) - ZONE_GAP;
+        // the picture column narrows with the picture (Faz G2)
+        const textW = cw * (1 - band.imageWidth * scale) - ZONE_GAP;
         needed += Math.max(band.height * contentHeight * scale, column(band.blocks, textW)) + ZONE_GAP;
       } else if (band.columns === 2) {
         const col = (cw - 16) / 2;
@@ -305,8 +316,8 @@ function measureZones<B extends BlockLike>(
   return { bands, neededAt };
 }
 
-function zoneFit(page: PageLike, pictureCount: number, isUnitFirstPage: boolean, m: PageMetrics): { needed: number; available: number } {
-  const { needed, contentHeight } = planZones(page, pictureCount, isUnitFirstPage, m);
+function zoneFit(page: PageLike, pictureCount: number, isUnitFirstPage: boolean, m: PageMetrics, tight = false): { needed: number; available: number } {
+  const { needed, contentHeight } = planZones(page, pictureCount, isUnitFirstPage, m, tight);
   // planZones already applies the safety factor; undo the one
   // estimateTemplateFit adds on top.
   return { needed: needed / (TEMPLATE_SAFETY["source-zones"] ?? 1), available: contentHeight };
@@ -413,6 +424,9 @@ export function inferTemplate(page: PageLike, hasImage: boolean, isUnitFirstPage
 // - the content can't fit the arrangement on one page - "standard" flow
 //   then paginates it instead of a designed layout spilling half a card
 //   onto the next page.
+// `tight`: the page was measured running over (renderBookFitted) and is
+// set tighter; a mirrored page then keeps the source's arrangement - the
+// next measurement decides whether it has to go to plain flow.
 export function resolvePageTemplate(
   page: PageLike,
   hasImage: boolean,
@@ -420,13 +434,18 @@ export function resolvePageTemplate(
     isUnitFirstPage = false,
     metrics = A4_METRICS,
     pictureCount = hasImage ? 1 : 0,
-  }: { isUnitFirstPage?: boolean; metrics?: PageMetrics; pictureCount?: number } = {},
+    tight = false,
+  }: { isUnitFirstPage?: boolean; metrics?: PageMetrics; pictureCount?: number; tight?: boolean } = {},
 ): ResolvedTemplate {
   if (page.imageLayout || page.blocks.some((b) => b.layout)) return "standard";
-  // Faz B2: a mirrored page is laid out like its source page whenever its
-  // pictures exist and the content fits that arrangement.
-  // A plan without picture frames (a text-only source page) needs none.
-  if (page.zonePlan && (pictureCount > 0 || zonePictureCount(page.zonePlan) === 0)) {
+  // Faz B2: a mirrored page is laid out like its source page whenever the
+  // content fits that arrangement. Faz G2: also when its pictures are
+  // missing (image generation failed or ran out of quota) - the picture
+  // slots drop out (layoutZones) and the text keeps the source's bands and
+  // columns. It used to fall back to the framed templates, which on a
+  // free-quota run meant nearly every page.
+  if (page.zonePlan) {
+    if (tight) return "source-zones";
     const fit = estimateTemplateFit(page, "source-zones", hasImage, isUnitFirstPage, metrics, pictureCount);
     if (fit.needed <= fit.available) return "source-zones";
   }

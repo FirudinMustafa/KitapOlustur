@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { diversifyTemplates, estimateTemplateFit, isChecklistBlock, resolvePageTemplate } from "./layouts";
+import { diversifyTemplates, estimateTemplateFit, isChecklistBlock, planZones, resolvePageTemplate } from "./layouts";
+import type { ZonePlan } from "./zones";
 import type { GeneratedPage } from "@/lib/ai/schemas";
 
 function page(overrides: Partial<GeneratedPage>): GeneratedPage {
@@ -78,5 +79,35 @@ describe("template requirements", () => {
   it("needs exercises for the exercise grid and a glossary for vocab cards", () => {
     expect(resolvePageTemplate(page({ layoutTemplate: "exercise-grid", blocks: [shortBlock] }), false)).toBe("two-column");
     expect(resolvePageTemplate(page({ layoutTemplate: "vocab-cards", blocks: [shortBlock] }), false)).toBe("two-column");
+  });
+});
+
+describe("source-zones (Faz G2)", () => {
+  const plan: ZonePlan = {
+    bands: [
+      { kind: "pictures", height: 0.3, widths: [1] },
+      { kind: "text", columns: 2, weight: 1 },
+    ],
+  };
+  const metrics = { width: 595, height: 842, bodySize: 10 };
+
+  it("keeps the source's arrangement when the pictures are missing", () => {
+    const p = page({ zonePlan: plan, layoutTemplate: "image-left-text-right", blocks: [shortBlock, shortBlock] });
+    expect(resolvePageTemplate(p, false, { pictureCount: 0, metrics })).toBe("source-zones");
+  });
+
+  it("keeps it for a page measured running over (tight), whatever the estimate", () => {
+    const p = page({ zonePlan: plan, blocks: [longBlock, longBlock] });
+    expect(resolvePageTemplate(p, true, { pictureCount: 1, metrics })).not.toBe("source-zones");
+    expect(resolvePageTemplate(p, true, { pictureCount: 1, metrics, tight: true })).toBe("source-zones");
+  });
+
+  it("goes further down in tight mode", () => {
+    const p = page({ zonePlan: plan, blocks: [longBlock] });
+    const normal = planZones(p, 1, false, metrics);
+    const tight = planZones(p, 1, false, metrics, true);
+    expect(normal.pictureScale).toBeGreaterThanOrEqual(0.5);
+    expect(tight.pictureScale).toBeLessThan(normal.pictureScale);
+    expect(tight.textScale).toBeLessThan(normal.textScale);
   });
 });

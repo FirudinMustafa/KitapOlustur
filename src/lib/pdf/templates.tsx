@@ -135,13 +135,16 @@ export function TemplatedPageBody(props: TemplateProps) {
       // Faz B2: the source page's arrangement (see src/lib/design/zones.ts).
       // Heights are shares of the content area; text flows naturally inside
       // each band, and a page whose content outgrows the plan was already
-      // sent to another template by resolvePageTemplate.
+      // sent to another template by resolvePageTemplate - or, measured
+      // running over, is set tighter (look.compact, Faz G2).
       const pictures = imageSrcs ?? (imageSrc ? [imageSrc] : []);
-      const { bands, pictureScale, textScale, contentHeight } = planZones(page, pictures.length, !!heading, {
-        width: pageSize.width,
-        height: pageSize.height,
-        bodySize: look.theme.bodySize,
-      });
+      const { bands, pictureScale, textScale, contentHeight } = planZones(
+        page,
+        pictures.length,
+        !!heading,
+        { width: pageSize.width, height: pageSize.height, bodySize: look.theme.bodySize },
+        !!look.compact,
+      );
       const pictureHeight = (h: number) => Math.round(h * contentHeight * pictureScale);
       return (
         <>
@@ -154,8 +157,11 @@ export function TemplatedPageBody(props: TemplateProps) {
               return (
                 <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom: ZONE_GAP }} wrap={false}>
                   {band.pictures.map((p, k) => (
-                    <View key={k} style={{ width: (contentWidth - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k] }}>
-                      <Illustration src={pictures[p]} height={h} look={look} gap={0} />
+                    <View key={k} style={{ width: (contentWidth - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k], alignItems: "center" }}>
+                      {/* scaled down as a whole, keeping the slot's proportions (Faz G2) */}
+                      <View style={{ width: `${pictureScale * 100}%` }}>
+                        <Illustration src={pictures[p]} height={h} look={look} gap={0} />
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -164,7 +170,7 @@ export function TemplatedPageBody(props: TemplateProps) {
             if (band.kind === "split") {
               const h = pictureHeight(band.height);
               const imageColumn = (
-                <View style={{ width: contentWidth * band.imageWidth }}>
+                <View style={{ width: contentWidth * band.imageWidth * pictureScale }}>
                   {band.pictures.map((p, k) => (
                     <Illustration key={k} src={pictures[p]} height={Math.round((h - ZONE_GAP * (band.pictures.length - 1)) / band.pictures.length)} look={look} gap={k < band.pictures.length - 1 ? ZONE_GAP : 0} />
                   ))}
@@ -187,7 +193,9 @@ export function TemplatedPageBody(props: TemplateProps) {
                     <View key={c} style={{ flex: 1 }}>
                       {items.map((item, k) =>
                         item.kind === "picture" ? (
-                          <Illustration key={k} src={pictures[item.picture]} height={pictureHeight(item.height)} look={look} gap={ZONE_GAP} />
+                          <View key={k} style={{ width: `${pictureScale * 100}%`, alignSelf: "center" }}>
+                            <Illustration src={pictures[item.picture]} height={pictureHeight(item.height)} look={look} gap={ZONE_GAP} />
+                          </View>
                         ) : (
                           <View key={k} style={{ marginBottom: ZONE_GAP }}>
                             <Blocks frameless blocks={item.blocks} look={look} showAnswerKey={showAnswerKey} />

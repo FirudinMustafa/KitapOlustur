@@ -166,8 +166,10 @@ export function TemplatedPage({
               return (
                 <div key={i} className="flex" style={{ gap: ZONE_GAP, marginBottom: ZONE_GAP }}>
                   {band.pictures.map((p, k) => (
-                    <div key={k} className="min-w-0" style={{ flex: band.widths[k] }}>
-                      <Illustration src={pictures[p]} height={h} look={look} style={{ marginBottom: 0 }} />
+                    <div key={k} className="flex min-w-0 justify-center" style={{ flex: band.widths[k] }}>
+                      <div style={{ width: `${pictureScale * 100}%` }}>
+                        <Illustration src={pictures[p]} height={h} look={look} style={{ marginBottom: 0 }} />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -177,7 +179,7 @@ export function TemplatedPage({
               const h = pictureHeight(band.height);
               const each = Math.round((h - ZONE_GAP * (band.pictures.length - 1)) / band.pictures.length);
               const imageColumn = (
-                <div className="flex shrink-0 flex-col" style={{ width: `${band.imageWidth * 100}%`, gap: ZONE_GAP }}>
+                <div className="flex shrink-0 flex-col" style={{ width: `${band.imageWidth * pictureScale * 100}%`, gap: ZONE_GAP }}>
                   {band.pictures.map((p, k) => (
                     <Illustration key={k} src={pictures[p]} height={each} look={look} style={{ marginBottom: 0 }} />
                   ))}
@@ -198,7 +200,9 @@ export function TemplatedPage({
                     <div key={c} className="flex min-w-0 flex-col" style={{ gap: ZONE_GAP }}>
                       {items.map((item, k) =>
                         item.kind === "picture" ? (
-                          <Illustration key={k} src={pictures[item.picture]} height={pictureHeight(item.height)} look={look} style={{ marginBottom: 0 }} />
+                          <div key={k} className="self-center" style={{ width: `${pictureScale * 100}%` }}>
+                            <Illustration src={pictures[item.picture]} height={pictureHeight(item.height)} look={look} style={{ marginBottom: 0 }} />
+                          </div>
                         ) : (
                           <div key={k}>{blocks(item.blocks, true)}</div>
                         ),
