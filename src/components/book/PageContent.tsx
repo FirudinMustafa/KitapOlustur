@@ -9,7 +9,7 @@ import { itemText } from "@/lib/item-text";
 import { isEmoji, letterFor, twemojiUrl, type ActivityPicture } from "@/lib/activities";
 import { PUZZLE_TYPES, PuzzleView } from "./PuzzleViews";
 import { SCENE_H, SCENE_W, mapGrid, prepositionScene, type Shape } from "@/lib/diagrams";
-import { isChecklistBlock, resolvePageTemplate } from "@/lib/design/layouts";
+import { inlineRubric, isChecklistBlock, itemColumns, resolvePageTemplate } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, DESIGN_THEMES, speakerColorMap } from "@/lib/design/themes";
 import { TemplatedPage, lookFonts, type WebLook } from "./TemplatedPage";
 
@@ -493,6 +493,7 @@ export function BlockView({
   audio,
   look,
   frameless,
+  dense,
 }: {
   block: ContentBlock;
   showAnswerKey: boolean;
@@ -500,9 +501,14 @@ export function BlockView({
   /** Faz 1: when set, the block is drawn in the book's theme (templated pages) instead of the per-kind colours. */
   look?: WebLook;
   frameless?: boolean;
+  /** Faz G4: a mirrored page - set at the PDF's coursebook density (src/lib/pdf/blocks.tsx). */
+  dense?: boolean;
 }) {
   const color = BLOCK_COLORS[block.kind];
   const callout = block.callout ? CALLOUT_STYLES[block.callout] : null;
+  const inline = !!dense && !!look && !callout && inlineRubric(block);
+  const numbered = dense ? /^(\d{1,2})[.)]?\s+(.*)$/.exec(block.heading ?? "") : null;
+  const columns = dense && !block.activity ? itemColumns(block.items) : 1;
   const checklist = isChecklistBlock(block);
   const themed = look
     ? callout
@@ -534,7 +540,15 @@ export function BlockView({
           {BLOCK_KIND_LABELS[block.kind]}
         </span>
       ) : null}
-      {block.heading && (
+      {block.heading && inline ? (
+        <p className="leading-snug">
+          <span className="font-bold" style={{ fontFamily: lookFonts(look!).heading }}>
+            {numbered ? <span style={{ color: look!.palette.primary, fontSize: "1.15em" }}>{numbered[1]} </span> : null}
+            {numbered ? numbered[2] : block.heading}
+          </span>{" "}
+          {block.body}
+        </p>
+      ) : block.heading && (
         <h3
           className={look ? "font-bold" : "font-heading font-semibold"}
           style={{
@@ -545,7 +559,7 @@ export function BlockView({
           {block.heading}
         </h3>
       )}
-      {block.body.split(/\n+/).filter(Boolean).map((p, i) => (
+      {!inline && block.body.split(/\n+/).filter(Boolean).map((p, i) => (
         <p key={i} className={look ? "mt-1 leading-relaxed" : "font-reading mt-1 text-sm leading-relaxed text-foreground/80"}>
           {p}
         </p>
@@ -568,7 +582,10 @@ export function BlockView({
         <ActivityView block={block} primary={primary} light={light} />
       ) : (
         !!block.items?.length && (
-          <ol className={look ? "mt-2 list-decimal pl-5" : "mt-2 list-decimal pl-5 text-sm text-foreground"}>
+          <ol
+            className={look ? (columns > 1 ? "mt-1 grid list-decimal gap-x-4 pl-5" : "mt-2 list-decimal pl-5") : "mt-2 list-decimal pl-5 text-sm text-foreground"}
+            style={columns > 1 ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}
+          >
             {block.items.map((item, i) => (
               <li key={i}>{itemText(item)}</li>
             ))}
@@ -751,13 +768,14 @@ export function PageView({
         imageUrl={imageUrl}
         imageUrls={imageUrls}
         look={pageLook}
-        renderBlock={(block, { frameless }) => (
+        renderBlock={(block, { frameless, dense }) => (
           <BlockView
             block={block}
             showAnswerKey={showAnswerKey}
             audio={listeningAudio?.find((a) => a.blockRef === block.heading)}
             look={pageLook}
             frameless={frameless}
+            dense={dense}
           />
         )}
       />

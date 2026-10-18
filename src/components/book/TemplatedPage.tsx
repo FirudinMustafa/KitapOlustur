@@ -15,7 +15,7 @@ import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
 
 export type WebLook = { theme: DesignTheme; palette: ThemePalette };
 
-export type RenderBlock = (block: ContentBlock, opts: { frameless?: boolean }) => ReactNode;
+export type RenderBlock = (block: ContentBlock, opts: { frameless?: boolean; dense?: boolean }) => ReactNode;
 
 const SERIF = 'ui-serif, Georgia, "Noto Serif", serif';
 const SANS = 'ui-sans-serif, system-ui, "Noto Sans", sans-serif';
@@ -121,7 +121,7 @@ export function TemplatedPage({
 }) {
   const fonts = lookFonts(look);
   const H = PAGE_HEIGHT_PT;
-  const blocks = (list: ContentBlock[], frameless?: boolean) => list.map((b, i) => <div key={i}>{renderBlock(b, { frameless })}</div>);
+  const blocks = (list: ContentBlock[], frameless?: boolean, dense?: boolean) => list.map((b, i) => <div key={i}>{renderBlock(b, { frameless, dense })}</div>);
   const heading = isUnitFirstPage && template !== "unit-opener-hero" && template !== "full-bleed-illustration" ? <UnitHeading unit={unit} look={look} /> : null;
   const kicker = <SectionKicker text={page.sectionLabel} look={look} />;
   const glossaryCards = (columns: 2 | 3) =>
@@ -192,7 +192,7 @@ export function TemplatedPage({
               return (
                 <div key={i} className="flex" style={{ gap: ZONE_GAP, marginBottom: ZONE_GAP }}>
                   {band.side === "left" && imageColumn}
-                  <div className="min-w-0 flex-1">{blocks(band.blocks, true)}</div>
+                  <div className="min-w-0 flex-1">{blocks(band.blocks, true, true)}</div>
                   {band.side === "right" && imageColumn}
                 </div>
               );
@@ -208,7 +208,7 @@ export function TemplatedPage({
                             <Illustration src={pictures[item.picture]} height={pictureHeight(item.height)} look={look} style={{ marginBottom: 0 }} />
                           </div>
                         ) : (
-                          <div key={k}>{blocks(item.blocks, true)}</div>
+                          <div key={k}>{blocks(item.blocks, true, true)}</div>
                         ),
                       )}
                     </div>
@@ -220,14 +220,14 @@ export function TemplatedPage({
               const [left, right] = splitColumnsWeb(band.blocks);
               return (
                 <div key={i} className="grid grid-cols-2 gap-4" style={{ marginBottom: ZONE_GAP }}>
-                  <div>{blocks(left, true)}</div>
-                  <div>{blocks(right, true)}</div>
+                  <div>{blocks(left, true, true)}</div>
+                  <div>{blocks(right, true, true)}</div>
                 </div>
               );
             }
             return (
               <div key={i} style={{ marginBottom: ZONE_GAP }}>
-                {blocks(band.blocks, true)}
+                {blocks(band.blocks, true, true)}
               </div>
             );
           })}
