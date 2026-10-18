@@ -1,7 +1,7 @@
 # Yayınevi Kalitesinde Çıktı — Canlı Takip
 
 > **Amaç:** İnternetten bulunan bir Workbook / Student Book PDF'ini sisteme yüklediğimizde, yayınevi kalitesinde **benzer** (birebir kopya değil, özgün) bir kitap almak.
-> Bu dosya her çalışma adımında güncellenir. Son güncelleme: **2026-10-12**. Branch: `redesign/ui`.
+> Bu dosya her çalışma adımında güncellenir. Son güncelleme: **2026-10-18**. Branch: `redesign/ui`.
 
 ---
 
@@ -22,6 +22,67 @@
 **Denetim sonrası düzeltilmiş cevap (2026-10-12):** Çıktı kaynağın formatında değil; sabit bir tasarım sistemi (9 şablon, 5 tema, sayfa başına tek görsel) kaynaktan alınan sayfa sırası/türü ve kaba ipuçlarıyla dolduruluyor. Gerçekçi "aynı format, farklı içerik" benzerliği: Workbook ≈ %30–40, Student Book ≈ %20–30. Boşluğun çoğu koddan; ücretli kota formatı değil, görsel/yazı kalitesini artırır.
 
 **Önceki kısa cevap:** Alıştırma yapısı, sayfa düzeni ve cevap doğruluğu bakımından kaynağın profesyonel bir benzeri çıkıyor. Görsel zenginlik (sahne illüstrasyonları) görsel servis kotasına bağlı ve henüz görselli bir tam test yapılmadı.
+
+---
+
+## 1b. İkinci uçtan uca denetim (2026-10-18)
+
+Üç ajan (önyüz, arka uç, üretim hattı) salt-okuma inceledi. Plan: `~/.claude/plans/pasted-content-id-febc-projeyi-bastan-fizzy-kahn.md`.
+
+**Ana bulgu:** Sistem kaynağın *yapısını* ölçüyor ama *görünümünü* hiç ölçmüyor:
+- Ölçülen yapı: sayfa sayısı, resim kutuları, sütunlar, alıştırma/madde sayısı.
+- Ölçülmeyen görünüm: renk, font, kenar boşluğu, üst/alt bant, tonlu panel, resim boyutu/konumu/stili.
+
+Görünüm 5 sabit temadan geliyor. Fidelity skoru da yalnızca sayıları ölçüyor ve 0'a karşı 0'ı tam puan sayıyor. Bu yüzden %78 gibi değerler "aynı görünüm" anlamına gelmiyor (bkz. KIYAS-7 `compare.png`).
+
+**Gerçekçi tahmin:**
+
+| Kitap | Yapı | Görünüm |
+|---|---|---|
+| Workbook | ≈%40–50 | ≈%15–20 |
+| Student Book | ≈%30–40 | ≈%10–15 |
+| Tamamlayıcı kitap | ≈%15–25 | — |
+
+**Kaynak düzeni iki durumda kayboluyor:**
+- Resim yoksa şablona düşüyor (`layouts.ts:429`).
+- Taşmada düz akışa düşüyor (`render-fitted.tsx:42`).
+
+**Faz S — maliyet/güvenlik (yapıldı, `787910d`):**
+- Rerun ünite sınırı 1–30.
+- İçerik değişikliği ünite başına tek giriş, en fazla 5 tur.
+- Görsel incelemesi yalnızca işaretli görseller için.
+- Karakter yeniden çizimi en fazla 5 tur.
+- `isOwnBlobUrl` yalnızca kendi Blob store'unu kabul ediyor.
+- Dizilim son bitmiş run'ı okuyor; üretim sürerken kayıt 409.
+- Stüdyo hikâyesi ilk mesajdan adlandırılıyor.
+- EPUB/LMS tüm resimleri aktarıyor; resim prompt'u artık altyazı değil, alt metin (EPUB/DOCX/LMS).
+- `tsc` temiz, vitest 64 dosya / 373 test geçti.
+
+**Faz G — görünümü yakalama (sıradaki, asıl hedef):**
+- **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
+  - resim kutusu örtüşmesi
+  - renk histogramı
+  - mürekkep yoğunluğu
+  - kelime/madde oranı
+  - düşük çözünürlüklü görüntü benzerliği
+
+  0'a karşı 0 "uygulanamaz" sayılacak.
+- **G1:** mupdf ile kaynaktan renk/font/kenar boşluğu çıkarımı ve bunlardan kaynaktan türeyen bir tema.
+- **G2:** source-zones resim yokken de kullanılacak (yer tutucuyla); taşmada önce küçültme yapılacak.
+- **G3:** resimler ölçülen x/y/w/h kutusuna, slotun en-boy oranında yerleşecek.
+- **G4:** yazar kaynağın yoğunluğunda yazacak. Ölçülmüş sayfada 220–320 kelime kuralı yok, alıştırma sayısının %100'ü istenecek, sayfa mobilyası (ünite bandı, numara rozetleri, tonlu paneller) eklenecek.
+
+**Açık kalan (ürünleşme):**
+- Kota/faturalama yok.
+- Tüm Blob dosyaları public ve silinmiyor.
+- `assembleAndSaveBooks` tek adım (zaman aşımı + tekrar denemede yinelenen satır).
+- Adım yazmaları idempotent değil.
+- İptal edilen run canlı iş akışınca geri yazılabiliyor.
+- Eşzamanlı rerun yarışı.
+- Kaynak PDF'e sayfa sınırı yok.
+- İndeks yok.
+- İçerik/son onay ekranları yetersiz önizleme gösteriyor.
+- Resimli kitapta ders kitabı etiketleri görünüyor.
 
 ---
 
