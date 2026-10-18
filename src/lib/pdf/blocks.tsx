@@ -5,7 +5,7 @@ import type { ContentBlock, ContentBlockKind, GeneratedPage } from "@/lib/ai/sch
 import { seededShuffle } from "@/lib/content-html";
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { itemText } from "@/lib/item-text";
-import { isChecklistBlock } from "@/lib/design/layouts";
+import { inlineRubric, isChecklistBlock, itemColumns } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, speakerColorMap, type DesignTheme, type ThemePalette } from "@/lib/design/themes";
 import { NOTO_SANS, NOTO_SERIF, pdfFontFamily, withSymbols } from "./fonts";
 import { CrosswordView, MarkingList, MatchLinesView, WordSearchView } from "./puzzle-blocks";
@@ -301,9 +301,22 @@ function PictureMatch({ block, look }: { block: ContentBlock; look: Look }) {
   );
 }
 
-function ItemList({ block, look }: { block: ContentBlock; look: Look }) {
+function ItemList({ block, look, dense }: { block: ContentBlock; look: Look; dense?: boolean }) {
   const a = block.activity;
   const lines = a?.type === "write_lines" ? (a.lines ?? 1) : 0;
+  // Faz G4: on a mirrored page short items sit side by side (itemColumns).
+  const columns = dense && !lines ? itemColumns(block.items) : 1;
+  if (columns > 1) {
+    return (
+      <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+        {block.items?.map((item, k) => (
+          <Text key={k} style={[s.item, { width: `${100 / columns}%`, marginLeft: 0, paddingLeft: 4, paddingRight: 6 }]}>
+            {k + 1}. {itemText(item)}
+          </Text>
+        ))}
+      </View>
+    );
+  }
   return (
     <>
       {block.items?.map((item, k) => (
@@ -416,7 +429,7 @@ function TownMap({ block, look }: { block: ContentBlock; look: Look }) {
   );
 }
 
-function ActivityItems({ block, look, columns }: { block: ContentBlock; look: Look; columns: number }) {
+function ActivityItems({ block, look, columns, dense }: { block: ContentBlock; look: Look; columns: number; dense?: boolean }) {
   const a = block.activity;
   return (
     <>
@@ -436,7 +449,7 @@ function ActivityItems({ block, look, columns }: { block: ContentBlock; look: Lo
       ) : a && ["unscramble", "odd_one_out", "tick_cross", "ordering"].includes(a.type) ? (
         <MarkingList block={block} look={look} />
       ) : (
-        <ItemList block={block} look={look} />
+        <ItemList block={block} look={look} dense={dense} />
       )}
     </>
   );
@@ -447,11 +460,13 @@ function ExerciseBox({
   showAnswerKey,
   look,
   plain,
+  dense,
 }: {
   block: ContentBlock;
   showAnswerKey: boolean;
   look: Look;
   plain?: boolean;
+  dense?: boolean;
 }) {
   if (!block.items?.length && !block.interactive && !block.activity) return null;
   if (isChecklistBlock(block)) return <ChecklistItems items={block.items ?? []} look={look} />;
@@ -460,7 +475,7 @@ function ExerciseBox({
   if (plain) {
     return (
       <View style={{ marginTop: 2 }}>
-        <ActivityItems block={block} look={look} columns={3} />
+        <ActivityItems block={block} look={look} columns={3} dense={dense} />
         <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />
         <AnswerKey block={block} show={showAnswerKey} />
       </View>
@@ -581,14 +596,14 @@ function cardFrame(look: Look) {
   return { paddingLeft: 12, borderLeftWidth: 2.5, borderLeftColor: look.palette.primary, marginBottom: 14 };
 }
 
-function BlockInner({ block, showAnswerKey, look, plain }: { block: ContentBlock; showAnswerKey: boolean; look: Look; plain?: boolean }) {
+function BlockInner({ block, showAnswerKey, look, plain, dense }: { block: ContentBlock; showAnswerKey: boolean; look: Look; plain?: boolean; dense?: boolean }) {
   return (
     <>
-      {block.body ? <Text style={{ marginBottom: 6 }}>{block.body}</Text> : null}
+      {block.body ? <Text style={{ marginBottom: dense ? 3 : 6 }}>{block.body}</Text> : null}
       {block.dialogue?.length ? <DialogueView lines={block.dialogue} look={look} /> : null}
       {block.table ? <TableView table={block.table} look={look} /> : null}
       {block.diagram?.type === "map" ? <TownMap block={block} look={look} /> : null}
-      <ExerciseBox block={block} showAnswerKey={showAnswerKey} look={look} plain={plain} />
+      <ExerciseBox block={block} showAnswerKey={showAnswerKey} look={look} plain={plain} dense={dense} />
     </>
   );
 }
@@ -619,11 +634,14 @@ export function BlockCard({
   showAnswerKey,
   look,
   frameless,
+  dense,
 }: {
   block: ContentBlock;
   showAnswerKey: boolean;
   look: Look;
   frameless?: boolean;
+  /** Faz G4: a mirrored (source-zones) page - coursebook density, see estimateBlockHeight. */
+  dense?: boolean;
 }) {
   const layoutStyle = block.layout
     ? { position: "absolute" as const, left: block.layout.x, top: block.layout.y, width: block.layout.width, height: block.layout.height }
@@ -646,6 +664,27 @@ export function BlockCard({
           <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: 10.5, color: c.text, marginBottom: 3 }}>{block.heading}</Text>
         ) : null}
         <BlockInner block={block} showAnswerKey={showAnswerKey} look={look} />
+      </View>
+    );
+  }
+
+  if (dense) {
+    // Faz G4: set like a coursebook exercise - the number in the book's
+    // colour, heading and a short rubric on one line, no card spacing
+    // (estimateBlockHeight's frameless branch measures the same).
+    const inline = inlineRubric(block);
+    const numbered = /^(\d{1,2})[.)]?\s+(.*)$/.exec(block.heading ?? "");
+    return (
+      <View style={[{ marginBottom: 8 }, layoutStyle]} wrap={blockLines(block) > UNSPLIT_MAX_LINES}>
+        <Text style={{ marginBottom: 3 }}>
+          <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, color: "#1f2937" }}>
+            {/* the number a size up, as coursebooks print it (and as the source analyzer finds exercises) */}
+            {numbered ? <Text style={{ color: look.palette.primary, fontSize: look.theme.bodySize * 1.25 }}>{numbered[1]} </Text> : null}
+            {numbered ? numbered[2] : block.heading}
+          </Text>
+          {inline ? `  ${block.body}` : null}
+        </Text>
+        <BlockInner block={inline ? { ...block, body: "" } : block} showAnswerKey={showAnswerKey} look={look} plain dense />
       </View>
     );
   }

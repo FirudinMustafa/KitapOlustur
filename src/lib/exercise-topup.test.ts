@@ -35,7 +35,7 @@ describe("lengthening short exercises", () => {
     expect(itemsToAdd(ex("A", 3), 7)).toBe(4);
     expect(itemsToAdd(ex("A", 6), 7)).toBe(0);
     expect(itemsToAdd(ex("A", 3), 3)).toBe(0);
-    expect(itemsToAdd(ex("A", 2), 20)).toBe(6);
+    expect(itemsToAdd(ex("A", 2), 20)).toBe(8);
     expect(itemsToAdd({ ...ex("A", 2), activity: { type: "crossword" } }, 7)).toBe(0);
     expect(itemsToAdd(ex("A", 3), undefined)).toBe(0);
   });

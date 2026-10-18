@@ -9,16 +9,17 @@ import { isExerciseBlock } from "@/lib/design/layouts";
 export type TopUpPage = {
   sourcePageNumber: number;
   blocks: (Parameters<typeof isExerciseBlock>[0] & { answerKey?: string[] })[];
-  sourceShape?: { exercises: number; pictures: number };
+  sourceShape?: { exercises: number; pictures: number; items?: number };
 };
 
 // How many exercises a page should get added: up to the source page's
-// count, at most 4 per page in one go.
+// count, at most 6 per page in one go (Faz G4: was 4 - coursebook pages
+// carry 5-7).
 export function exercisesToAdd(page: TopUpPage): number {
   const need = page.sourceShape?.exercises ?? 0;
   if (need < 2) return 0;
   const have = page.blocks.filter(isExerciseBlock).length;
-  return Math.max(0, Math.min(4, need - have));
+  return Math.max(0, Math.min(6, need - have));
 }
 
 export function topUpPrompt(page: TopUpPage & { pageType?: string }, count: number, formats: string[], language: string): string {
@@ -26,7 +27,7 @@ export function topUpPrompt(page: TopUpPage & { pageType?: string }, count: numb
   return [
     `This coursebook page (in ${language}) needs ${count} more short exercise block${count > 1 ? "s" : ""}, on the same topic and vocabulary as its existing content:`,
     existing,
-    `Write exactly ${count} new exercise blocks. Each: kind "practice", a short heading (the instruction, no number), 3-6 items, and an answerKey with exactly one correct answer per item, in order. Answers go ONLY in answerKey - never in a table or in the items.`,
+    `Write exactly ${count} new exercise blocks. Each: kind "practice", a short heading (the instruction, no number), ${page.sourceShape?.items && page.sourceShape.items >= 3 ? `about ${page.sourceShape.items}` : "3-6"} items, and an answerKey with exactly one correct answer per item, in order. Answers go ONLY in answerKey - never in a table or in the items. Items are the real text the learner reads - never placeholders like "Picture of a ball" or "Item 1".`,
     formats.length
       ? `Use different formats from those already on the page, preferably these the source series uses (reproduce the format, never the wording): ${formats.join(" | ")}.`
       : "Use different formats from those already on the page (gap fill, matching, ordering, true/false...).",
@@ -58,7 +59,7 @@ export function itemsToAdd(block: ExtendableBlock, target: number | undefined): 
   if (block.activity || block.interactive || block.diagram) return 0;
   const have = block.items.length;
   if (have >= Math.ceil(target * 0.75)) return 0;
-  return Math.min(6, target - have);
+  return Math.min(8, target - have);
 }
 
 export function extendPrompt(blocks: { index: number; block: ExtendableBlock; count: number }[], language: string): string {

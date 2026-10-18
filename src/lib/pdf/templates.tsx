@@ -52,11 +52,11 @@ function Illustration({
   );
 }
 
-function Blocks({ blocks, look, showAnswerKey, frameless }: { blocks: ContentBlock[]; look: Look; showAnswerKey: boolean; frameless?: boolean }) {
+function Blocks({ blocks, look, showAnswerKey, frameless, dense }: { blocks: ContentBlock[]; look: Look; showAnswerKey: boolean; frameless?: boolean; dense?: boolean }) {
   return (
     <>
       {blocks.map((b, i) => (
-        <BlockCard key={i} block={b} look={look} showAnswerKey={showAnswerKey} frameless={frameless} />
+        <BlockCard key={i} block={b} look={look} showAnswerKey={showAnswerKey} frameless={frameless} dense={dense} />
       ))}
     </>
   );
@@ -183,7 +183,7 @@ export function TemplatedPageBody(props: TemplateProps) {
                 <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom: ZONE_GAP }}>
                   {band.side === "left" && imageColumn}
                   <View style={{ flex: 1 }}>
-                    <Blocks frameless blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
+                    <Blocks frameless dense blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
                   </View>
                   {band.side === "right" && imageColumn}
                 </View>
@@ -201,7 +201,7 @@ export function TemplatedPageBody(props: TemplateProps) {
                           </View>
                         ) : (
                           <View key={k} style={{ marginBottom: ZONE_GAP }}>
-                            <Blocks frameless blocks={item.blocks} look={look} showAnswerKey={showAnswerKey} />
+                            <Blocks frameless dense blocks={item.blocks} look={look} showAnswerKey={showAnswerKey} />
                           </View>
                         ),
                       )}
@@ -215,17 +215,17 @@ export function TemplatedPageBody(props: TemplateProps) {
               return (
                 <View key={i} style={{ flexDirection: "row", gap: 16, marginBottom: ZONE_GAP }}>
                   <View style={{ flex: 1 }}>
-                    <Blocks frameless blocks={left} look={look} showAnswerKey={showAnswerKey} />
+                    <Blocks frameless dense blocks={left} look={look} showAnswerKey={showAnswerKey} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Blocks frameless blocks={right} look={look} showAnswerKey={showAnswerKey} />
+                    <Blocks frameless dense blocks={right} look={look} showAnswerKey={showAnswerKey} />
                   </View>
                 </View>
               );
             }
             return (
               <View key={i} style={{ marginBottom: ZONE_GAP }}>
-                <Blocks frameless blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
+                <Blocks frameless dense blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
               </View>
             );
           })}

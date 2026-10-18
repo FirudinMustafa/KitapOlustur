@@ -93,11 +93,17 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
   const wordCount = lines.reduce((s, l) => s + wordsOf(l.text), 0);
 
   // Body size = the size carrying the most characters; heading = the most
-  // common size clearly above it.
+  // common size clearly above it. A bold line opening with a number is an
+  // exercise heading and is left out: mupdf gives a line one font (its first
+  // character's), so a heading with its rubric run on ("3 What's the
+  // subject? Look, choose and write.") counted every rubric character at
+  // the number's size - enough, on a page of short items, to make that the
+  // "body" size and hide every heading (Faz G4).
   const charsBySize = new Map<number, number>();
+  const isHeadingLine = (l: StextLine) => l.font?.weight === "bold" && /^\d{1,2}[.)]?\s/.test(l.text.trim());
   for (const l of lines) {
     const size = Math.round((l.font?.size ?? 0) * 2) / 2;
-    if (size > 0) charsBySize.set(size, (charsBySize.get(size) ?? 0) + l.text.trim().length);
+    if (size > 0 && !isHeadingLine(l)) charsBySize.set(size, (charsBySize.get(size) ?? 0) + l.text.trim().length);
   }
   const bySize = [...charsBySize.entries()].sort((a, b) => b[1] - a[1]);
   const bodyFontPt = bySize[0]?.[0] ?? null;

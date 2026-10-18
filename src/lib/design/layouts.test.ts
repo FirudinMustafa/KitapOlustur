@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diversifyTemplates, estimateTemplateFit, isChecklistBlock, planZones, resolvePageTemplate } from "./layouts";
+import { diversifyTemplates, estimateBlockHeight, estimateTemplateFit, inlineRubric, isChecklistBlock, itemColumns, planZones, resolvePageTemplate } from "./layouts";
 import type { ZonePlan } from "./zones";
 import type { GeneratedPage } from "@/lib/ai/schemas";
 
@@ -131,5 +131,25 @@ describe("planZones with measured slack (Faz G3)", () => {
 
   it("changes nothing without slack", () => {
     expect(planZones(p, 1, false, metrics, false, 0)).toEqual(planZones(p, 1, false, metrics));
+  });
+});
+
+describe("coursebook density on mirrored pages (Faz G4)", () => {
+  it("runs a short rubric on after the heading", () => {
+    expect(inlineRubric({ heading: "1 Plurals", body: "Make these nouns plural." })).toBe(true);
+    expect(inlineRubric({ heading: "1 Story", body: "x".repeat(400) })).toBe(false);
+    expect(inlineRubric({ heading: "1 Talk", body: "Act it out.", dialogue: [{}] })).toBe(false);
+  });
+
+  it("sets short items side by side", () => {
+    expect(itemColumns(["desk", "clock", "lamp", "bed"])).toBe(3);
+    expect(itemColumns(["Good morning", "Good night", "Hello there"])).toBe(2);
+    expect(itemColumns(["How many beds are there in the room?", "a", "b"])).toBe(1);
+    expect(itemColumns(["one", "two"])).toBe(1);
+  });
+
+  it("estimates a dense exercise well below the card style", () => {
+    const b = { kind: "practice", heading: "1 Plurals", body: "Make these nouns plural.", items: ["desk", "clock", "lamp", "bed", "box", "cat"], answerKey: ["desks", "clocks", "lamps", "beds", "boxes", "cats"] };
+    expect(estimateBlockHeight(b, 500, 10, true)).toBeLessThan(estimateBlockHeight(b, 500, 10) * 0.6);
   });
 });

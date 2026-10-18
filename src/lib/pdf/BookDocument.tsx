@@ -235,12 +235,20 @@ function PageMarker({ id, onPageStart }: { id: string; onPageStart?: PageStartLi
   );
 }
 
-function Footer({ bookTitle, variantLabel, bleed = 0 }: { bookTitle: string; variantLabel: string; bleed?: number }) {
+function Footer({ bookTitle, variantLabel, bleed = 0, tab }: { bookTitle: string; variantLabel: string; bleed?: number; tab?: string }) {
   return (
     <View style={[styles.footer, bleed ? { left: 44 + bleed, right: 44 + bleed, bottom: 22 + bleed } : {}]} fixed>
       <Text>{variantLabel ? `${bookTitle} · ${variantLabel}` : bookTitle}</Text>
-      {/* A printed book shows the folio alone; "n / total" read as a generated report. */}
-      <Text render={({ pageNumber }) => `${pageNumber}`} />
+      {/* A printed book shows the folio alone; "n / total" read as a generated report.
+          Faz G4: a book mirroring a source prints it in a tab of the book's
+          colour, as coursebooks do. */}
+      {tab ? (
+        <View style={{ backgroundColor: tab, borderRadius: 3, paddingHorizontal: 6, paddingVertical: 1.5, marginTop: -2 }}>
+          <Text style={{ color: "#ffffff", fontWeight: 700, fontSize: 8.5 }} render={({ pageNumber }) => `${pageNumber}`} />
+        </View>
+      ) : (
+        <Text render={({ pageNumber }) => `${pageNumber}`} />
+      )}
     </View>
   );
 }
@@ -709,7 +717,9 @@ export function BookDocument({
                 />
               )}
 
-              {template !== "full-bleed-illustration" && <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} />}
+              {template !== "full-bleed-illustration" && (
+                <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} tab={sourceStyle?.type ? palette.primary : undefined} />
+              )}
             </Page>
           );
         }),

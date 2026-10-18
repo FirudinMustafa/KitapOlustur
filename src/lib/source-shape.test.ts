@@ -22,13 +22,15 @@ describe("shapeIssues", () => {
   it("accepts a page close enough to its source", () => {
     const page = {
       sourcePageNumber: 9,
-      blocks: [exercise("1 A"), exercise("2 B"), exercise("3 C")],
+      blocks: [exercise("1 A"), exercise("2 B"), exercise("3 C"), exercise("4 D")],
       imagePrompt: "a room",
       extraImagePrompts: ["a lamp"],
       zonePlan: twoPictures,
       sourceShape: { exercises: 5, pictures: 2 },
     };
     expect(shapeIssues(page, "Student Book")).toEqual([]);
+    // 3 of 5 was enough before Faz G4; 80% is asked now
+    expect(shapeIssues({ ...page, blocks: page.blocks.slice(0, 3) }, "Student Book")).toHaveLength(1);
   });
 });
 

@@ -157,9 +157,36 @@ function textHeight(text: string, width: number, size: number): number {
 
 // `frameless`: printed without the card frame and exercise box, the way a
 // published coursebook sets an exercise (source-zones pages).
+// Faz G4 "Kaynağın yoğunluğu": on a mirrored (frameless) page an exercise
+// is set like a coursebook's - a short rubric runs on after the heading in
+// one line, and short items sit side by side - instead of the card style's
+// heading line, rubric line and one line per item. A source page holds 180+
+// words and a third of a page of pictures; set card-style, the same words
+// left room for a picture a third that size.
+export const INLINE_RUBRIC_MAX = 160;
+
+export function inlineRubric(b: { body?: string; heading?: string; dialogue?: unknown[] | null }): boolean {
+  return !!b.heading && !!b.body && b.body.length <= INLINE_RUBRIC_MAX && !b.body.includes("\n") && !b.dialogue?.length;
+}
+
+// Columns for an item list on a mirrored page: short items side by side.
+// Sized for the narrowest place a block goes (half a page), so it holds in
+// a column band too.
+export function itemColumns(items: string[] | undefined): 1 | 2 | 3 {
+  if (!items || items.length < 3) return 1;
+  const longest = Math.max(...items.map((i) => i.length));
+  if (items.length >= 4 && longest <= 12) return 3;
+  return longest <= 22 ? 2 : 1;
+}
+
 export function estimateBlockHeight(b: BlockLike, width: number, size: number, frameless = false): number {
   const inner = frameless ? width : width - 24;
-  let h = (frameless ? 12 : 30) + (b.heading ? size * 1.9 : 0) + textHeight(b.body, inner, size);
+  let h = frameless
+    ? 8 +
+      (inlineRubric(b)
+        ? textHeight(`${b.heading} ${b.body}`, inner, size * 1.1) + 3
+        : (b.heading ? textHeight(b.heading, inner, size * 1.1) + 3 : 0) + textHeight(b.body, inner, size))
+    : 30 + (b.heading ? size * 1.9 : 0) + textHeight(b.body, inner, size);
   if (b.dialogue?.length) {
     // avatar row: speaker label + padding + border ≈ 33pt over the text itself
     for (const d of b.dialogue) h += Math.max(30, textHeight(d.line, inner * 0.78 - 20, size) + 33) + 8;
@@ -177,7 +204,11 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
     const act = safeActivityHeight(b, inner - 24, size);
     const dia = diagramHeight(b);
     h += act.extra + (dia.replacesItems ? dia.extra : 0);
-    if (!act.replacesItems && !dia.replacesItems) for (const i of b.items ?? []) h += textHeight(i, inner - 24, size) + 3;
+    if (!act.replacesItems && !dia.replacesItems) {
+      const cols = frameless && b.activity?.type !== "write_lines" ? itemColumns(b.items) : 1;
+      if (cols > 1) h += Math.ceil((b.items?.length ?? 0) / cols) * (size * LINE + 3);
+      else for (const i of b.items ?? []) h += textHeight(i, inner - 24, size) + 3;
+    }
     const it = b.interactive;
     if (it?.type === "multiple_choice") h += (it.options.length + 1) * size * LINE + 6;
     if (it?.type === "matching") h += it.pairs.length * size * LINE + 6;

@@ -21,8 +21,10 @@ type ShapedPage = {
   glossary?: { term: string }[];
 };
 
-// At least this share of the source's numbered exercises must be there.
-const MIN_EXERCISE_SHARE = 0.6;
+// At least this share of the source's numbered exercises must be there
+// (Faz G4: was 0.6 - pages came out a third short of their source; the
+// top-up step fills the rest).
+const MIN_EXERCISE_SHARE = 0.8;
 
 export function shapeIssues(page: ShapedPage, label: string): string[] {
   const issues: string[] = [];

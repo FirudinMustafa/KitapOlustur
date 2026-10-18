@@ -126,6 +126,7 @@ import { numberExercises } from "@/lib/exercise-numbers";
 import { titleCopiesSource } from "@/lib/title-guard";
 import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
 import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
+import { placeholderItemIssue } from "@/lib/placeholder-items";
 import { appendExercises, exercisesToAdd, extendExercises, extendPrompt, itemsToAdd, topUpPrompt } from "@/lib/exercise-topup";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import {
@@ -876,7 +877,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
     // Faz 1 "Tasarım sistemi": the page-design vocabulary. Every renderer
     // draws a page by its layoutTemplate (src/lib/design/layouts.ts), so the
     // writer decides the arrangement the way a book designer would.
-    `PAGE DESIGN - this book is typeset like a professionally published coursebook, not a document. For EVERY page set "layoutTemplate" to one of:\n${layoutTemplatePromptCatalog()}\nDesign rules: (1) The first Student Book page of the unit uses "unit-opener-hero" with an imagePrompt. (2) Vary the templates - never use the same one on more than two pages in a row. (3) Write conversations into a block's "dialogue" field (one entry per turn) instead of prose, grammar patterns into a block's "table" field, and short tips/facts/rules as separate small blocks with "callout" set - real coursebooks use these boxes constantly. (4) EVERY page must fit on ONE printed page: roughly 220-320 words of running text in total on a page without a picture, about 150-220 with one, and at most 8 dialogue turns. If a page's content would be longer, tighten the wording - do not drop required exercises.`,
+    `PAGE DESIGN - this book is typeset like a professionally published coursebook, not a document. For EVERY page set "layoutTemplate" to one of:\n${layoutTemplatePromptCatalog()}\nDesign rules: (1) The first Student Book page of the unit uses "unit-opener-hero" with an imagePrompt. (2) Vary the templates - never use the same one on more than two pages in a row. (3) Write conversations into a block's "dialogue" field (one entry per turn) instead of prose, grammar patterns into a block's "table" field, and short tips/facts/rules as separate small blocks with "callout" set - real coursebooks use these boxes constantly. (4) EVERY page must fit on ONE printed page. A page with a measured source shape in the blueprint follows that shape instead of a word budget - its exercise count, items per exercise and word count; it is set densely like the source (heading and short instruction on one line, short items side by side), so write the source's amount. Any other page: roughly 220-320 words of running text without a picture, about 150-220 with one, and at most 8 dialogue turns. If a page's content would be longer, tighten the wording - do not drop required exercises.`,
     `CHARACTERS IN PICTURES - when an imagePrompt shows any of the style bible's characters, list their ids in that page's "imageCharacters" and refer to them by name in the imagePrompt. Describe the scene, action, expressions and setting - do not re-describe their appearance (the illustrator works from fixed character reference sheets).`,
     `If any block's body or items text refers to an image the learner should look at (e.g. "Resim:", "Picture:", "look at the image", a counting/matching exercise with objects), you MUST set that page's imagePrompt describing exactly that image - never write an exercise that depends on an image without providing one.`,
   ];
@@ -2564,6 +2565,8 @@ export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics 
         for (const issue of activityIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
         const leak = answerLeakIssue(block, `${label}, page ${page.sourcePageNumber}`);
         if (leak) issues.push(leak);
+        const placeholder = placeholderItemIssue(block, `${label}, page ${page.sourcePageNumber}`);
+        if (placeholder) issues.push(placeholder);
         // "I can..." self-assessment lists print with tick boxes and have
         // no correct answers - see isChecklistBlock.
         if (block.items?.length && !isChecklistBlock(block) && block.items.length !== (block.answerKey?.length ?? 0)) {
