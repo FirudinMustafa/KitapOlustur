@@ -152,7 +152,52 @@ KIYAS-7 (yeni üretim kurallarıyla yeniden dizim): yapı %68 → **%73**, gör�
 
 Resim alanı örtüşmesi %21–25'te kalıyor. Sınırlayan şey sayfadaki metin miktarı: kaynak 184 kelime + sayfanın üçte biri resim sığdırıyor, bizim alıştırma biçimlerimiz kelime başına daha fazla yer kaplıyor. Bu G4'ün işi.
 
-**Faz G — görünümü yakalama (sıradaki, asıl hedef):**
+**G4 ✅ (`fa1902b`) — ders kitabı yoğunluğu:**
+- **Kaynak düzenindeki sayfalarda alıştırma dizimi:**
+  - numara bir boy büyük ve kitabın renginde
+  - başlık ile kısa yönerge tek satırda
+  - kısa maddeler 2–3 sütunda
+  - bloklar arası 8 pt
+
+  Sığma tahmini aynısını ölçüyor; diğer şablonlar değişmedi.
+- **Analizör düzeltmesi:** gövde punto hesabı numarayla başlayan kalın satırları saymıyor. mupdf satıra ilk karakterin fontunu verdiği için tek satırlık başlık+yönerge gövde sayılıyor ve tüm başlıkları gizliyordu. Üç kaynağın ölçümü değişmedi (önce/sonra karşılaştırıldı).
+- **Yazar kuralları:**
+  - Ölçülmüş sayfa 220–320 kelime bütçesine değil, kaynağın şekline uyuyor.
+  - Alıştırma sayısının %80'i isteniyor (önce %60).
+  - Ek alıştırma en fazla 6 (önce 4), kaynağın madde sayısıyla.
+  - Ek madde en fazla 8 (önce 6).
+- **Yer tutucu kontrolü:** "Picture of a ball", "Item 1" gibi maddeler yazara geri gönderiliyor (`placeholder-items.ts`).
+- **Sayfa süsü:** kaynağı izleyen kitapta sayfa numarası, kitabın renginde bir sekmede basılıyor.
+
+KIYAS-7: görünüm %57 → **%60**, yapı %72. Resimler her sayfada büyüdü; örneğin kaynak s.7'de 0.92×0.33, bizde 0.51×0.20 → 0.61×0.30.
+
+### Faz G özeti (KIYAS-7 yeniden dizimi, kaynak s.6–11)
+
+| Adım | Yapı | Görünüm |
+|---|---|---|
+| Denetimdeki PDF (eski ölçü %78) | %35 | %46 |
+| G2 düzen korunuyor | %68 | %52 |
+| G1 kaynak renk/yazı | %68 | %56 |
+| G3 resim yeri/boyutu (+ sızdıran tablo kuralı) | %73 | %57 |
+| G4 yoğunluk | %72 | **%60** |
+| *Hedef: kaynağın kendi sayfaları* | — | *%70* |
+| *İlgisiz kitap* | %22 | *%30* |
+
+**Ne kadar gerçek?**
+- Bunlar kayıtlı içeriğin yapay zekâ çağırmadan yeniden dizilmesi. Yazar kuralları (G1 punto, G3 yuva şekli, G4 yoğunluk ve yer tutucu) gerçek bir üretimle henüz doğrulanmadı.
+- Görünüm aralığının yaklaşık %75'i kapandı ((60−30)/(70−30)).
+- Kalan farkın kaynakları:
+  - resimler hâlâ kaynaktan küçük
+  - kaynağın tam sayfa renkli zeminleri ve kolajları yok
+  - ücretsiz flux resimleri kaynağın çizim stilinde değil
+
+**Sıradaki (öncelik sırasıyla):**
+1. Gerçek üretimle doğrulama (KIYAS-11): `i_5_team_2.pdf`, aynı ayarlar, ardından `scripts/fidelity.mts`. Cloudflare kotası UTC gece yarısı yenileniyor.
+2. Web okuyucunun kaynak düzenindeki sayfaları da yoğun dizilmeli (şimdilik yalnızca PDF).
+3. Kenar boşluklarının kaynaktan ölçülmesi.
+4. Resim üretilemediğinde sayfa yarı boş kalıyor; yedek görsel kaynağı ya da metnin resme atıf yapmaması.
+
+**Faz G — görünümü yakalama (plan):**
 - **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
   - resim kutusu örtüşmesi
   - renk histogramı
