@@ -58,6 +58,35 @@ Görünüm 5 sabit temadan geliyor. Fidelity skoru da yalnızca sayıları ölç
 - EPUB/LMS tüm resimleri aktarıyor; resim prompt'u artık altyazı değil, alt metin (EPUB/DOCX/LMS).
 - `tsc` temiz, vitest 64 dosya / 373 test geçti.
 
+**G5 ✅ (`e1f0844`) — yapı ve görünüm ayrı puanlanıyor:** `src/lib/page-look.ts`, `page-look-pdf.ts`, `fidelity.ts`, `scripts/fidelity.mts`.
+- **Yapı:** madde ve kelime sayısı eklendi. 0'a karşı 0 artık "uygulanamaz" sayılıyor.
+- **Görünüm:** düşük çözünürlüklü render'dan ölçülüyor:
+  - basılı renk dağılımı (kâğıt hariç)
+  - renklilik
+  - mürekkep oranı ve mürekkep haritası
+  - resim alanı örtüşmesi
+  - punto/sayfa oranı
+- **Referans satırı:** betik, kaynağın sayfalarını birbiriyle karşılaştırıp yazdırıyor (aynı tasarım, farklı içerik).
+
+Yeni puanlar (kaynak s.6–11):
+
+| Karşılaştırma | Yapı | Görünüm |
+|---|---|---|
+| KIYAS-6 | %43 | %53 |
+| KIYAS-7 | %35 | %46 |
+| KIYAS-9 | %36 | %41 |
+| İlgisiz kitap (`ajan-ofisi-kiti.pdf`) | %22 | %30 |
+| Kaynak kendi sayfalarına karşı | — | **%70** |
+
+Görünüm ölçeği: ilgisiz kitap ≈%30, hedef ≈%70. Bizim çıktılar bu aralığın yaklaşık üçte birinde.
+
+En zayıf alanlar:
+- mürekkep oranı %20–35 (sayfalar çok beyaz)
+- mürekkep haritası %26–40
+- resim alanı %0–17
+
+`typeSize` her kitapta ≈%100 çıkıyor, ayırt edici değil.
+
 **Faz G — görünümü yakalama (sıradaki, asıl hedef):**
 - **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
   - resim kutusu örtüşmesi
