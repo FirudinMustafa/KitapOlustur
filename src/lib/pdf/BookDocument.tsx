@@ -15,6 +15,7 @@ import { resolvePageTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
 import { TWEMOJI_CREDIT } from "@/lib/activities";
+import { applySourceType, type SourceType } from "@/lib/design/source-theme";
 
 registerBookFonts();
 
@@ -62,6 +63,8 @@ export type BookDocumentSourceStyle = {
   logoUrl?: string | null;
   logoPosition?: BrandMarkPosition | null;
   density?: "compact" | "moderate" | "spacious";
+  /** Faz G1: the source's typefaces and body size (src/lib/design/source-theme.ts). */
+  type?: SourceType | null;
 };
 
 // Fixed offsets for the small cover-page logo, keyed by the detected
@@ -580,7 +583,7 @@ export function BookDocument({
 }) {
   const isPictureBook = bookKind === "picturebook";
   const variantLabel = isPictureBook ? "" : VARIANT_LABELS[variant];
-  const theme = resolveDesignTheme(designTheme);
+  const theme = applySourceType(resolveDesignTheme(designTheme), sourceStyle?.type, TRIM_SIZES[trimSize].heightPt);
   // A source PDF's own colours win over the theme palette (the user chose
   // to mirror that book); otherwise the theme's palette for this book type.
   const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? theme.palettes[variant];

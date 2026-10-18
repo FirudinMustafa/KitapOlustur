@@ -1,6 +1,7 @@
-import { analyzeStextPage, hasBackgroundImage, rasterPictureBoxes, type SourcePageLayout, type StextBlock } from "@/lib/source-layout";
+import { analyzeStextPage, designColors, hasBackgroundImage, rasterPictureBoxes, type SourcePageLayout, type StextBlock } from "@/lib/source-layout";
 
 const RASTER_WIDTH_PX = 600; // enough to see a gutter between comic panels
+const COLOUR_WIDTH_PX = 120; // design colours need no detail (Faz G1)
 
 // Kept apart from source-layout.ts on purpose: the workflow bundle (CJS)
 // cannot contain mupdf (top-level await), and workflow-level code uses the
@@ -30,7 +31,15 @@ export async function analyzeSourceLayout(pdf: Uint8Array): Promise<SourcePageLa
         );
         pix.destroy();
       }
-      out.push(analyzeStextPage({ ...sp, rasterImages }));
+      const layout = analyzeStextPage({ ...sp, rasterImages });
+      const colourScale = COLOUR_WIDTH_PX / sp.width;
+      const small = page.toPixmap(mupdf.Matrix.scale(colourScale, colourScale), mupdf.ColorSpace.DeviceRGB, false, true);
+      layout.designColors = designColors(
+        { width: small.getWidth(), height: small.getHeight(), channels: small.getNumberOfComponents(), data: small.getPixels() },
+        layout.images,
+      );
+      small.destroy();
+      out.push(layout);
       stext.destroy();
       page.destroy();
     }

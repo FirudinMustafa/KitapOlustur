@@ -37,10 +37,19 @@ export type SourcePageLayout = {
   bodyFontPt: number | null;
   headingFontPt: number | null;
   zone: LayoutZone;
+  // Faz G1: the source's own look. Font names without the subset prefix
+  // ("PFCatalog-Regular"); designColors are the colours printed outside
+  // the pictures - bands, panels, headings, number badges - as shares of
+  // the page. Optional: page maps stored before G1 lack them.
+  bodyFontName?: string | null;
+  headingFontName?: string | null;
+  designColors?: DesignColor[];
 };
 
+export type DesignColor = { hex: string; share: number };
+
 // The subset of mupdf's StructuredText.asJSON() this module reads.
-type StextLine = { text: string; bbox?: Box; font?: { size?: number; weight?: string } };
+type StextLine = { text: string; bbox?: Box; font?: { name?: string; size?: number; weight?: string } };
 export type StextBlock =
   | { type: "image"; bbox: Box }
   | { type: "text"; bbox: Box; lines: StextLine[] };
@@ -93,6 +102,18 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
   const bySize = [...charsBySize.entries()].sort((a, b) => b[1] - a[1]);
   const bodyFontPt = bySize[0]?.[0] ?? null;
   const headingFontPt = bodyFontPt ? (bySize.find(([size]) => size >= bodyFontPt * 1.25)?.[0] ?? null) : null;
+  // The face carrying the most body-size text, and the one carrying the
+  // most text clearly above it.
+  const faceOf = (pick: (size: number) => boolean) => {
+    const chars = new Map<string, number>();
+    for (const l of lines) {
+      const name = l.font?.name?.replace(/^[A-Z]{6}\+/, "");
+      if (name && pick(l.font?.size ?? 0)) chars.set(name, (chars.get(name) ?? 0) + l.text.trim().length);
+    }
+    return [...chars.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  };
+  const bodyFontName = bodyFontPt ? faceOf((s) => Math.abs(s - bodyFontPt) <= 0.5) : null;
+  const headingFontName = bodyFontPt ? faceOf((s) => s >= bodyFontPt * 1.15) : null;
 
   const numbered = lines.filter((l) => {
     // "1 ", "1." and "1)" - generated books number items "1.".
@@ -129,8 +150,45 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
     exerciseRubrics,
     bodyFontPt,
     headingFontPt,
+    bodyFontName,
+    headingFontName,
     zone: classifyZone(images, textColumns),
   };
+}
+
+// Faz G1: the colours a page prints outside its pictures, clustered (4 bits
+// per channel, then averaged), chromatic ones only - paper, greys and black
+// text say nothing about a book's design. Shares are of the whole page.
+export function designColors(raster: Raster, pictures: Box[], max = 8): DesignColor[] {
+  const { width: W, height: H, channels: C, data } = raster;
+  const bins = new Map<number, { n: number; r: number; g: number; b: number }>();
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const fx = x / W;
+      const fy = y / H;
+      if (pictures.some((p) => fx >= p.x && fx <= p.x + p.w && fy >= p.y && fy <= p.y + p.h)) continue;
+      const i = (y * W + x) * C;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const hi = Math.max(r, g, b);
+      const lo = Math.min(r, g, b);
+      if (hi - lo < 28 || hi < 50) continue; // grey, black or paper
+      const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+      const e = bins.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+      e.n++;
+      e.r += r;
+      e.g += g;
+      e.b += b;
+      bins.set(key, e);
+    }
+  }
+  const hex = (v: number) => Math.round(v).toString(16).padStart(2, "0");
+  return [...bins.values()]
+    .sort((a, b) => b.n - a.n)
+    .slice(0, max)
+    .map((e) => ({ hex: `#${hex(e.r / e.n)}${hex(e.g / e.n)}${hex(e.b / e.n)}`, share: e.n / (W * H) }))
+    .filter((c) => c.share >= 0.001);
 }
 
 // Live comparison 2026-10-14 (i_5_team_2.pdf): 12 of 25 pages carry their

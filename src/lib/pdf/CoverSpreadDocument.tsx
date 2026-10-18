@@ -4,6 +4,7 @@ import { registerBookFonts, NOTO_SANS } from "./fonts";
 import { derivePaletteFromColors } from "./derive-palette";
 import { makeLook } from "./blocks";
 import { resolveDesignTheme } from "@/lib/design/themes";
+import { applySourceType } from "@/lib/design/source-theme";
 import { Barcode, CoverBody, VARIANT_LABELS, upperFor, type BookDocumentSourceStyle, type Variant } from "./BookDocument";
 
 registerBookFonts();
@@ -62,7 +63,7 @@ export function CoverSpreadDocument(props: CoverSpreadProps) {
   const isPictureBook = bookKind === "picturebook";
   const trim = TRIM_SIZES[trimSize];
   const { spine, width, height } = coverSpreadSize(trimSize, pageCount, paper);
-  const theme = resolveDesignTheme(designTheme);
+  const theme = applySourceType(resolveDesignTheme(designTheme), sourceStyle?.type, trim.heightPt);
   const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? theme.palettes[variant];
   const look = makeLook(theme, palette);
   const variantLabel = isPictureBook ? "" : VARIANT_LABELS[variant];

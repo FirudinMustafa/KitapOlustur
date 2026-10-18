@@ -6,7 +6,8 @@
 //
 // --zones-from rebuilds every mirrored page's zone plan from the source as
 // it is measured today, as a fresh run would (stored plans predate later
-// analyzer fixes).
+// analyzer fixes), and sets the book in the source's measured colours and
+// type (Faz G1). --no-style keeps the run's own palette and theme type.
 //
 // Then score it: npx tsx scripts/fidelity.mts <source.pdf> <out.pdf> ...
 import fs from "node:fs";
@@ -19,11 +20,14 @@ import { resolveTrimSize } from "../src/lib/pdf/page-geometry";
 import type { Variant } from "../src/lib/pdf/BookDocument";
 import { analyzeSourceLayout } from "../src/lib/source-layout-pdf";
 import { buildZonePlan } from "../src/lib/design/zones";
+import { deriveSourceTheme, type SourceTheme } from "../src/lib/design/source-theme";
 
 async function main() {
   const args = process.argv.slice(2);
   const zonesAt = args.indexOf("--zones-from");
   const zonesFrom = zonesAt >= 0 ? args.splice(zonesAt, 2)[1] : null;
+  const noStyleAt = args.indexOf("--no-style");
+  const noStyle = noStyleAt >= 0 && !!args.splice(noStyleAt, 1).length;
   const [prefix, outPath, variant = "student_book"] = args;
   if (!prefix || !outPath) {
     console.error("usage: npx tsx --env-file=.env.local scripts/relayout.mts <runId-prefix> <out.pdf> [variant]");
@@ -42,15 +46,17 @@ async function main() {
   if (!outlineRow || !book?.content) throw new Error("run has no outline or book content");
   const outline = (outlineRow.outline as { outline: BookOutline }).outline;
   let units = book.content as GeneratedUnit[];
+  let measured: SourceTheme | null = null;
   if (zonesFrom) {
     const layouts = await analyzeSourceLayout(new Uint8Array(fs.readFileSync(zonesFrom)));
+    if (!noStyle) measured = deriveSourceTheme(layouts);
     const rezone = <P extends { sourcePageNumber: number; zonePlan?: unknown }>(p: P): P => {
       const layout = layouts[p.sourcePageNumber - 1];
       return layout ? { ...p, zonePlan: buildZonePlan(layout) } : p;
     };
     units = units.map((u) => ({ ...u, studentBookPages: u.studentBookPages.map(rezone) }));
   }
-  const paletteColors = (run.paletteColors as string[] | null) ?? null;
+  const paletteColors = measured?.colors.length ? measured.colors : ((run.paletteColors as string[] | null) ?? null);
 
   const started = Date.now();
   const { pdf, flattened, compacted } = await renderBookFitted({
@@ -70,7 +76,7 @@ async function main() {
     pageImages: (run.pageImageUrls as Record<number, string> | null) ?? {},
     generatedAt: new Date().toLocaleDateString("tr-TR"),
     trimSize: resolveTrimSize(project?.trimSize ?? "a4"),
-    sourceStyle: paletteColors?.length ? { dominantColors: paletteColors } : undefined,
+    sourceStyle: paletteColors?.length || measured ? { dominantColors: paletteColors ?? undefined, type: measured } : undefined,
     contentLanguage: outline.contentLanguage,
     designTheme: run.designTheme,
     bookKind: run.bookKind,

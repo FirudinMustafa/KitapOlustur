@@ -88,6 +88,16 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
+// WCAG contrast ratio of a colour against white.
+function contrastWithWhite(hex: string): number {
+  const lin = (i: number) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const lum = 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5);
+  return 1.05 / (lum + 0.05);
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -98,11 +108,34 @@ function clamp(value: number, min: number, max: number): number {
 // body text) is rendered over `primary`/`primaryDark` elsewhere in
 // BookDocument.tsx, so both need to stay dark enough for white text to
 // read on them regardless of what hue was detected.
+//
+// Faz G1: the colours are kept as printed when they are usable - the
+// source's measured brand colour (src/lib/design/source-theme.ts) used to be
+// reduced to its hue and re-lit into a fixed band. Colours are read by what
+// they are, not by position: a pale one is the panel tint (primaryLight), the
+// first strong one the primary - darkened only as far as white text on it
+// needs - and the next strong one the accent.
 export function derivePaletteFromColors(colors: string[] | undefined): PaletteColors | null {
   if (!colors?.length) return null;
 
   const parsed = colors.map(parseColor).filter((c): c is string => c !== null);
   if (!parsed.length) return null;
+
+  const toned = parsed.map((hex) => ({ hex, hsl: hexToHsl(hex) }));
+  const tint = toned.find(({ hsl: [, s, l] }) => l >= 0.82 && s >= 0.1);
+  const strong = toned.filter(({ hsl: [, s, l] }) => s >= 0.25 && l > 0.12 && l < 0.82);
+  if (strong.length) {
+    const [h, s, l] = strong[0].hsl;
+    let primaryL = l;
+    while (primaryL > 0.15 && contrastWithWhite(hslToHex(h, s, primaryL)) < 4.5) primaryL -= 0.02;
+    const primary = hslToHex(h, s, primaryL);
+    return {
+      primary,
+      primaryDark: hslToHex(h, s, Math.min(primaryL - 0.12, 0.28)),
+      primaryLight: tint?.hex ?? hslToHex(h, clamp(s * 0.5, 0.08, 0.3), 0.95),
+      accent: strong[1]?.hex ?? hslToHex((h + 35) % 360, clamp(s, 0.45, 0.85), 0.55),
+    };
+  }
 
   const [h, s] = hexToHsl(parsed[0]);
   // A very light or very desaturated dominant color (e.g. a white/cream

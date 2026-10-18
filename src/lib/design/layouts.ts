@@ -248,7 +248,7 @@ export const ZONE_GAP = 12;
 // text set 10% smaller (textScale), as a dense coursebook page is, before
 // it gives up the source's arrangement. `tight` (a page that was measured
 // running over, see renderBookFitted) goes further - text to 82%, pictures
-// to 40% - before the page is given up to plain flow. Pictures shrink as a
+// to 30% - before the page is given up to plain flow. Pictures shrink as a
 // whole (width with height), so a scaled picture is never cropped to a
 // strip.
 export function planZones<B extends BlockLike>(
@@ -263,9 +263,11 @@ export function planZones<B extends BlockLike>(
   let last = { bands: [] as ZonedBand<B>[], pictureScale: 0.5, textScale: 0.9, contentHeight, needed: Infinity };
   for (const textScale of tight ? [1, 0.9, 0.82] : [1, 0.9]) {
     const { bands, neededAt } = measureZones(page, pictureCount, m, contentHeight, textScale);
-    for (const scale of tight ? [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4] : [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
+    for (const scale of tight ? [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3] : [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
       const needed = neededAt(scale);
-      if (needed <= contentHeight) return { bands, pictureScale: scale, textScale, contentHeight, needed };
+      // A tight page already ran over at a size the estimate accepted, so
+      // it is held to a stricter estimate.
+      if (needed * (tight ? 1.15 : 1) <= contentHeight) return { bands, pictureScale: scale, textScale, contentHeight, needed };
       last = { bands, pictureScale: scale, textScale, contentHeight, needed };
     }
   }

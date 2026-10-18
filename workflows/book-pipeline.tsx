@@ -109,6 +109,7 @@ import { countPdfPages, forEachRasterizedPage, rasterizePdf } from "@/lib/pdf/ra
 import { pdfPageTexts, slicePdf } from "@/lib/pdf/split";
 import { dominantTrim, type SourcePageLayout } from "@/lib/source-layout";
 import { analyzeSourceLayout } from "@/lib/source-layout-pdf";
+import { bodySizeFor, deriveSourceTheme } from "@/lib/design/source-theme";
 import { mergePageMap } from "@/lib/page-map-merge";
 import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeCharactersForPrompt } from "@/lib/ai/characters";
 import type { CharacterSheet } from "@/db/schema";
@@ -3195,12 +3196,17 @@ async function loadAssembledRunAssets(sourceRunId: string) {
   // (saveUserLogoUrl / saveSourceStyleMeta); density isn't persisted, so it
   // falls back to BookDocument's default.
   const paletteColors = (sourceRun.paletteColors as string[] | null) ?? null;
+  // Faz G1: the source's typefaces and body size, re-derived from the
+  // measured page map (nothing else persists them).
+  const pageMapRow = await db.query.sourcePageMaps.findFirst({ where: eq(sourcePageMaps.runId, sourceRunId) });
+  const measuredTheme = deriveSourceTheme(((pageMapRow?.pages as PageMap["pages"] | undefined) ?? []).map((p) => p.layout));
   const sourceStyle: BookDocumentSourceStyle | undefined =
-    paletteColors?.length || sourceRun.userLogoUrl
+    paletteColors?.length || sourceRun.userLogoUrl || measuredTheme
       ? {
           dominantColors: paletteColors ?? undefined,
           logoUrl: sourceRun.userLogoUrl,
           logoPosition: (sourceRun.logoPosition as BookDocumentSourceStyle["logoPosition"]) ?? null,
+          type: measuredTheme,
         }
       : undefined;
 
@@ -3503,6 +3509,13 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       }
     }
 
+    // Faz G1: the source's own colours, typefaces and body size, measured
+    // over the whole book. The writer's fit estimates use the body size the
+    // pages will be set in.
+    const measuredTheme = deriveSourceTheme(pageMap.pages.map((p) => p.layout));
+    const measuredBodySize = measuredTheme ? bodySizeFor(measuredTheme, layoutMetrics.height) : null;
+    if (measuredBodySize) layoutMetrics = { ...layoutMetrics, bodySize: measuredBodySize };
+
     let improvementPlan: ImprovementPlan;
     if (resumed?.improvementPlan) {
       improvementPlan = resumed.improvementPlan;
@@ -3554,14 +3567,21 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     // falls back to its existing fixed PALETTE - unchanged behavior.
     const paletteSourcePage = detectedBrandPage ?? pageMap.pages.find((p) => p.visualStyle?.dominantColors?.length);
     const resolvedLogoPosition = detectedBrandPage?.visualStyle?.brandMarkPosition ?? null;
-    const resolvedPaletteColors = paletteSourcePage?.visualStyle?.dominantColors ?? null;
+    // Faz G1: colours measured over the whole source (the brand colour on
+    // the most pages, the next hue, the panel tint) win over the model's
+    // guess from one page; the guess stays for sources without a text
+    // layer to measure.
+    const resolvedPaletteColors = measuredTheme?.colors.length
+      ? measuredTheme.colors
+      : (paletteSourcePage?.visualStyle?.dominantColors ?? null);
     const sourceStyle: BookDocumentSourceStyle | undefined =
-      paletteSourcePage || userLogoUrl
+      paletteSourcePage || userLogoUrl || measuredTheme
         ? {
             dominantColors: resolvedPaletteColors ?? undefined,
             logoUrl: userLogoUrl,
             logoPosition: resolvedLogoPosition,
             density: paletteSourcePage?.visualStyle?.layoutDensity,
+            type: measuredTheme,
           }
         : undefined;
     if (userLogoUrl || resolvedPaletteColors?.length) {
