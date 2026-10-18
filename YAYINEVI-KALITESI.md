@@ -109,6 +109,31 @@ En zayıf alanlar:
 - Sayfalar beyaz.
 - Alıştırma içeriği seyrek: cevabı gösteren tablolar, "Item 1" gibi yer tutucular (eski KIYAS-7 içeriği).
 
+**G1 ✅ (`6c12fb7`) — kaynağın ölçülen renkleri ve yazısı:**
+- Ölçüm sayfa başına gövde/başlık fontunu ve resim dışındaki renkleri kaydediyor (`designColors`).
+- `src/lib/design/source-theme.ts` kitap düzeyinde şunları çıkarıyor:
+  - en çok sayfada geçen marka rengi
+  - ayrı tondaki vurgu rengi
+  - en yaygın açık panel tonu
+  - font rolleri (font adından)
+  - punto/sayfa oranı
+- Workflow modelin tek sayfadan yaptığı palet tahmini yerine bu ölçümü kullanıyor. PDF ve kapak kaynağın fontu ve puntosuyla basılıyor, yazarın sığma tahmini de bu puntoyla yapılıyor. Yeniden derleme stili sayfa haritasından yeniden çıkarıyor. Migration yok.
+- `derivePaletteFromColors` kullanılabilir rengi olduğu gibi koruyor. Yalnızca beyaz yazı okunmazsa koyulaştırıyor; açık renkleri panel tonu olarak okuyor.
+- `i_5_team_2.pdf` sonucu: `#cc181f` kırmızı, `#c1d72f` lime, `#f7e5ca` krem; sans gövde/başlık; 10 pt.
+
+KIYAS-7 yeniden dizim:
+
+| | Yapı | Görünüm | Mürekkep oranı | Mürekkep haritası |
+|---|---|---|---|---|
+| Önce | %68 | %52 | %30 | %36 |
+| Sonra | %68 | **%56** | %44 | %45 |
+
+Renk dağılımı %54 → %46'ya düştü: kaynağın renk dağılımına resimler hâkim, bizim kırmızı tablo başlıkları dağılımı kaydırıyor.
+
+**Yapılmadı:**
+- Kenar boşluğu ölçümü: `MARGIN_X` sabit; değiştirmek tüm tahminleri etkiler.
+- Web okuyucuda font: yalnızca palet uygulanıyor.
+
 **Faz G — görünümü yakalama (sıradaki, asıl hedef):**
 - **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
   - resim kutusu örtüşmesi
