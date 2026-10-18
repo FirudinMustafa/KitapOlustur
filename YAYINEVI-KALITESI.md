@@ -197,6 +197,35 @@ KIYAS-7: görünüm %57 → **%60**, yapı %72. Resimler her sayfada büyüdü; 
 3. Kenar boşluklarının kaynaktan ölçülmesi.
 4. Resim üretilemediğinde sayfa yarı boş kalıyor; yedek görsel kaynağı ya da metnin resme atıf yapmaması.
 
+### KIYAS-11 — Faz G'nin canlı doğrulaması (2026-10-18)
+
+Proje `474302d3`, run `bd0b1a3a`. Ayarlar: `i_5_team_2.pdf`, Student Book, A2, klasik tema, boyut "kaynakla aynı", 1 ünite, ücretsiz mod. Uçtan uca tamamlandı (16:30 → 16:59).
+
+**Çalışanlar:**
+- Kaynak stili ölçüldü ve kitaba uygulandı: kırmızı/lime/krem, sans, 10 pt; numara rozetleri ve sayfa sekmesi kırmızı.
+- Yazar 6 sayfanın hepsinde kaynağın alıştırma, madde ve resim sayısına birebir uydu. Yer tutucu madde yok. Kelime sayısı kaynağa yakın: 116–212, kaynak 123–244.
+- Bütün onay kapıları çalıştı; "tekrar dene" koruması (409 → 200) doğru davrandı.
+
+**Puan: yapı %62, görünüm %45.** Yeniden dizimde %72 / %60'tı.
+
+Neden düştü:
+1. **İçerik artık kaynak hacminde, bizim dizimimiz ise kelime başına daha çok yer kaplıyor.**
+   - 6 sayfanın 4'ü sıkılaştırıldı ve resimler %30'a kadar küçüldü. Örneğin kaynakta 0.92×0.33 olan resim bizde 0.34×0.17; kaynakta 0.61×0.32 olan 0.16×0.10.
+   - 1 sayfa (kaynak s.8) düz akışa düştü; tek bir alıştırma ayrı bir sayfaya taştı.
+   - Yazarın kaynakta olmayan tablo ve bilgi kutusu eklemesi yeri daha da daraltıyor.
+2. **Resimler "beyaz zemin üzerinde tek nesne"** (flux, flat-vector, ek resim prompt'ları "simple single subjects"). Çerçeve büyük olsa bile sayfa beyaz görünüyor; kaynakta ise tam sahne, kolaj ve fotoğraflar var.
+3. **Kaynağın renkli sayfa zeminleri ve panelleri bizde yok.**
+
+Karşılaştırma görüntüsü: `.relayout/KIYAS-11-kaynak-vs-uretim.png` (üst sıra kaynak s.6–11, alt sıra üretim). PDF: `.relayout/KIYAS-11-student-book.pdf`.
+
+**Sıradaki iş (KIYAS-11'e göre):**
+1. **Resim önceliği:** kaynak düzenindeki sayfada resim kaynağın boyutunun %70'inin altına küçülmesin. Yer önce yazı tarafından açılsın:
+   - yoğun sayfada satır aralığı 1.45 → ~1.25
+   - kompakt tablo
+   - kaynakta olmayan tablo ve bilgi kutusunu yazara yazdırmama
+2. **Resim yönü:** kaynakta sahne resmi olan yuvalara "tam kare, kenardan kenara, renkli sahne" prompt'u; "beyaz zemin üzerinde tek nesne" yalnızca küçük yuvalarda.
+3. **Sayfa rengi:** kaynağın panel tonuyla alıştırma bölgelerine zemin; kaynakta renkli zemin varsa sayfaya da.
+
 **Faz G — görünümü yakalama (plan):**
 - **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
   - resim kutusu örtüşmesi
