@@ -332,3 +332,20 @@ export function pictureShape(aspect: number | undefined): PictureShape {
   if (aspect <= 0.8) return "portrait";
   return "square";
 }
+
+// Faz G3/KIYAS-11: how a picture should be drawn for its slot. A large slot
+// on a coursebook page holds a full scene - colour and detail to the frame's
+// edges - while a small one holds a single object (a vocabulary picture).
+// Live run 2026-10-18: every picture came back as one object on white, so
+// even big frames printed as a mostly blank page.
+const SCENE_AREA = 0.08; // share of the page
+
+export function pictureFraming(plan: ZonePlan, pictureCount: number): ("scene" | "object")[] {
+  const out: ("scene" | "object")[] = [];
+  for (const band of layoutZones(plan, [], pictureCount, () => 0)) {
+    if (band.kind === "pictures") band.pictures.forEach((p, k) => (out[p] = (band.span ?? 1) * band.widths[k] * band.height >= SCENE_AREA ? "scene" : "object"));
+    else if (band.kind === "split") for (const p of band.pictures) out[p] = (band.imageWidth * band.height) / band.pictures.length >= SCENE_AREA ? "scene" : "object";
+    else if (band.kind === "columns") for (const i of band.columns.flat()) if (i.kind === "picture") out[i.picture] = 0.48 * i.height >= SCENE_AREA ? "scene" : "object";
+  }
+  return out;
+}

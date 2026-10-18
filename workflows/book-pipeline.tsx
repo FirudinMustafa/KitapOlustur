@@ -110,7 +110,7 @@ import { pdfPageTexts, slicePdf } from "@/lib/pdf/split";
 import { dominantTrim, type SourcePageLayout } from "@/lib/source-layout";
 import { analyzeSourceLayout } from "@/lib/source-layout-pdf";
 import { bodySizeFor, deriveSourceTheme } from "@/lib/design/source-theme";
-import { pictureShape, pictureSlotAspects, type ZonePlan } from "@/lib/design/zones";
+import { pictureFraming, pictureShape, pictureSlotAspects, type ZonePlan } from "@/lib/design/zones";
 import { mergePageMap } from "@/lib/page-map-merge";
 import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeCharactersForPrompt } from "@/lib/ai/characters";
 import type { CharacterSheet } from "@/db/schema";
@@ -127,6 +127,7 @@ import { titleCopiesSource } from "@/lib/title-guard";
 import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
 import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
 import { placeholderItemIssue } from "@/lib/placeholder-items";
+import { dropWriterLayouts } from "@/lib/writer-layout";
 import { appendExercises, exercisesToAdd, extendExercises, extendPrompt, itemsToAdd, topUpPrompt } from "@/lib/exercise-topup";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import {
@@ -877,7 +878,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
     // Faz 1 "Tasarım sistemi": the page-design vocabulary. Every renderer
     // draws a page by its layoutTemplate (src/lib/design/layouts.ts), so the
     // writer decides the arrangement the way a book designer would.
-    `PAGE DESIGN - this book is typeset like a professionally published coursebook, not a document. For EVERY page set "layoutTemplate" to one of:\n${layoutTemplatePromptCatalog()}\nDesign rules: (1) The first Student Book page of the unit uses "unit-opener-hero" with an imagePrompt. (2) Vary the templates - never use the same one on more than two pages in a row. (3) Write conversations into a block's "dialogue" field (one entry per turn) instead of prose, grammar patterns into a block's "table" field, and short tips/facts/rules as separate small blocks with "callout" set - real coursebooks use these boxes constantly. (4) EVERY page must fit on ONE printed page. A page with a measured source shape in the blueprint follows that shape instead of a word budget - its exercise count, items per exercise and word count; it is set densely like the source (heading and short instruction on one line, short items side by side), so write the source's amount. Any other page: roughly 220-320 words of running text without a picture, about 150-220 with one, and at most 8 dialogue turns. If a page's content would be longer, tighten the wording - do not drop required exercises.`,
+    `PAGE DESIGN - this book is typeset like a professionally published coursebook, not a document. For EVERY page set "layoutTemplate" to one of:\n${layoutTemplatePromptCatalog()}\nDesign rules: (1) The first Student Book page of the unit uses "unit-opener-hero" with an imagePrompt. (2) Vary the templates - never use the same one on more than two pages in a row. (3) Write conversations into a block's "dialogue" field (one entry per turn) instead of prose, grammar patterns into a block's "table" field, and short tips/facts/rules as separate small blocks with "callout" set - real coursebooks use these boxes constantly. (4) EVERY page must fit on ONE printed page. A page with a measured source shape in the blueprint follows that shape instead of a word budget - its exercise count, items per exercise and word count; it is set densely like the source (heading and short instruction on one line, short items side by side), so write the source's amount - as numbered exercises with items, without tables, callout boxes or extra explanation blocks unless the source page itself has them (they take the room the source gives its pictures). Any other page: roughly 220-320 words of running text without a picture, about 150-220 with one, and at most 8 dialogue turns. If a page's content would be longer, tighten the wording - do not drop required exercises.`,
     `CHARACTERS IN PICTURES - when an imagePrompt shows any of the style bible's characters, list their ids in that page's "imageCharacters" and refer to them by name in the imagePrompt. Describe the scene, action, expressions and setting - do not re-describe their appearance (the illustrator works from fixed character reference sheets).`,
     `If any block's body or items text refers to an image the learner should look at (e.g. "Resim:", "Picture:", "look at the image", a counting/matching exercise with objects), you MUST set that page's imagePrompt describing exactly that image - never write an exercise that depends on an image without providing one.`,
   ];
@@ -2222,6 +2223,7 @@ async function generateUnitImages(
     // Faz G3: each picture is drawn for the shape of the frame it lands in
     // on a mirrored page (unset: the usual wide picture / square extras).
     const sizes = pictureSizes(page.zonePlan, 1 + (page.extraImagePrompts?.length ?? 0));
+    const framing = page.zonePlan ? pictureFraming(page.zonePlan, 1 + (page.extraImagePrompts?.length ?? 0)) : [];
 
     // One picture that can't be produced must not take the whole unit (and
     // run) down with it - the page then prints in its text-only layout.
@@ -2235,7 +2237,7 @@ async function generateUnitImages(
         `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
         qualityMode,
         sizes?.[0] ?? BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
-        { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
+        { styleSuffix: framedStyle(artStyle.prompt, framing[0]), characters: charactersForImage(page, characterSheets) },
       );
     } catch (err) {
       console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: image skipped -`, err instanceof Error ? err.message : err);
@@ -2261,7 +2263,7 @@ async function generateUnitImages(
           `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}-${i + 1}.png`,
           qualityMode,
           sizes?.[i + 1] ?? EXTRA_PICTURE_SIZE,
-          { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
+          { styleSuffix: framedStyle(artStyle.prompt, framing[i + 1]), characters: charactersForImage(page, characterSheets) },
         );
       } catch (err) {
         console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber} picture ${i + 1}: image skipped -`, err instanceof Error ? err.message : err);
@@ -2356,6 +2358,15 @@ async function saveImagesForReview(
 // is - units is the same in-memory array built earlier this run).
 const EXTRA_PICTURE_SIZE: typeof BOOK_PIPELINE_INTERIOR_IMAGE_SIZE = "1024x1024";
 
+// The art style plus how the picture fills its frame (pictureFraming).
+function framedStyle(style: string, framing: "scene" | "object" | undefined): string {
+  if (framing === "scene") {
+    return `${style} Composition: a full, detailed scene that fills the whole frame edge to edge, with a coloured setting and background - no white or empty background, no single object floating on blank space.`;
+  }
+  if (framing === "object") return `${style} Composition: one clear object or character, large in the frame, on a soft tinted background.`;
+  return style;
+}
+
 // Faz G3: the image size for each picture of a mirrored page, from the
 // shape of its slot in the page's zone plan (main picture first). Null when
 // the page has no plan.
@@ -2392,6 +2403,7 @@ async function regenerateFlaggedImage(
   let size: typeof BOOK_PIPELINE_INTERIOR_IMAGE_SIZE = page
     ? (pictureSizes(page.zonePlan, 1 + (page.extraImagePrompts?.length ?? 0))?.[0] ?? BOOK_PIPELINE_INTERIOR_IMAGE_SIZE)
     : BOOK_PIPELINE_INTERIOR_IMAGE_SIZE;
+  let slot = 0;
   if (pageNumber < 0) {
     for (const p of pages) {
       const i = (p.extraImagePrompts ?? []).findIndex((_, k) => extraImageKey(p.sourcePageNumber, k + 1) === pageNumber);
@@ -2399,6 +2411,7 @@ async function regenerateFlaggedImage(
         page = p;
         prompt = p.extraImagePrompts?.[i];
         size = pictureSizes(p.zonePlan, 1 + (p.extraImagePrompts?.length ?? 0))?.[i + 1] ?? EXTRA_PICTURE_SIZE;
+        slot = i + 1;
         break;
       }
     }
@@ -2414,7 +2427,10 @@ async function regenerateFlaggedImage(
     `generated/${runId}/unit-${unitNumber}-page-${pageNumber}.png`,
     qualityMode,
     size,
-    { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
+    {
+      styleSuffix: framedStyle(artStyle.prompt, page.zonePlan ? pictureFraming(page.zonePlan, 1 + (page.extraImagePrompts?.length ?? 0))[slot] : undefined),
+      characters: charactersForImage(page, characterSheets),
+    },
   );
 }
 
@@ -2659,13 +2675,14 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // wrote without their gap (fixPrepositionItems), and map questions whose
 // answers contradict the drawn map (fixMapAnswers), and labelling grids
 // whose key and word bank name things differently (reconcileWordBank),
-// puzzles whose words do not fit their grid (repairPuzzle), and the
-// exercises on each page numbered 1, 2, 3... (numberExercises).
+// puzzles whose words do not fit their grid (repairPuzzle), the exercises
+// on each page numbered 1, 2, 3... (numberExercises), and manual positions
+// the writer invented (dropWriterLayouts).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   const fix = (pages?: GeneratedPage[]) =>
     pages?.map((page) =>
       fillZonePictures(
-        numberExercises(fixMapAnswers({ ...page, blocks: page.blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) }).page),
+        numberExercises(fixMapAnswers({ ...dropWriterLayouts(page), blocks: dropWriterLayouts(page).blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) }).page),
         (p) => fallbackImagePrompt(p, []),
       ),
     );

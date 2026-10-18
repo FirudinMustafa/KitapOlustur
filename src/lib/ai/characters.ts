@@ -71,7 +71,8 @@ export function compactImagePrompt(
       : size === "1024x1536"
         ? "Tall portrait composition, main subject centred, nothing important near the left or right edge."
         : `(Image size: ${size})`;
-  const style = clip(styleSuffix ?? "", 420);
+  // room for the art style and the composition line (framedStyle, Faz G3)
+  const style = clip(styleSuffix ?? "", 600);
   const sceneText = clip(scene, 900);
   const room = limit - sizeLine.length - style.length - sceneText.length - 8;
   const perCharacter = characters.length ? Math.max(60, Math.floor(room / characters.length) - 4) : 0;

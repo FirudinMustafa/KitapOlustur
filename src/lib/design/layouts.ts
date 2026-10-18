@@ -125,6 +125,15 @@ export function isChecklistBlock(b: { kind: string; items?: string[] }): boolean
   return b.kind === "reference" || b.items.every((i) => CAN_DO.test(i));
 }
 
+// KIYAS-11: a coursebook page sets some of its exercises on a tinted panel;
+// ours were all on white. On a mirrored page every second exercise gets the
+// book's panel tone (palette.primaryLight - the source's own tint, Faz G1).
+export const PANEL_PAD = 6;
+
+export function panelledExercises<B extends BlockLike>(blocks: B[]): Set<B> {
+  return new Set(blocks.filter((b) => isExerciseBlock(b) && !b.callout).filter((_, i) => i % 2 === 1));
+}
+
 export function isExerciseBlock(b: BlockLike): boolean {
   return (!!b.items?.length || !!b.interactive || !!b.activity || b.diagram?.type === "prepositions") && !isChecklistBlock(b);
 }
@@ -146,13 +155,20 @@ export const MARGIN_BOTTOM = 56;
 const RUNNING_HEADER = 22;
 const UNIT_HEADING = 52;
 const LINE = 1.45;
+// Line height of the body text on a mirrored page, set explicitly in pt by
+// the PDF renderer (templates.tsx) - a coursebook's tight setting.
+export const DENSE_LINE = 1.22;
+// The heading line of a dense exercise (number at 1.25x, heading 1.1x the
+// body): its own line height in body sizes, so a heading and rubric that
+// wrap do not print over each other under the body's tight line.
+export const HEADING_LINE = 1.45;
 const CHAR_W = 0.5; // average glyph width as a fraction of the font size
 
-function textHeight(text: string, width: number, size: number): number {
+function textHeight(text: string, width: number, size: number, line = LINE): number {
   if (!text) return 0;
   const perLine = Math.max(8, Math.floor(width / (size * CHAR_W)));
   const lines = text.split(/\n+/).reduce((n, para) => n + Math.max(1, Math.ceil(para.length / perLine)), 0);
-  return lines * size * LINE;
+  return lines * size * line;
 }
 
 // `frameless`: printed without the card frame and exercise box, the way a
@@ -181,24 +197,27 @@ export function itemColumns(items: string[] | undefined): 1 | 2 | 3 {
 
 export function estimateBlockHeight(b: BlockLike, width: number, size: number, frameless = false): number {
   const inner = frameless ? width : width - 24;
+  // Faz G4: mirrored pages are set at a tighter line (DENSE_LINE).
+  const line = frameless ? DENSE_LINE : LINE;
+  const th = (text: string, w: number, s: number) => textHeight(text, w, s, line);
   let h = frameless
     ? 8 +
       (inlineRubric(b)
-        ? textHeight(`${b.heading} ${b.body}`, inner, size * 1.1) + 3
-        : (b.heading ? textHeight(b.heading, inner, size * 1.1) + 3 : 0) + textHeight(b.body, inner, size))
-    : 30 + (b.heading ? size * 1.9 : 0) + textHeight(b.body, inner, size);
+        ? textHeight(`${b.heading} ${b.body}`, inner, size * 1.1, HEADING_LINE / 1.1) + 3
+        : (b.heading ? textHeight(b.heading, inner, size * 1.1, HEADING_LINE / 1.1) + 3 : 0) + th(b.body, inner, size))
+    : 30 + (b.heading ? size * 1.9 : 0) + th(b.body, inner, size);
   if (b.dialogue?.length) {
     // avatar row: speaker label + padding + border ≈ 33pt over the text itself
-    for (const d of b.dialogue) h += Math.max(30, textHeight(d.line, inner * 0.78 - 20, size) + 33) + 8;
+    for (const d of b.dialogue) h += Math.max(30, th(d.line, inner * 0.78 - 20, size) + 33) + 8;
   }
   if (b.table) {
     const cell = inner / Math.max(1, b.table.headers.length);
-    h += 24 + b.table.rows.reduce((n, row) => n + Math.max(...row.map((c) => textHeight(c, cell - 10, 9)), 12) + 10, 0);
+    h += 24 + b.table.rows.reduce((n, row) => n + Math.max(...row.map((c) => th(c, cell - 10, 9)), 12) + 10, 0);
   }
   // A map prints under the block text, items or not.
   if (b.diagram?.type === "map") h += diagramHeight(b).extra;
   if (isChecklistBlock(b)) {
-    h += (b.items ?? []).reduce((n, i) => n + textHeight(i, inner - 20, size) + 6, 0);
+    h += (b.items ?? []).reduce((n, i) => n + th(i, inner - 20, size) + 6, 0);
   } else if (b.items?.length || b.interactive || b.activity) {
     h += frameless ? 8 : 44;
     const act = safeActivityHeight(b, inner - 24, size);
@@ -206,13 +225,13 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
     h += act.extra + (dia.replacesItems ? dia.extra : 0);
     if (!act.replacesItems && !dia.replacesItems) {
       const cols = frameless && b.activity?.type !== "write_lines" ? itemColumns(b.items) : 1;
-      if (cols > 1) h += Math.ceil((b.items?.length ?? 0) / cols) * (size * LINE + 3);
-      else for (const i of b.items ?? []) h += textHeight(i, inner - 24, size) + 3;
+      if (cols > 1) h += Math.ceil((b.items?.length ?? 0) / cols) * (size * line + 3);
+      else for (const i of b.items ?? []) h += th(i, inner - 24, size) + 3;
     }
     const it = b.interactive;
-    if (it?.type === "multiple_choice") h += (it.options.length + 1) * size * LINE + 6;
-    if (it?.type === "matching") h += it.pairs.length * size * LINE + 6;
-    if (it?.type === "fill_blank") h += textHeight(it.template, inner - 24, size) + 6;
+    if (it?.type === "multiple_choice") h += (it.options.length + 1) * size * line + 6;
+    if (it?.type === "matching") h += it.pairs.length * size * line + 6;
+    if (it?.type === "fill_blank") h += th(it.template, inner - 24, size) + 6;
   }
   return h;
 }
@@ -313,6 +332,17 @@ export function planZones<B extends BlockLike>(
   return choosePlan(page, pictureCount, m, contentHeight, tight, 0);
 }
 
+// [textScale, pictureScale] in the order a full page gives way. KIYAS-11
+// (live, 2026-10-18): with source-sized content the pictures went first and
+// ended at 30% of the source's - pages of tiny clip-art. The source's
+// pictures are its look, so the text gives way first (to 85%, a size
+// coursebooks still print at), and pictures go below 70% only after that
+// (below 50% only on a page measured running over).
+const ZONE_STEPS: [number, number][] = [
+  [1, 1], [1, 0.9], [0.92, 0.9], [0.92, 0.8], [0.85, 0.8], [0.85, 0.7], [0.85, 0.6], [0.85, 0.5],
+];
+const TIGHT_STEPS: [number, number][] = [...ZONE_STEPS, [0.85, 0.4], [0.8, 0.4], [0.8, 0.3]];
+
 function choosePlan<B extends BlockLike>(
   page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
   pictureCount: number,
@@ -322,15 +352,15 @@ function choosePlan<B extends BlockLike>(
   correction: number,
 ): { bands: ZonedBand<B>[]; pictureScale: number; textScale: number; contentHeight: number; needed: number } {
   let last = { bands: [] as ZonedBand<B>[], pictureScale: 0.5, textScale: 0.9, contentHeight, needed: Infinity };
-  for (const textScale of tight ? [1, 0.9, 0.82] : [1, 0.9]) {
-    const { bands, neededAt } = measureZones(page, pictureCount, m, contentHeight, textScale);
-    for (const scale of tight ? [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3] : [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
-      const needed = neededAt(scale) - correction;
-      // A tight page already ran over at a size the estimate accepted, so
-      // it is held to a stricter estimate.
-      if (needed * (tight ? 1.15 : 1) <= contentHeight) return { bands, pictureScale: scale, textScale, contentHeight, needed };
-      last = { bands, pictureScale: scale, textScale, contentHeight, needed };
-    }
+  const measured = new Map<number, ReturnType<typeof measureZones<B>>>();
+  for (const [textScale, scale] of tight ? TIGHT_STEPS : ZONE_STEPS) {
+    if (!measured.has(textScale)) measured.set(textScale, measureZones(page, pictureCount, m, contentHeight, textScale));
+    const { bands, neededAt } = measured.get(textScale)!;
+    const needed = neededAt(scale) - correction;
+    // A tight page already ran over at a size the estimate accepted, so
+    // it is held to a stricter estimate.
+    if (needed * (tight ? 1.15 : 1) <= contentHeight) return { bands, pictureScale: scale, textScale, contentHeight, needed };
+    last = { bands, pictureScale: scale, textScale, contentHeight, needed };
   }
   return last;
 }
@@ -344,7 +374,9 @@ function measureZones<B extends BlockLike>(
 ) {
   const cw = m.width - MARGIN_X * 2;
   const size = m.bodySize * textScale;
-  const height = (b: B, w: number) => estimateBlockHeight(b, w, size, true);
+  const panels = panelledExercises(page.blocks);
+  const height = (b: B, w: number) =>
+    panels.has(b) ? estimateBlockHeight(b, w - 2 * PANEL_PAD, size, true) + 2 * PANEL_PAD : estimateBlockHeight(b, w, size, true);
   const column = (blocks: B[], w: number) => blocks.reduce((n, b) => n + height(b, w), 0);
   const bands = layoutZones(page.zonePlan!, page.blocks, pictureCount, (b) => height(b, cw));
   const neededAt = (scale: number) => {

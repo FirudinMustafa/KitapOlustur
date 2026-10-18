@@ -11,7 +11,7 @@ import { withUnitGlossary } from "@/lib/unit-glossary";
 import { blocksForRender, clampLayoutToPage } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
 import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/design/themes";
-import { resolvePageTemplate } from "@/lib/design/layouts";
+import { DENSE_LINE, MAX_PICTURE_ASPECT, panelledExercises, resolvePageTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
 import { TWEMOJI_CREDIT } from "@/lib/activities";
@@ -475,6 +475,12 @@ function StandardPageBody({
   sectionKicker?: string;
 }) {
   const { palette } = look;
+  // KIYAS-11: a mirrored page that had to go to plain flow (it ran over even
+  // set tight) printed in the card style, a second design inside the book.
+  // It keeps the mirrored pages' coursebook setting instead.
+  const mirrored = !!page.zonePlan;
+  const panels = mirrored ? panelledExercises(page.blocks) : null;
+  const contentWidth = pageSize.width - 88;
   return (
     <>
       {isUnitFirstPage && (
@@ -515,23 +521,33 @@ function StandardPageBody({
           // The image prompt used to print here as a caption - that is an
           // instruction to the image model, not reader-facing text, and was
           // the most obvious "machine-made" tell on the page. Removed.
-          <View wrap={false}>
+          <View wrap={false} style={mirrored ? { alignItems: "center" } : undefined}>
             <View
               style={[
                 styles.pageIllustrationWrap,
-                { height: imageHeight, backgroundColor: palette.primaryLight, borderRadius: look.theme.radius },
+                mirrored
+                  ? { height: imageHeight, width: Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT), borderRadius: look.theme.radius }
+                  : { height: imageHeight, backgroundColor: palette.primaryLight, borderRadius: look.theme.radius },
               ]}
             >
               {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-              <Image src={imageSrc} style={styles.pageIllustration} />
+              <Image src={imageSrc} style={mirrored ? [styles.pageIllustration, { objectFit: "cover" }] : styles.pageIllustration} />
             </View>
           </View>
         ))}
 
       {sectionKicker && <Text style={[styles.sectionKicker, { color: palette.primary }]}>{sectionKicker}</Text>}
-      {clampedBlocks(page, pageSize).map((b) => (b.layout && bleed ? { ...b, layout: { ...b.layout, x: b.layout.x + bleed, y: b.layout.y + bleed } } : b)).map((block, i) => (
-        <BlockCard block={block} showAnswerKey={showAnswerKey} look={look} key={i} />
-      ))}
+      {mirrored ? (
+        <View style={{ lineHeight: `${(look.theme.bodySize * DENSE_LINE).toFixed(2)}pt` }}>
+          {page.blocks.map((block, i) => (
+            <BlockCard block={block} showAnswerKey={showAnswerKey} look={look} key={i} frameless dense panel={panels?.has(block)} />
+          ))}
+        </View>
+      ) : (
+        clampedBlocks(page, pageSize)
+          .map((b) => (b.layout && bleed ? { ...b, layout: { ...b.layout, x: b.layout.x + bleed, y: b.layout.y + bleed } } : b))
+          .map((block, i) => <BlockCard block={block} showAnswerKey={showAnswerKey} look={look} key={i} />)
+      )}
       <GlossaryGrid glossary={page.glossary} look={look} />
     </>
   );

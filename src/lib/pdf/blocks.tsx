@@ -5,7 +5,7 @@ import type { ContentBlock, ContentBlockKind, GeneratedPage } from "@/lib/ai/sch
 import { seededShuffle } from "@/lib/content-html";
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { itemText } from "@/lib/item-text";
-import { inlineRubric, isChecklistBlock, itemColumns } from "@/lib/design/layouts";
+import { HEADING_LINE, PANEL_PAD, inlineRubric, isChecklistBlock, itemColumns } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, speakerColorMap, type DesignTheme, type ThemePalette } from "@/lib/design/themes";
 import { NOTO_SANS, NOTO_SERIF, pdfFontFamily, withSymbols } from "./fonts";
 import { CrosswordView, MarkingList, MatchLinesView, WordSearchView } from "./puzzle-blocks";
@@ -635,6 +635,7 @@ export function BlockCard({
   look,
   frameless,
   dense,
+  panel,
 }: {
   block: ContentBlock;
   showAnswerKey: boolean;
@@ -642,6 +643,8 @@ export function BlockCard({
   frameless?: boolean;
   /** Faz G4: a mirrored (source-zones) page - coursebook density, see estimateBlockHeight. */
   dense?: boolean;
+  /** KIYAS-11: set on the book's tinted panel (panelledExercises). */
+  panel?: boolean;
 }) {
   const layoutStyle = block.layout
     ? { position: "absolute" as const, left: block.layout.x, top: block.layout.y, width: block.layout.width, height: block.layout.height }
@@ -675,8 +678,15 @@ export function BlockCard({
     const inline = inlineRubric(block);
     const numbered = /^(\d{1,2})[.)]?\s+(.*)$/.exec(block.heading ?? "");
     return (
-      <View style={[{ marginBottom: 8 }, layoutStyle]} wrap={blockLines(block) > UNSPLIT_MAX_LINES}>
-        <Text style={{ marginBottom: 3 }}>
+      <View
+        style={[
+          { marginBottom: 8 },
+          panel ? { backgroundColor: look.palette.primaryLight, borderRadius: Math.max(4, look.theme.radius), padding: PANEL_PAD } : {},
+          layoutStyle,
+        ]}
+        wrap={blockLines(block) > UNSPLIT_MAX_LINES}
+      >
+        <Text style={{ marginBottom: 3, lineHeight: `${(look.theme.bodySize * HEADING_LINE).toFixed(1)}pt` }}>
           <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, color: "#1f2937" }}>
             {/* the number a size up, as coursebooks print it (and as the source analyzer finds exercises) */}
             {numbered ? <Text style={{ color: look.palette.primary, fontSize: look.theme.bodySize * 1.25 }}>{numbered[1]} </Text> : null}

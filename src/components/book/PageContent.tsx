@@ -494,6 +494,7 @@ export function BlockView({
   look,
   frameless,
   dense,
+  panel,
 }: {
   block: ContentBlock;
   showAnswerKey: boolean;
@@ -503,6 +504,8 @@ export function BlockView({
   frameless?: boolean;
   /** Faz G4: a mirrored page - set at the PDF's coursebook density (src/lib/pdf/blocks.tsx). */
   dense?: boolean;
+  /** KIYAS-11: set on the book's tinted panel. */
+  panel?: boolean;
 }) {
   const color = BLOCK_COLORS[block.kind];
   const callout = block.callout ? CALLOUT_STYLES[block.callout] : null;
@@ -514,7 +517,9 @@ export function BlockView({
     ? callout
       ? { background: callout.bg, border: `1px solid ${callout.border}`, borderRadius: Math.max(6, look.theme.radius) }
       : frameless
-        ? {}
+        ? panel
+          ? { background: look.palette.primaryLight, borderRadius: Math.max(4, look.theme.radius), padding: 6 }
+          : {}
         : look.theme.cardStyle === "tinted"
           ? { background: look.palette.primaryLight, borderRadius: look.theme.radius }
           : look.theme.cardStyle === "outlined"
@@ -768,7 +773,7 @@ export function PageView({
         imageUrl={imageUrl}
         imageUrls={imageUrls}
         look={pageLook}
-        renderBlock={(block, { frameless, dense }) => (
+        renderBlock={(block, { frameless, dense, panel }) => (
           <BlockView
             block={block}
             showAnswerKey={showAnswerKey}
@@ -776,6 +781,7 @@ export function PageView({
             look={pageLook}
             frameless={frameless}
             dense={dense}
+            panel={panel}
           />
         )}
       />

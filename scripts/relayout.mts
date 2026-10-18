@@ -24,6 +24,7 @@ import { analyzeSourceLayout } from "../src/lib/source-layout-pdf";
 import { buildZonePlan } from "../src/lib/design/zones";
 import { deriveSourceTheme, type SourceTheme } from "../src/lib/design/source-theme";
 import { dropLeakingTable } from "../src/lib/answer-leak";
+import { dropWriterLayouts } from "../src/lib/writer-layout";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -55,7 +56,8 @@ async function main() {
     if (!noStyle) measured = deriveSourceTheme(layouts);
     const rezone = <P extends { sourcePageNumber: number; zonePlan?: unknown; blocks: GeneratedUnit["studentBookPages"][number]["blocks"] }>(p: P): P => {
       const layout = layouts[p.sourcePageNumber - 1];
-      return layout ? { ...p, zonePlan: buildZonePlan(layout), blocks: p.blocks.map(dropLeakingTable) } : p;
+      const clean = dropWriterLayouts(p);
+      return layout ? { ...clean, zonePlan: buildZonePlan(layout), blocks: clean.blocks.map(dropLeakingTable) } : p;
     };
     units = units.map((u) => ({ ...u, studentBookPages: u.studentBookPages.map(rezone) }));
   }

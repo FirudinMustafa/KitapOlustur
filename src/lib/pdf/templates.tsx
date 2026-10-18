@@ -1,6 +1,6 @@
 import { Text, View, Image } from "@react-pdf/renderer";
 import type { ContentBlock, GeneratedPage } from "@/lib/ai/schemas";
-import { MAX_PICTURE_ASPECT, ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
+import { DENSE_LINE, MAX_PICTURE_ASPECT, ZONE_GAP, isExerciseBlock, panelledExercises, planZones, type DesignedTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, type Look } from "./blocks";
 import { stripExerciseNumber } from "@/lib/exercise-numbers";
 import { NOTO_SANS } from "./fonts";
@@ -52,11 +52,25 @@ function Illustration({
   );
 }
 
-function Blocks({ blocks, look, showAnswerKey, frameless, dense }: { blocks: ContentBlock[]; look: Look; showAnswerKey: boolean; frameless?: boolean; dense?: boolean }) {
+function Blocks({
+  blocks,
+  look,
+  showAnswerKey,
+  frameless,
+  dense,
+  panels,
+}: {
+  blocks: ContentBlock[];
+  look: Look;
+  showAnswerKey: boolean;
+  frameless?: boolean;
+  dense?: boolean;
+  panels?: ReadonlySet<ContentBlock>;
+}) {
   return (
     <>
       {blocks.map((b, i) => (
-        <BlockCard key={i} block={b} look={look} showAnswerKey={showAnswerKey} frameless={frameless} dense={dense} />
+        <BlockCard key={i} block={b} look={look} showAnswerKey={showAnswerKey} frameless={frameless} dense={dense} panel={panels?.has(b)} />
       ))}
     </>
   );
@@ -147,11 +161,12 @@ export function TemplatedPageBody(props: TemplateProps) {
         look.zoneSlack,
       );
       const pictureHeight = (h: number) => Math.round(h * pageSize.height * pictureScale);
+      const panels = panelledExercises(page.blocks);
       return (
         <>
           {heading}
           <SectionKicker text={sectionKicker} look={look} />
-          <View style={{ fontSize: look.theme.bodySize * textScale }}>
+          <View style={{ fontSize: look.theme.bodySize * textScale, lineHeight: `${(look.theme.bodySize * textScale * DENSE_LINE).toFixed(2)}pt` }}>
           {bands.map((band, i) => {
             if (band.kind === "pictures") {
               const h = pictureHeight(band.height);
@@ -182,8 +197,8 @@ export function TemplatedPageBody(props: TemplateProps) {
               return (
                 <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom: ZONE_GAP }}>
                   {band.side === "left" && imageColumn}
-                  <View style={{ flex: 1 }}>
-                    <Blocks frameless dense blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
+                  <View style={{ width: contentWidth - contentWidth * band.imageWidth * pictureScale - ZONE_GAP }}>
+                    <Blocks frameless dense panels={panels} blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
                   </View>
                   {band.side === "right" && imageColumn}
                 </View>
@@ -193,7 +208,7 @@ export function TemplatedPageBody(props: TemplateProps) {
               return (
                 <View key={i} style={{ flexDirection: "row", gap: 16, marginBottom: ZONE_GAP }}>
                   {band.columns.map((items, c) => (
-                    <View key={c} style={{ flex: 1 }}>
+                    <View key={c} style={{ width: (contentWidth - 16) / 2 }}>
                       {items.map((item, k) =>
                         item.kind === "picture" ? (
                           <View key={k} style={{ width: `${pictureScale * 100}%`, alignSelf: "center" }}>
@@ -201,7 +216,7 @@ export function TemplatedPageBody(props: TemplateProps) {
                           </View>
                         ) : (
                           <View key={k} style={{ marginBottom: ZONE_GAP }}>
-                            <Blocks frameless dense blocks={item.blocks} look={look} showAnswerKey={showAnswerKey} />
+                            <Blocks frameless dense panels={panels} blocks={item.blocks} look={look} showAnswerKey={showAnswerKey} />
                           </View>
                         ),
                       )}
@@ -214,18 +229,18 @@ export function TemplatedPageBody(props: TemplateProps) {
               const [left, right] = splitColumns(band.blocks);
               return (
                 <View key={i} style={{ flexDirection: "row", gap: 16, marginBottom: ZONE_GAP }}>
-                  <View style={{ flex: 1 }}>
-                    <Blocks frameless dense blocks={left} look={look} showAnswerKey={showAnswerKey} />
+                  <View style={{ width: (contentWidth - 16) / 2 }}>
+                    <Blocks frameless dense panels={panels} blocks={left} look={look} showAnswerKey={showAnswerKey} />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Blocks frameless dense blocks={right} look={look} showAnswerKey={showAnswerKey} />
+                  <View style={{ width: (contentWidth - 16) / 2 }}>
+                    <Blocks frameless dense panels={panels} blocks={right} look={look} showAnswerKey={showAnswerKey} />
                   </View>
                 </View>
               );
             }
             return (
               <View key={i} style={{ marginBottom: ZONE_GAP }}>
-                <Blocks frameless dense blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
+                <Blocks frameless dense panels={panels} blocks={band.blocks} look={look} showAnswerKey={showAnswerKey} />
               </View>
             );
           })}

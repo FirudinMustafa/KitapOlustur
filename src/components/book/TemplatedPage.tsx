@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { ContentBlock, GeneratedPage, ListeningAudio } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
-import { MAX_PICTURE_ASPECT, ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
+import { DENSE_LINE, MAX_PICTURE_ASPECT, ZONE_GAP, isExerciseBlock, panelledExercises, planZones, type DesignedTemplate } from "@/lib/design/layouts";
 import { stripExerciseNumber } from "@/lib/exercise-numbers";
 import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
 
@@ -15,7 +15,7 @@ import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
 
 export type WebLook = { theme: DesignTheme; palette: ThemePalette };
 
-export type RenderBlock = (block: ContentBlock, opts: { frameless?: boolean; dense?: boolean }) => ReactNode;
+export type RenderBlock = (block: ContentBlock, opts: { frameless?: boolean; dense?: boolean; panel?: boolean }) => ReactNode;
 
 const SERIF = 'ui-serif, Georgia, "Noto Serif", serif';
 const SANS = 'ui-sans-serif, system-ui, "Noto Sans", sans-serif';
@@ -121,7 +121,10 @@ export function TemplatedPage({
 }) {
   const fonts = lookFonts(look);
   const H = PAGE_HEIGHT_PT;
-  const blocks = (list: ContentBlock[], frameless?: boolean, dense?: boolean) => list.map((b, i) => <div key={i}>{renderBlock(b, { frameless, dense })}</div>);
+  // KIYAS-11: every second exercise on a mirrored page sits on the book's tint (panelledExercises)
+  const panels = panelledExercises(page.blocks);
+  const blocks = (list: ContentBlock[], frameless?: boolean, dense?: boolean) =>
+    list.map((b, i) => <div key={i}>{renderBlock(b, { frameless, dense, panel: dense && panels.has(b) })}</div>);
   const heading = isUnitFirstPage && template !== "unit-opener-hero" && template !== "full-bleed-illustration" ? <UnitHeading unit={unit} look={look} /> : null;
   const kicker = <SectionKicker text={page.sectionLabel} look={look} />;
   const glossaryCards = (columns: 2 | 3) =>
@@ -159,7 +162,7 @@ export function TemplatedPage({
         <>
           {heading}
           {kicker}
-          <div style={{ fontSize: look.theme.bodySize * textScale }}>
+          <div style={{ fontSize: look.theme.bodySize * textScale, lineHeight: DENSE_LINE }}>
           {bands.map((band, i) => {
             if (band.kind === "pictures") {
               const h = pictureHeight(band.height);
