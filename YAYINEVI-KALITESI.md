@@ -87,6 +87,28 @@ En zayıf alanlar:
 
 `typeSize` her kitapta ≈%100 çıkıyor, ayırt edici değil.
 
+**G2 ✅ (`098ebab`) — kaynak düzeni resimsizken ve taşmada korunuyor:**
+- Planı olan sayfa, resimleri eksik olsa da `source-zones` ile diziliyor. Resim yuvası düşüyor, metin kaynağın bant ve sütunlarında kalıyor.
+- Taşan sayfa önce kendi düzeninde sıkılaştırılıyor: yazı %82'ye, resim %40'a kadar küçülüyor. Ancak hâlâ taşıyorsa düz akışa geçiyor. Önceden ilk adım düz akıştı.
+- Resimler orantılı küçülüyor; şerit gibi kırpılmıyor (PDF + web).
+- `source-zones` güvenlik payı 1.3 → 1.1.
+- Yeni `scripts/relayout.mts`: kayıtlı bir run'ı yapay zekâ çağırmadan yeniden diziyor. `--zones-from <kaynak.pdf>` planları bugünkü ölçümle yeniden kuruyor.
+
+  Kullanım: `npx tsx --env-file=.env.local scripts/relayout.mts <runId> .relayout/x.pdf --zones-from i_5_team_2.pdf`
+
+Ölçüm (bugünkü planlarla yeniden dizim, kaynak s.6–11):
+
+| Run | Yapı | Görünüm | Düz akışa düşen sayfa |
+|---|---|---|---|
+| KIYAS-7 (`508c2d94`, resimli) | %44 → **%68** | %49 → %52 | 5/6 → 1/6 |
+| KIYAS-9 (`b731f771`, resimsiz) | %40 → %48 | %41 → %41 | — |
+
+**Görülen, G2 dışı sorunlar:**
+- Resim üretilemezse sayfanın yarısı boş kalıyor ve metin olmayan bir resme atıf yapıyor ("Look at the picture").
+- Resimler kaynaktakinden küçük.
+- Sayfalar beyaz.
+- Alıştırma içeriği seyrek: cevabı gösteren tablolar, "Item 1" gibi yer tutucular (eski KIYAS-7 içeriği).
+
 **Faz G — görünümü yakalama (sıradaki, asıl hedef):**
 - **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
   - resim kutusu örtüşmesi
