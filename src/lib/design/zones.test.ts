@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildZonePlan, layoutZones, zonePictureCount, zonedBlocks, zonedPictures, type ZonePlan } from "./zones";
+import { buildZonePlan, layoutZones, pictureShape, pictureSlotAspects, zonePictureCount, zonedBlocks, zonedPictures, type ZonePlan } from "./zones";
 import type { SourcePageLayout } from "@/lib/source-layout";
 
 const layout = (images: SourcePageLayout["images"], textColumns: 1 | 2 = 1): SourcePageLayout => ({
@@ -93,5 +93,30 @@ describe("layoutZones", () => {
     expect(bands.some((b) => b.kind === "pictures")).toBe(false);
     expect(bands.find((b) => b.kind === "split")).toMatchObject({ pictures: [0] });
     expect(bands.flatMap(zonedBlocks)).toEqual(blocks);
+  });
+});
+
+describe("picture rows and shapes (Faz G3)", () => {
+  it("keeps a row where the source has it across the page", () => {
+    const plan = buildZonePlan(layout([{ x: 0.24, y: 0.62, w: 0.61, h: 0.32 }]))!;
+    const row = plan.bands.find((b) => b.kind === "pictures")!;
+    expect(row).toMatchObject({ left: 0.24, span: 0.61 });
+    // a row across the whole page stays full width
+    const full = buildZonePlan(layout([{ x: 0.03, y: 0.02, w: 0.95, h: 0.4 }]))!;
+    expect(full.bands.find((b) => b.kind === "pictures")).not.toHaveProperty("span");
+  });
+
+  it("gives each picture the shape of its slot, main picture in the largest", () => {
+    const plan: ZonePlan = {
+      bands: [
+        { kind: "pictures", height: 0.2, widths: [1] }, // wide
+        { kind: "split", side: "left", imageWidth: 0.3, height: 0.4, pictures: 1 }, // tall
+      ],
+    };
+    const aspects = pictureSlotAspects(plan, 2);
+    expect(pictureShape(aspects[0])).toBe("landscape");
+    expect(aspects[0]).toBeCloseTo(0.75 / 0.2);
+    expect(pictureShape(aspects[1])).toBe("portrait");
+    expect(pictureShape(1)).toBe("square");
   });
 });

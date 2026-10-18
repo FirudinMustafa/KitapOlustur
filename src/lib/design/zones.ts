@@ -10,8 +10,10 @@ import type { SourcePageLayout } from "@/lib/source-layout";
 // (templates.tsx), the web reader (PageContent.tsx) and the fit estimate.
 
 export type ZoneBand =
-  // A row of pictures across the page; widths are fractions of the row.
-  | { kind: "pictures"; height: number; widths: number[] }
+  // A row of pictures; widths are fractions of the row. Faz G3: the row
+  // sits where the source's does - `left` and `span` are fractions of the
+  // content width (unset = the full width, as plans stored before G3).
+  | { kind: "pictures"; height: number; widths: number[]; left?: number; span?: number }
   // Pictures stacked in a side column, text flowing beside them.
   | { kind: "split"; side: "left" | "right"; imageWidth: number; height: number; pictures: number }
   // Text only; `weight` is the band's share of the source page's text area.
@@ -73,7 +75,7 @@ export function buildZonePlan(layout: SourcePageLayout): ZonePlan | null {
     pushText(cursor, top);
     if (right - left >= 0.55) {
       const total = row.reduce((n, b) => n + b.w, 0);
-      bands.push({ kind: "pictures", height, widths: row.map((b) => b.w / total) });
+      bands.push({ kind: "pictures", height, widths: row.map((b) => b.w / total), ...rowSpan(left, right) });
     } else {
       bands.push({
         kind: "split",
@@ -125,7 +127,7 @@ function buildColumnPlan(images: Box[]): ZonePlan {
   let cursor = 0;
   for (const b of spanning) {
     columnsBetween(cursor, b.y);
-    bands.push({ kind: "pictures", height: clamp(b.h, 0.1, 0.5), widths: [1] });
+    bands.push({ kind: "pictures", height: clamp(b.h, 0.1, 0.5), widths: [1], ...rowSpan(b.x, b.x + b.w) });
     cursor = Math.max(cursor, b.y + b.h);
   }
   columnsBetween(cursor, 1);
@@ -147,6 +149,14 @@ function buildColumnPlan(images: Box[]): ZonePlan {
   return { bands };
 }
 
+// The row's horizontal extent; a row that (nearly) fills the page width is
+// left at the full content width.
+function rowSpan(left: number, right: number): { left?: number; span?: number } {
+  const span = Math.min(1, right - left);
+  if (span >= 0.9) return {};
+  return { left: Math.round(clamp(left, 0, 1 - span) * 1000) / 1000, span: Math.round(span * 1000) / 1000 };
+}
+
 function verticalOverlap(a: Box, b: Box): number {
   return Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 }
@@ -160,14 +170,14 @@ function clamp(v: number, lo: number, hi: number): number {
 export type ZonedItem<B> = { kind: "picture"; height: number; picture: number } | { kind: "text"; blocks: B[] };
 
 export type ZonedBand<B> =
-  | { kind: "pictures"; height: number; widths: number[]; pictures: number[] }
+  | { kind: "pictures"; height: number; widths: number[]; pictures: number[]; left?: number; span?: number }
   | { kind: "split"; side: "left" | "right"; imageWidth: number; height: number; pictures: number[]; blocks: B[] }
   | { kind: "text"; columns: 1 | 2; blocks: B[] }
   | { kind: "columns"; columns: [ZonedItem<B>[], ZonedItem<B>[]] };
 
 type SlottedItem = { kind: "picture"; height: number; picture: number } | { kind: "text"; text: number };
 type Slotted =
-  | { kind: "pictures"; height: number; widths: number[]; pictures: number[] }
+  | { kind: "pictures"; height: number; widths: number[]; pictures: number[]; left?: number; span?: number }
   | { kind: "split"; side: "left" | "right"; imageWidth: number; height: number; pictures: number[]; text: number }
   | { kind: "text"; columns: 1 | 2; text: number }
   | { kind: "columns"; columns: SlottedItem[][] };
@@ -211,7 +221,7 @@ export function layoutZones<B>(plan: ZonePlan, blocks: B[], pictureCount: number
       const pictures = take(band.widths.length);
       const widths = band.widths.slice(0, pictures.length);
       const sum = widths.reduce((a, b) => a + b, 0) || 1;
-      return { kind: "pictures", height: band.height, widths: widths.map((w) => w / sum), pictures };
+      return { kind: "pictures", height: band.height, widths: widths.map((w) => w / sum), pictures, left: band.left, span: band.span };
     }
     if (band.kind === "split") {
       const pictures = take(band.pictures);
@@ -289,4 +299,36 @@ export function zonedPictures<B>(band: ZonedBand<B>): number[] {
   if (band.kind === "text") return [];
   if (band.kind === "columns") return band.columns.flat().flatMap((i) => (i.kind === "picture" ? [i.picture] : []));
   return band.pictures;
+}
+
+// Faz G3: the shape (width / height) of the slot each of the page's
+// pictures lands in - main picture first, as layoutZones assigns them - so a
+// picture is drawn for its frame instead of as a square cropped to a strip.
+// The page is taken at the usual coursebook proportion (A4 0.71, 220×280
+// 0.79); the size choice below is coarse enough for either.
+const PAGE_ASPECT = 0.75;
+
+export function pictureSlotAspects(plan: ZonePlan, pictureCount: number): number[] {
+  const aspects: number[] = [];
+  for (const band of layoutZones(plan, [], pictureCount, () => 0)) {
+    if (band.kind === "pictures") {
+      const rowWidth = band.span ?? 1;
+      band.pictures.forEach((p, k) => (aspects[p] = (rowWidth * band.widths[k] * PAGE_ASPECT) / band.height));
+    } else if (band.kind === "split") {
+      const each = band.height / band.pictures.length;
+      for (const p of band.pictures) aspects[p] = (band.imageWidth * PAGE_ASPECT) / each;
+    } else if (band.kind === "columns") {
+      for (const item of band.columns.flat()) if (item.kind === "picture") aspects[item.picture] = (0.48 * PAGE_ASPECT) / item.height;
+    }
+  }
+  return aspects;
+}
+
+export type PictureShape = "landscape" | "portrait" | "square";
+
+export function pictureShape(aspect: number | undefined): PictureShape {
+  if (!aspect) return "landscape";
+  if (aspect >= 1.25) return "landscape";
+  if (aspect <= 0.8) return "portrait";
+  return "square";
 }

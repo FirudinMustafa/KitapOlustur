@@ -25,6 +25,8 @@ export type Look = {
   pictureSrc?: Record<string, string>;
   /** Tighter activity/diagram sizes - set by renderBookFitted for a page that still ran over. */
   compact?: boolean;
+  /** Faz G3: empty height (pt) a render of this page left at its foot - see planZones. */
+  zoneSlack?: number;
 };
 
 // Activity and diagram sizes shrink by this on a compact page.

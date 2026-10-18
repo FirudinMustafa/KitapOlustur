@@ -111,3 +111,25 @@ describe("source-zones (Faz G2)", () => {
     expect(tight.textScale).toBeLessThan(normal.textScale);
   });
 });
+
+describe("planZones with measured slack (Faz G3)", () => {
+  const plan: ZonePlan = {
+    bands: [
+      { kind: "pictures", height: 0.35, widths: [1] },
+      { kind: "text", columns: 1, weight: 1 },
+    ],
+  };
+  const metrics = { width: 595, height: 842, bodySize: 10 };
+  const p = page({ zonePlan: plan, blocks: [longBlock] });
+
+  it("lets pictures grow into space a render left empty", () => {
+    const estimated = planZones(p, 1, false, metrics);
+    expect(estimated.pictureScale).toBeLessThan(1);
+    const grown = planZones(p, 1, false, metrics, false, 200);
+    expect(grown.pictureScale).toBeGreaterThan(estimated.pictureScale);
+  });
+
+  it("changes nothing without slack", () => {
+    expect(planZones(p, 1, false, metrics, false, 0)).toEqual(planZones(p, 1, false, metrics));
+  });
+});

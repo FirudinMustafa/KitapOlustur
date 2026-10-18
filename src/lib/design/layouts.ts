@@ -142,7 +142,7 @@ export const A4_METRICS: PageMetrics = { width: 595.28, height: 841.89, bodySize
 
 const MARGIN_X = 44;
 const MARGIN_TOP = 44;
-const MARGIN_BOTTOM = 56;
+export const MARGIN_BOTTOM = 56;
 const RUNNING_HEADER = 22;
 const UNIT_HEADING = 52;
 const LINE = 1.45;
@@ -241,6 +241,12 @@ export function estimateTemplateFit(
 // Gap between zone bands, and between a split band's picture and text.
 export const ZONE_GAP = 12;
 
+// Faz G3: the widest frame a picture is drawn in. Generated pictures are at
+// most 3:2 (square in free mode); cropped into a longer strip they lose
+// their subject (live re-layout of KIYAS-7: a ball and a desk cut in half,
+// still at 2:1), so a wider slot keeps the picture at this shape, centred.
+export const MAX_PICTURE_ASPECT = 1.6;
+
 // The one place a zoned page is measured, shared by the fit estimate and
 // both renderers so they agree: the bands with their blocks, and how far the
 // pictures are scaled down (to at most half their source height) so the
@@ -251,20 +257,44 @@ export const ZONE_GAP = 12;
 // to 30% - before the page is given up to plain flow. Pictures shrink as a
 // whole (width with height), so a scaled picture is never cropped to a
 // strip.
+//
+// `measuredSlack` (Faz G3): the empty height (pt) a render of this page
+// actually left at its foot. The estimate is then corrected by how much it
+// overstated the page - pictures had been shrunk to a third of the
+// source's size on pages that ended a sixth of a page short.
 export function planZones<B extends BlockLike>(
   page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
   pictureCount: number,
   isUnitFirstPage: boolean,
   m: PageMetrics,
   tight = false,
+  measuredSlack = 0,
 ): { bands: ZonedBand<B>[]; pictureScale: number; textScale: number; contentHeight: number; needed: number } {
   const contentHeight = m.height - MARGIN_TOP - MARGIN_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0);
   if (!page.zonePlan) return { bands: [], pictureScale: 1, textScale: 1, contentHeight, needed: Infinity };
+  if (measuredSlack > 0) {
+    const first = planZones(page, pictureCount, isUnitFirstPage, m, tight);
+    // What the page really used vs. what the estimate said it would.
+    const overstated = first.needed - (contentHeight - measuredSlack);
+    if (overstated > 0) return choosePlan(page, pictureCount, m, contentHeight, tight, overstated * 0.9);
+    return first;
+  }
+  return choosePlan(page, pictureCount, m, contentHeight, tight, 0);
+}
+
+function choosePlan<B extends BlockLike>(
+  page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
+  pictureCount: number,
+  m: PageMetrics,
+  contentHeight: number,
+  tight: boolean,
+  correction: number,
+): { bands: ZonedBand<B>[]; pictureScale: number; textScale: number; contentHeight: number; needed: number } {
   let last = { bands: [] as ZonedBand<B>[], pictureScale: 0.5, textScale: 0.9, contentHeight, needed: Infinity };
   for (const textScale of tight ? [1, 0.9, 0.82] : [1, 0.9]) {
     const { bands, neededAt } = measureZones(page, pictureCount, m, contentHeight, textScale);
     for (const scale of tight ? [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3] : [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
-      const needed = neededAt(scale);
+      const needed = neededAt(scale) - correction;
       // A tight page already ran over at a size the estimate accepted, so
       // it is held to a stricter estimate.
       if (needed * (tight ? 1.15 : 1) <= contentHeight) return { bands, pictureScale: scale, textScale, contentHeight, needed };
@@ -289,11 +319,11 @@ function measureZones<B extends BlockLike>(
   const neededAt = (scale: number) => {
     let needed = glossaryHeight(page, 3);
     for (const band of bands) {
-      if (band.kind === "pictures") needed += band.height * contentHeight * scale + ZONE_GAP;
+      if (band.kind === "pictures") needed += band.height * m.height * scale + ZONE_GAP;
       else if (band.kind === "split") {
         // the picture column narrows with the picture (Faz G2)
         const textW = cw * (1 - band.imageWidth * scale) - ZONE_GAP;
-        needed += Math.max(band.height * contentHeight * scale, column(band.blocks, textW)) + ZONE_GAP;
+        needed += Math.max(band.height * m.height * scale, column(band.blocks, textW)) + ZONE_GAP;
       } else if (band.columns === 2) {
         const col = (cw - 16) / 2;
         const heights = band.blocks.map((b) => height(b, col));
@@ -308,7 +338,7 @@ function measureZones<B extends BlockLike>(
       } else if (band.kind === "columns") {
         const col = (cw - 16) / 2;
         const heights = band.columns.map((items) =>
-          items.reduce((n, i) => n + (i.kind === "picture" ? i.height * contentHeight * scale : column(i.blocks, col)) + ZONE_GAP, 0),
+          items.reduce((n, i) => n + (i.kind === "picture" ? i.height * m.height * scale : column(i.blocks, col)) + ZONE_GAP, 0),
         );
         needed += Math.max(...heights);
       } else needed += column(band.blocks, cw) + ZONE_GAP;

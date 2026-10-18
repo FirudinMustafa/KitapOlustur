@@ -62,7 +62,15 @@ export function compactImagePrompt(
   size: string,
   limit = FREE_IMAGE_PROMPT_LIMIT,
 ): string {
-  const sizeLine = `(Image size: ${size})`;
+  // flux-1-schnell takes no width/height (always square); the composition
+  // is steered in words so the crop into a wide or tall frame keeps the
+  // subject (Faz G3).
+  const sizeLine =
+    size === "1536x1024"
+      ? "Wide landscape composition, main subject centred, nothing important near the top or bottom edge."
+      : size === "1024x1536"
+        ? "Tall portrait composition, main subject centred, nothing important near the left or right edge."
+        : `(Image size: ${size})`;
   const style = clip(styleSuffix ?? "", 420);
   const sceneText = clip(scene, 900);
   const room = limit - sizeLine.length - style.length - sceneText.length - 8;

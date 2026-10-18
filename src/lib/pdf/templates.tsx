@@ -1,6 +1,6 @@
 import { Text, View, Image } from "@react-pdf/renderer";
 import type { ContentBlock, GeneratedPage } from "@/lib/ai/schemas";
-import { ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
+import { MAX_PICTURE_ASPECT, ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, type Look } from "./blocks";
 import { stripExerciseNumber } from "@/lib/exercise-numbers";
 import { NOTO_SANS } from "./fonts";
@@ -138,14 +138,15 @@ export function TemplatedPageBody(props: TemplateProps) {
       // sent to another template by resolvePageTemplate - or, measured
       // running over, is set tighter (look.compact, Faz G2).
       const pictures = imageSrcs ?? (imageSrc ? [imageSrc] : []);
-      const { bands, pictureScale, textScale, contentHeight } = planZones(
+      const { bands, pictureScale, textScale } = planZones(
         page,
         pictures.length,
         !!heading,
         { width: pageSize.width, height: pageSize.height, bodySize: look.theme.bodySize },
         !!look.compact,
+        look.zoneSlack,
       );
-      const pictureHeight = (h: number) => Math.round(h * contentHeight * pictureScale);
+      const pictureHeight = (h: number) => Math.round(h * pageSize.height * pictureScale);
       return (
         <>
           {heading}
@@ -154,12 +155,14 @@ export function TemplatedPageBody(props: TemplateProps) {
           {bands.map((band, i) => {
             if (band.kind === "pictures") {
               const h = pictureHeight(band.height);
+              // Faz G3: the row where the source's sits across the page.
+              const rowWidth = contentWidth * (band.span ?? 1);
               return (
-                <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom: ZONE_GAP }} wrap={false}>
+                <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom: ZONE_GAP, marginLeft: contentWidth * (band.left ?? 0), width: rowWidth }} wrap={false}>
                   {band.pictures.map((p, k) => (
-                    <View key={k} style={{ width: (contentWidth - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k], alignItems: "center" }}>
-                      {/* scaled down as a whole, keeping the slot's proportions (Faz G2) */}
-                      <View style={{ width: `${pictureScale * 100}%` }}>
+                    <View key={k} style={{ width: (rowWidth - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k], alignItems: "center" }}>
+                      {/* scaled down as a whole, keeping the slot's proportions (Faz G2), never wider than MAX_PICTURE_ASPECT (G3) */}
+                      <View style={{ width: Math.min(((rowWidth - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k]) * pictureScale, h * MAX_PICTURE_ASPECT) }}>
                         <Illustration src={pictures[p]} height={h} look={look} gap={0} />
                       </View>
                     </View>

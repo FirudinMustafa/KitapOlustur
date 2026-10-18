@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { ContentBlock, GeneratedPage, ListeningAudio } from "@/lib/ai/schemas";
 import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geometry";
-import { ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
+import { MAX_PICTURE_ASPECT, ZONE_GAP, isExerciseBlock, planZones, type DesignedTemplate } from "@/lib/design/layouts";
 import { stripExerciseNumber } from "@/lib/exercise-numbers";
 import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
 
@@ -149,12 +149,12 @@ export function TemplatedPage({
       // Web twin of the PDF's source-zones (src/lib/pdf/templates.tsx) -
       // same plan, same block distribution.
       const pictures = imageUrls ?? (imageUrl ? [imageUrl] : []);
-      const { bands, pictureScale, textScale, contentHeight } = planZones(page, pictures.length, !!heading, {
+      const { bands, pictureScale, textScale } = planZones(page, pictures.length, !!heading, {
         width: PAGE_WIDTH_PT,
         height: H,
         bodySize: look.theme.bodySize,
       });
-      const pictureHeight = (h: number) => Math.round(h * contentHeight * pictureScale);
+      const pictureHeight = (h: number) => Math.round(h * H * pictureScale);
       body = (
         <>
           {heading}
@@ -164,10 +164,14 @@ export function TemplatedPage({
             if (band.kind === "pictures") {
               const h = pictureHeight(band.height);
               return (
-                <div key={i} className="flex" style={{ gap: ZONE_GAP, marginBottom: ZONE_GAP }}>
+                <div
+                  key={i}
+                  className="flex"
+                  style={{ gap: ZONE_GAP, marginBottom: ZONE_GAP, marginLeft: `${(band.left ?? 0) * 100}%`, width: `${(band.span ?? 1) * 100}%` }}
+                >
                   {band.pictures.map((p, k) => (
                     <div key={k} className="flex min-w-0 justify-center" style={{ flex: band.widths[k] }}>
-                      <div style={{ width: `${pictureScale * 100}%` }}>
+                      <div style={{ width: `${pictureScale * 100}%`, maxWidth: h * MAX_PICTURE_ASPECT }}>
                         <Illustration src={pictures[p]} height={h} look={look} style={{ marginBottom: 0 }} />
                       </div>
                     </div>

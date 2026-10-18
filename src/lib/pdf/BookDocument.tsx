@@ -549,10 +549,13 @@ export function BookDocument({
   bookKind,
   forcePlain,
   compact,
+  slack,
   pictureSrc,
 }: {
   /** "<unitNumber>:<pageIndex>" keys of pages printed with tighter activity sizes - renderBookFitted's last resort. */
   compact?: ReadonlySet<string>;
+  /** Faz G3: "<unitNumber>:<pageIndex>" -> empty height a previous render left at the page's foot. */
+  slack?: ReadonlyMap<string, number>;
   /** emoji -> image src for activity pictures (loadEmojiIcons); unset = pictures print as short descriptions. */
   pictureSrc?: Record<string, string>;
   /** "<unitNumber>:<pageIndex>" keys of pages to print in plain flow - set by renderBookFitted after a measured spill. */
@@ -653,7 +656,8 @@ export function BookDocument({
           const imageSrc = resolvePageImageUrl(page, pageImages);
           const imageSrcs = resolvePageImageUrls(page, pageImages);
           const isCompact = !!compact?.has(`${unit.unitNumber}:${idx}`);
-          const pageLook = isCompact ? { ...look, compact: true } : look;
+          const zoneSlack = slack?.get(`${unit.unitNumber}:${idx}`);
+          const pageLook = isCompact || zoneSlack ? { ...look, compact: isCompact, zoneSlack } : look;
           const template = forcePlain?.has(`${unit.unitNumber}:${idx}`)
             ? "standard"
             : resolvePageTemplate(page, !!imageSrc, {

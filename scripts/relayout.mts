@@ -7,7 +7,9 @@
 // --zones-from rebuilds every mirrored page's zone plan from the source as
 // it is measured today, as a fresh run would (stored plans predate later
 // analyzer fixes), and sets the book in the source's measured colours and
-// type (Faz G1). --no-style keeps the run's own palette and theme type.
+// type (Faz G1), and drops exercise tables that give the answers away
+// (dropLeakingTable - a fresh run does that while writing). --no-style keeps
+// the run's own palette and theme type.
 //
 // Then score it: npx tsx scripts/fidelity.mts <source.pdf> <out.pdf> ...
 import fs from "node:fs";
@@ -21,6 +23,7 @@ import type { Variant } from "../src/lib/pdf/BookDocument";
 import { analyzeSourceLayout } from "../src/lib/source-layout-pdf";
 import { buildZonePlan } from "../src/lib/design/zones";
 import { deriveSourceTheme, type SourceTheme } from "../src/lib/design/source-theme";
+import { dropLeakingTable } from "../src/lib/answer-leak";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -50,9 +53,9 @@ async function main() {
   if (zonesFrom) {
     const layouts = await analyzeSourceLayout(new Uint8Array(fs.readFileSync(zonesFrom)));
     if (!noStyle) measured = deriveSourceTheme(layouts);
-    const rezone = <P extends { sourcePageNumber: number; zonePlan?: unknown }>(p: P): P => {
+    const rezone = <P extends { sourcePageNumber: number; zonePlan?: unknown; blocks: GeneratedUnit["studentBookPages"][number]["blocks"] }>(p: P): P => {
       const layout = layouts[p.sourcePageNumber - 1];
-      return layout ? { ...p, zonePlan: buildZonePlan(layout) } : p;
+      return layout ? { ...p, zonePlan: buildZonePlan(layout), blocks: p.blocks.map(dropLeakingTable) } : p;
     };
     units = units.map((u) => ({ ...u, studentBookPages: u.studentBookPages.map(rezone) }));
   }

@@ -110,6 +110,7 @@ import { pdfPageTexts, slicePdf } from "@/lib/pdf/split";
 import { dominantTrim, type SourcePageLayout } from "@/lib/source-layout";
 import { analyzeSourceLayout } from "@/lib/source-layout-pdf";
 import { bodySizeFor, deriveSourceTheme } from "@/lib/design/source-theme";
+import { pictureShape, pictureSlotAspects, type ZonePlan } from "@/lib/design/zones";
 import { mergePageMap } from "@/lib/page-map-merge";
 import { charactersForImage, characterSheetPrompt, compactImagePrompt, describeCharactersForPrompt } from "@/lib/ai/characters";
 import type { CharacterSheet } from "@/db/schema";
@@ -2217,6 +2218,10 @@ async function generateUnitImages(
       continue;
     }
 
+    // Faz G3: each picture is drawn for the shape of the frame it lands in
+    // on a mirrored page (unset: the usual wide picture / square extras).
+    const sizes = pictureSizes(page.zonePlan, 1 + (page.extraImagePrompts?.length ?? 0));
+
     // One picture that can't be produced must not take the whole unit (and
     // run) down with it - the page then prints in its text-only layout.
     try {
@@ -2228,7 +2233,7 @@ async function generateUnitImages(
         page.imagePrompt,
         `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
         qualityMode,
-        BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
+        sizes?.[0] ?? BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
         { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
       );
     } catch (err) {
@@ -2254,7 +2259,7 @@ async function generateUnitImages(
           prompt,
           `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}-${i + 1}.png`,
           qualityMode,
-          EXTRA_PICTURE_SIZE,
+          sizes?.[i + 1] ?? EXTRA_PICTURE_SIZE,
           { styleSuffix: artStyle.prompt, characters: charactersForImage(page, characterSheets) },
         );
       } catch (err) {
@@ -2350,6 +2355,18 @@ async function saveImagesForReview(
 // is - units is the same in-memory array built earlier this run).
 const EXTRA_PICTURE_SIZE: typeof BOOK_PIPELINE_INTERIOR_IMAGE_SIZE = "1024x1024";
 
+// Faz G3: the image size for each picture of a mirrored page, from the
+// shape of its slot in the page's zone plan (main picture first). Null when
+// the page has no plan.
+function pictureSizes(plan: ZonePlan | null | undefined, count: number): (typeof BOOK_PIPELINE_INTERIOR_IMAGE_SIZE)[] | null {
+  if (!plan) return null;
+  const aspects = pictureSlotAspects(plan, count);
+  return Array.from({ length: count }, (_, i) => {
+    const shape = pictureShape(aspects[i]);
+    return shape === "landscape" ? "1536x1024" : shape === "portrait" ? "1024x1536" : "1024x1024";
+  });
+}
+
 async function regenerateFlaggedImage(
   runId: string,
   units: GeneratedUnit[],
@@ -2371,14 +2388,16 @@ async function regenerateFlaggedImage(
   // A negative number is one of a page's extra pictures (extraImageKey).
   let page = pages.find((p) => p.sourcePageNumber === pageNumber);
   let prompt = page?.imagePrompt;
-  let size: typeof BOOK_PIPELINE_INTERIOR_IMAGE_SIZE = BOOK_PIPELINE_INTERIOR_IMAGE_SIZE;
+  let size: typeof BOOK_PIPELINE_INTERIOR_IMAGE_SIZE = page
+    ? (pictureSizes(page.zonePlan, 1 + (page.extraImagePrompts?.length ?? 0))?.[0] ?? BOOK_PIPELINE_INTERIOR_IMAGE_SIZE)
+    : BOOK_PIPELINE_INTERIOR_IMAGE_SIZE;
   if (pageNumber < 0) {
     for (const p of pages) {
       const i = (p.extraImagePrompts ?? []).findIndex((_, k) => extraImageKey(p.sourcePageNumber, k + 1) === pageNumber);
       if (i >= 0) {
         page = p;
         prompt = p.extraImagePrompts?.[i];
-        size = EXTRA_PICTURE_SIZE;
+        size = pictureSizes(p.zonePlan, 1 + (p.extraImagePrompts?.length ?? 0))?.[i + 1] ?? EXTRA_PICTURE_SIZE;
         break;
       }
     }

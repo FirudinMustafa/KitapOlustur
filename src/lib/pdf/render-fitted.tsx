@@ -2,7 +2,8 @@ import type { ComponentProps } from "react";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { BookDocument } from "./BookDocument";
 import { resetBookFonts } from "./fonts";
-import { countPdfPages } from "./rasterize";
+import { countPdfPages, pageContentBottoms } from "./rasterize";
+import { MARGIN_BOTTOM } from "@/lib/design/layouts";
 import { buildPageSpans } from "@/lib/design/page-review";
 import { activityEmojis, loadEmojiIcons } from "./emoji-icons";
 import type { CourseUnitSummary } from "./ContentsDocument";
@@ -26,11 +27,11 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
   // Activity pictures are drawn from Twemoji; fetched once per book.
   const props = { ...input, pictureSrc: input.pictureSrc ?? (await loadEmojiIcons(activityEmojis(input.units))) };
 
-  async function render(forcePlain?: Set<string>, compact?: Set<string>) {
+  async function render(forcePlain?: Set<string>, compact?: Set<string>, slack?: Map<string, number>) {
     const starts: Record<string, number> = {};
     resetBookFonts();
     const pdf = await renderToBuffer(
-      <BookDocument {...props} forcePlain={forcePlain} compact={compact} onPageStart={(key, n) => (starts[key] = Math.min(starts[key] ?? n, n))} />,
+      <BookDocument {...props} forcePlain={forcePlain} compact={compact} slack={slack} onPageStart={(key, n) => (starts[key] = Math.min(starts[key] ?? n, n))} />,
     );
     const spills = buildPageSpans(starts, await countPdfPages(new Uint8Array(pdf)))
       .filter((s) => /^\d+:\d+$/.test(s.key) && s.pageCount > 1)
@@ -49,14 +50,62 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
     return { ...third, flattened: [...plain], compacted: [...tight] };
   })();
 
+  // Faz G3: the height estimate keeps a margin, and a mirrored page that
+  // ended well short of its foot had its pictures shrunk for nothing. Each
+  // page's real slack is measured and the page laid out again with it -
+  // bigger pictures, up to the source's size; a page that then runs over
+  // goes back to its earlier layout.
+  const plain = new Set(result.flattened);
+  const tight = new Set(result.compacted);
+  let slack = await measureSlack(result.pdf, result.starts, plain, props.bleed ?? 0);
+  let final: { pdf: Buffer; starts: Record<string, number>; spills: string[] } = result;
+  if (slack.size) {
+    const grown = await render(plain, tight, slack);
+    if (grown.spills.length) {
+      for (const key of grown.spills) slack.delete(key);
+      final = slack.size ? await render(plain, tight, slack) : result;
+      if (final.spills.length) {
+        slack = new Map();
+        final = result;
+      }
+    } else {
+      final = grown;
+    }
+  }
+
   // Faz B5: the contents page lists where each unit is printed. The ranges
   // are only known after layout, so the final layout is rendered once more
   // with them - same pages, the contents table just gains its page column.
-  const contentsUnits = withUnitPages(props.contentsUnits, result.starts);
-  if (!contentsUnits) return { pdf: result.pdf, flattened: result.flattened, compacted: result.compacted };
+  const contentsUnits = withUnitPages(props.contentsUnits, final.starts);
+  if (!contentsUnits) return { pdf: final.pdf, flattened: result.flattened, compacted: result.compacted };
   props.contentsUnits = contentsUnits;
-  const numbered = await render(new Set(result.flattened), new Set(result.compacted));
+  const numbered = await render(plain, tight, slack);
   return { pdf: numbered.pdf, flattened: result.flattened, compacted: result.compacted };
+}
+
+// Empty height at the foot of every one-sheet content page, worth growing
+// into (more than a line or two after a margin for card padding). Pages in
+// plain flow are left alone.
+const SLACK_MARGIN = 14;
+const MIN_SLACK = 30;
+
+async function measureSlack(pdf: Buffer, starts: Record<string, number>, plain: Set<string>, bleed: number): Promise<Map<string, number>> {
+  const keys = Object.keys(starts).filter((k) => /^\d+:\d+$/.test(k) && !plain.has(k));
+  const sheets = new Map(keys.map((k) => [k, starts[k]]));
+  const mupdf = await import("mupdf");
+  const doc = mupdf.Document.openDocument(new Uint8Array(pdf), "application/pdf");
+  const sheetHeight = doc.loadPage(0).getBounds()[3];
+  doc.destroy();
+  const contentFoot = sheetHeight - bleed - MARGIN_BOTTOM;
+  const bottoms = await pageContentBottoms(new Uint8Array(pdf), [...sheets.values()], contentFoot);
+  const out = new Map<string, number>();
+  for (const [key, sheet] of sheets) {
+    const bottom = bottoms.get(sheet);
+    if (bottom === undefined || bottom === 0) continue;
+    const free = contentFoot - bottom - SLACK_MARGIN;
+    if (free >= MIN_SLACK) out.set(key, free);
+  }
+  return out;
 }
 
 // Each unit's printed page range from the page markers ("unit:pageIndex"
