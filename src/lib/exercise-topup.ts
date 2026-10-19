@@ -40,10 +40,16 @@ export function topUpPrompt(page: TopUpPage & { pageType?: string }, count: numb
 // requiring a complete key dropped every exercise. An exercise with items is
 // kept; a missing or mismatched key is removed so fillMissingAnswerKeys
 // (the next step) writes one.
+//
+// KIYAS-12 (live, 2026-10-19): these added blocks came back with a manual
+// position (layout {x:0, y:0, width:100, height:100}) and run after the
+// writer clean-up, so the page left its source layout again; it is dropped
+// here too (see dropWriterLayouts).
 export function appendExercises<P extends TopUpPage>(page: P, blocks: P["blocks"]): P {
   const usable = blocks
     .filter((b) => b.items?.length)
-    .map((b) => (b.answerKey?.length === b.items!.length ? b : { ...b, answerKey: undefined }));
+    .map((b) => (b.answerKey?.length === b.items!.length ? b : { ...b, answerKey: undefined }))
+    .map(({ layout: _layout, ...b }: P["blocks"][number] & { layout?: unknown }) => b as P["blocks"][number]); // eslint-disable-line @typescript-eslint/no-unused-vars
   return usable.length ? { ...page, blocks: [...page.blocks, ...usable] } : page;
 }
 

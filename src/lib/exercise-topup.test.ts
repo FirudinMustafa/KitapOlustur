@@ -28,6 +28,13 @@ describe("exercise top-up", () => {
     expect(out.map((b) => b.heading)).toEqual(["A", "E", "B", "C"]);
     expect(out.map((b) => b.answerKey?.length)).toEqual([3, 3, undefined, undefined]);
   });
+
+  it("drops a manual position the model gave an added exercise (KIYAS-12)", () => {
+    const page = { sourcePageNumber: 7, blocks: [ex("A")] };
+    const positioned = { ...ex("B"), layout: { x: 0, y: 0, width: 100, height: 100 } };
+    const out = appendExercises(page, [positioned]).blocks;
+    expect(out[1]).not.toHaveProperty("layout");
+  });
 });
 
 describe("lengthening short exercises", () => {
