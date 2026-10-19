@@ -242,6 +242,24 @@ Görüntü: `.relayout/KIYAS-11-sonra.png`.
 
 Yazar kuralları ve resim çerçeveleri ancak yeni bir canlı üretimde (KIYAS-12) görülebilir. Cloudflare kotası günde yaklaşık iki küçük kitaba yetiyor; bugün biri kullanıldı.
 
+### KIYAS-12 — KIYAS-11 düzeltmelerinin canlı doğrulaması (2026-10-19)
+
+Proje `689c4744`, run `43933441`. Ayarlar KIYAS-11 ile aynı. Uçtan uca tamamlandı (07:42 → 08:10 UTC).
+
+**Cloudflare kotası doldu:** 4 karakter çizimi ve kapaktan sonra 8 sayfa resminin 8'i de üretilemedi. Bu yüzden resim çerçevelemesi (`pictureFraming`) test edilemedi. Kotanın UTC 00:00'da sıfırlandığı varsayımı doğru çıkmadı ya da kota çok çabuk tükeniyor; bir sonraki görselli test için kota durumu önceden doğrulanmalı.
+
+**Yazar:**
+- 6 sayfanın 5'inde alıştırma sayısı kaynakla aynı; resim promptu sayısı hepsinde aynı; yer tutucu yok.
+- Tablo/bilgi kutusu kuralı kısmen tuttu (2 sayfada tablo kaldı).
+
+**Puan (canlı, resimsiz):** yapı %55, görünüm %42.
+
+**Yeni hata (`e3d2002` ile düzeltildi):** `topUpExercises`'in eklediği alıştırmalar yine `layout {width:100}` taşıyordu. Bu adım yazar temizliğinden sonra çalıştığı için 3 sayfa kaynak düzeninden çıktı ve metni kelime kelime basıldı. `appendExercises` artık konumu siliyor.
+
+Düzeltilmiş yeniden dizim: yapı %59, görünüm %48.
+
+Görüntü: `.relayout/KIYAS-12-kaynak-canli-duzeltilmis.png`. Satırlar: kaynak / canlı / düzeltilmiş.
+
 **Faz G — görünümü yakalama (plan):**
 - **G5 (önce):** fidelity skoru ikiye ayrılacak, yapı ve görünüm. Görünüm tarafında ölçülecekler:
   - resim kutusu örtüşmesi
