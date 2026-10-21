@@ -316,7 +316,7 @@ export function zonedPictures<B>(band: ZonedBand<B>): number[] {
 // picture is drawn for its frame instead of as a square cropped to a strip.
 // The page is taken at the usual coursebook proportion (A4 0.71, 220×280
 // 0.79); the size choice below is coarse enough for either.
-const PAGE_ASPECT = 0.75;
+export const PAGE_ASPECT = 0.75;
 
 export function pictureSlotAspects(plan: ZonePlan, pictureCount: number): number[] {
   const aspects: number[] = [];
@@ -341,6 +341,13 @@ export function pictureShape(aspect: number | undefined): PictureShape {
   if (aspect >= 1.25) return "landscape";
   if (aspect <= 0.8) return "portrait";
   return "square";
+}
+
+// The width / height of the picture drawn for a slot of this shape (the
+// image sizes the generator asks for: 3:2, 2:3 or square).
+export function shapeAspect(slotAspect: number | undefined): number {
+  const shape = pictureShape(slotAspect);
+  return shape === "landscape" ? 1.5 : shape === "portrait" ? 2 / 3 : 1;
 }
 
 // Faz G3/KIYAS-11: how a picture should be drawn for its slot. A large slot

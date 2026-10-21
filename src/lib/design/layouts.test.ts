@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { diversifyTemplates, estimateBlockHeight, estimateTemplateFit, inlineRubric, isChecklistBlock, itemColumns, planZones, resolvePageTemplate } from "./layouts";
-import type { ZonePlan } from "./zones";
+import { diversifyTemplates, estimateBlockHeight, estimateTemplateFit, inlineRubric, isChecklistBlock, itemColumns, planZones, resolvePageTemplate, zoneRowFrames } from "./layouts";
+import type { ZoneBand, ZonePlan } from "./zones";
 import type { GeneratedPage } from "@/lib/ai/schemas";
 
 function page(overrides: Partial<GeneratedPage>): GeneratedPage {
@@ -131,6 +131,42 @@ describe("planZones with measured slack (Faz G3)", () => {
 
   it("changes nothing without slack", () => {
     expect(planZones(p, 1, false, metrics, false, 0)).toEqual(planZones(p, 1, false, metrics));
+  });
+});
+
+describe("growing into leftover room (KIYAS-13)", () => {
+  const metrics = { width: 595, height: 842, bodySize: 10 };
+  const short = { kind: "practice" as const, heading: "1 Listen and say", body: "Say the words.", items: ["one", "two", "three"] };
+
+  it("grows pictures past the source's size on a page with room left", () => {
+    const plan: ZonePlan = { bands: [{ kind: "pictures", height: 0.25, widths: [1], left: 0.1, span: 0.8 }, { kind: "text", columns: 1, weight: 1 }] };
+    const p = page({ zonePlan: plan, blocks: [short] });
+    expect(planZones(p, 1, false, metrics).pictureScale).toBe(1);
+    const grown = planZones(p, 1, false, metrics, false, 300);
+    expect(grown.pictureScale).toBeGreaterThan(1);
+    // the frame never exceeds the page's content area
+    const frame = zoneRowFrames(plan.bands[0] as Extract<ZoneBand, { kind: "pictures" }>, 507, 842, grown.pictureScale);
+    expect(frame.left + frame.width).toBeLessThanOrEqual(507 + 0.01);
+    expect(frame.height).toBeLessThanOrEqual(grown.contentHeight);
+  });
+
+  it("stops a grown frame before cover cropping takes more than a fifth", () => {
+    const band = { height: 0.3, widths: [1] };
+    const big = zoneRowFrames(band, 507, 842, 3);
+    // drawn landscape (3:2): the frame stays at least 0.8 x 1.5 wide for its height
+    expect(big.frames[0] / big.height).toBeGreaterThanOrEqual(1.2 - 0.01);
+    // below 1 a row shrinks as a whole, as before
+    const small = zoneRowFrames(band, 507, 842, 0.5);
+    expect(small.height).toBe(Math.round(0.3 * 842 * 0.5));
+  });
+
+  it("sets the text of a page with no picture larger and spreads it", () => {
+    const plan: ZonePlan = { bands: [{ kind: "text", columns: 1, weight: 1 }] };
+    const p = page({ zonePlan: plan, blocks: [short, short] });
+    const grown = planZones(p, 0, false, metrics, false, 500);
+    expect(grown.textScale).toBeGreaterThan(1);
+    expect(grown.spread).toBeGreaterThan(0);
+    expect(planZones(p, 0, false, metrics).spread).toBe(0);
   });
 });
 
