@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { isEmoji, twemojiUrl } from "@/lib/activities";
+import { isEmoji, splitEmoji, twemojiUrl } from "@/lib/activities";
 
 // Pictures for workbook activities (src/lib/activities.ts) without an image
 // model: the writer picks one emoji per picture and it is drawn from
@@ -51,9 +51,11 @@ export function activityEmojis(units: { [field: string]: unknown }[]): string[] 
   const found: string[] = [];
   const visit = (pages: unknown) => {
     if (!Array.isArray(pages)) return;
-    for (const page of pages as { blocks?: { activity?: { pictures?: { emoji?: string }[] }; diagram?: { places?: { emoji?: string }[] } }[] }[]) {
+    for (const page of pages as { blocks?: { items?: string[]; activity?: { pictures?: { emoji?: string }[] }; diagram?: { places?: { emoji?: string }[] } }[] }[]) {
       for (const block of page.blocks ?? []) {
         for (const p of [...(block.activity?.pictures ?? []), ...(block.diagram?.places ?? [])]) if (p.emoji) found.push(p.emoji);
+        // Emoji written into item text (counting rows) - drawn by ItemList.
+        for (const item of block.items ?? []) for (const part of splitEmoji(item)) if (part.emoji) found.push(part.emoji);
       }
     }
   };

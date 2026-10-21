@@ -615,7 +615,12 @@ export function BookDocument({
   // A source PDF's own colours win over the theme palette (the user chose
   // to mirror that book); otherwise the theme's palette for this book type.
   const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? theme.palettes[variant];
-  const look = { ...makeLook(theme, palette), pictureSrc, tracks: audioTrackMap(units) };
+  const look = {
+    ...makeLook(theme, palette),
+    pictureSrc,
+    tracks: audioTrackMap(units),
+    wordList: variant !== "teacher_book" && /^(pre-?a1|a1)\b/i.test(level.trim()),
+  };
   // Audio scripts at the back (2026-10-21): every track in the Teacher's
   // Book; in the other books the tracks of their own exercises - a pupil's
   // book prints no scripts, as in published courses.

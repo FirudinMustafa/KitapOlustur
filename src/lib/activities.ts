@@ -212,6 +212,24 @@ export function isEmoji(text: string): boolean {
   return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(text);
 }
 
+const EMOJI_RUN = /\p{Extended_Pictographic}️?(?:‍\p{Extended_Pictographic}️?)*/gu;
+
+// KIYAS-13 (live, 2026-10-21): counting items written as emoji in the text
+// ("🍎🍎 = ___") printed as broken glyphs - the book fonts have no emoji.
+// Splits a line into text and single emoji so the PDF can draw each emoji
+// as its Twemoji picture (or leave it out), never as a missing glyph.
+export function splitEmoji(text: string): { text?: string; emoji?: string }[] {
+  const parts: { text?: string; emoji?: string }[] = [];
+  let last = 0;
+  for (const m of text.matchAll(EMOJI_RUN)) {
+    if (m.index > last) parts.push({ text: text.slice(last, m.index) });
+    parts.push({ emoji: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last) });
+  return parts;
+}
+
 // Backstop for a labelling grid whose key and word bank disagree (live E2E
 // 2026-10-10: box "sports centre", key "stadium", through every retry).
 // One answer missing from the box and one box word unused -> they are the

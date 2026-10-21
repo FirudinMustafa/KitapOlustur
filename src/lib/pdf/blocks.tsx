@@ -1,8 +1,8 @@
 import { Text, View, Svg, Path, Rect, Circle, Line, Image, Polygon } from "@react-pdf/renderer";
+import type { Style } from "@react-pdf/types";
 import { MAP_CELL_H, SCENE_H, SCENE_ROW, SCENE_W, mapGrid, prepositionScene, type Shape } from "@/lib/diagrams";
-import { DRAW_LINE, MATCH_ROW, PICTURE_CELL, RULE_GAP, letterFor, type ActivityPicture } from "@/lib/activities";
+import { DRAW_LINE, MATCH_ROW, PICTURE_CELL, RULE_GAP, isEmoji, letterFor, splitEmoji, type ActivityPicture } from "@/lib/activities";
 import type { ContentBlock, ContentBlockKind, GeneratedPage } from "@/lib/ai/schemas";
-import { seededShuffle } from "@/lib/content-html";
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { itemText } from "@/lib/item-text";
 import { HEADING_LINE, PANEL_PAD, inlineRubric, isChecklistBlock, itemColumns } from "@/lib/design/layouts";
@@ -28,6 +28,8 @@ export type Look = {
   compact?: boolean;
   /** Faz G3: empty height (pt) a render of this page left at its foot - see planZones. */
   zoneSlack?: number;
+  /** Glossary as a compact word list (terms only) - young learners' books, see GlossaryGrid. */
+  wordList?: boolean;
   /** Listening exercise -> its audio track number (audioTrackMap). */
   tracks?: ReadonlyMap<string, string>;
 };
@@ -114,11 +116,14 @@ const s = {
 };
 
 // Faz H2 Faz 3: static print rendering of a structured exercise - the
-// clickable version lives in PageContent.tsx. Matching right columns are
-// deterministically scrambled unless the answer key is shown.
-function InteractiveExerciseView({ block, showAnswerKey }: { block: ContentBlock; showAnswerKey: boolean }) {
+// clickable version lives in PageContent.tsx. Printed only when the block
+// has nothing else to print: the writer usually fills items/activity AND
+// interactive with the same task, and KIYAS-13 printed both - every item
+// twice, and the matching pairs as "1. I'm Misty — the boy", a scrambled
+// list that read as a wrong answer key in the Student Book.
+function InteractiveExerciseView({ block, showAnswerKey, look }: { block: ContentBlock; showAnswerKey: boolean; look: Look }) {
   const interactive = block.interactive;
-  if (!interactive) return null;
+  if (!interactive || block.items?.length || block.activity) return null;
 
   if (interactive.type === "multiple_choice") {
     return (
@@ -152,19 +157,13 @@ function InteractiveExerciseView({ block, showAnswerKey }: { block: ContentBlock
     );
   }
 
-  const rightColumn = showAnswerKey
-    ? interactive.pairs.map((p) => p.right)
-    : seededShuffle(
-        interactive.pairs.map((p) => p.right),
-        block.heading,
-      );
+  // Two columns to join with lines, like a printed matching exercise.
   return (
     <View style={{ marginTop: 6 }}>
-      {interactive.pairs.map((pair, i) => (
-        <Text style={s.item} key={i}>
-          {i + 1}. {pair.left} — {rightColumn[i]}
-        </Text>
-      ))}
+      <MatchLinesView
+        block={{ ...block, items: interactive.pairs.map((p) => p.left), answerKey: interactive.pairs.map((p) => p.right) }}
+        look={look}
+      />
     </View>
   );
 }
@@ -304,6 +303,33 @@ function PictureMatch({ block, look }: { block: ContentBlock; look: Look }) {
   );
 }
 
+// One numbered item. Emoji in the text are drawn as their Twemoji picture
+// (or dropped when it could not be loaded) - the book fonts have none, and
+// KIYAS-13's counting rows printed as broken glyphs.
+const EMOJI_PT = 13;
+
+function ItemLine({ n, item, look, style }: { n: number; item: string; look: Look; style: Style[] }) {
+  const text = itemText(item);
+  if (!isEmoji(text)) {
+    return (
+      <Text style={style}>
+        {n}. {text}
+      </Text>
+    );
+  }
+  return (
+    <View style={[...style, { flexDirection: "row", flexWrap: "wrap", alignItems: "center" }]}>
+      <Text>{n}. </Text>
+      {splitEmoji(text).map((part, i) => {
+        if (part.text) return <Text key={i}>{part.text}</Text>;
+        const src = look.pictureSrc?.[part.emoji!];
+        // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop
+        return src ? <Image key={i} src={src} style={{ width: EMOJI_PT, height: EMOJI_PT, marginRight: 1 }} /> : null;
+      })}
+    </View>
+  );
+}
+
 function ItemList({ block, look, dense }: { block: ContentBlock; look: Look; dense?: boolean }) {
   const a = block.activity;
   const lines = a?.type === "write_lines" ? (a.lines ?? 1) : 0;
@@ -313,9 +339,7 @@ function ItemList({ block, look, dense }: { block: ContentBlock; look: Look; den
     return (
       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
         {block.items?.map((item, k) => (
-          <Text key={k} style={[s.item, { width: `${100 / columns}%`, marginLeft: 0, paddingLeft: 4, paddingRight: 6 }]}>
-            {k + 1}. {itemText(item)}
-          </Text>
+          <ItemLine key={k} n={k + 1} item={item} look={look} style={[s.item, { width: `${100 / columns}%`, marginLeft: 0, paddingLeft: 4, paddingRight: 6 }]} />
         ))}
       </View>
     );
@@ -324,9 +348,7 @@ function ItemList({ block, look, dense }: { block: ContentBlock; look: Look; den
     <>
       {block.items?.map((item, k) => (
         <View key={k} wrap={false}>
-          <Text style={s.item}>
-            {k + 1}. {itemText(item)}
-          </Text>
+          <ItemLine n={k + 1} item={item} look={look} style={[s.item]} />
           {lines > 0 && <RuledLines count={lines} gap={sized(look, RULE_GAP)} />}
         </View>
       ))}
@@ -479,7 +501,7 @@ function ExerciseBox({
     return (
       <View style={{ marginTop: 2 }}>
         <ActivityItems block={block} look={look} columns={3} dense={dense} />
-        <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />
+        <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} look={look} />
         <AnswerKey block={block} show={showAnswerKey} />
       </View>
     );
@@ -495,7 +517,7 @@ function ExerciseBox({
         </View>
       </View>
       <ActivityItems block={block} look={look} columns={4} />
-      <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} />
+      <InteractiveExerciseView block={block} showAnswerKey={showAnswerKey} look={look} />
       <AnswerKey block={block} show={showAnswerKey} />
     </View>
   );
@@ -780,6 +802,37 @@ export function GlossaryGrid({
   columns?: 2 | 3;
 }) {
   if (!glossary?.length) return null;
+  // KIYAS-13 (Pre-A1): definition cards ("Move from sitting to standing.")
+  // are text a five-year-old cannot read, took half a page per unit and ran
+  // 2-4 cards onto a page of their own. Young learners' student books print
+  // the unit's words as a short list, as the source does; the definitions
+  // stay in the Teacher's Book.
+  if (look.wordList) {
+    return (
+      <View wrap={false} style={{ marginTop: 6 }}>
+        <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: 11, marginBottom: 5 }}>My words</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
+          {glossary.map((entry, i) => (
+            <Text
+              key={i}
+              style={{
+                fontFamily: NOTO_SANS,
+                fontWeight: 700,
+                fontSize: 9.5,
+                color: look.palette.primaryDark,
+                backgroundColor: look.palette.primaryLight,
+                borderRadius: 8,
+                paddingVertical: 3,
+                paddingHorizontal: 7,
+              }}
+            >
+              {entry.term}
+            </Text>
+          ))}
+        </View>
+      </View>
+    );
+  }
   const width = columns === 3 ? "31.5%" : "48%";
   return (
     <View>

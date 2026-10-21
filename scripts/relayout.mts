@@ -25,6 +25,7 @@ import { buildZonePlan } from "../src/lib/design/zones";
 import { deriveSourceTheme, type SourceTheme } from "../src/lib/design/source-theme";
 import { dropLeakingTable } from "../src/lib/answer-leak";
 import { dropWriterLayouts } from "../src/lib/writer-layout";
+import { dropRepeatedBlocks } from "../src/lib/dedupe-blocks";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -49,7 +50,12 @@ async function main() {
   });
   if (!outlineRow || !book?.content) throw new Error("run has no outline or book content");
   const outline = (outlineRow.outline as { outline: BookOutline }).outline;
-  let units = book.content as GeneratedUnit[];
+  // Clean-ups a fresh run now applies while writing (applyDiagramFixes).
+  let units = (book.content as GeneratedUnit[]).map((u) => ({
+    ...u,
+    studentBookPages: u.studentBookPages.map(dropRepeatedBlocks),
+    workbookPages: u.workbookPages?.map(dropRepeatedBlocks),
+  }));
   let measured: SourceTheme | null = null;
   if (zonesFrom) {
     const layouts = await analyzeSourceLayout(new Uint8Array(fs.readFileSync(zonesFrom)));

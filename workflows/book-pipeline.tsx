@@ -131,6 +131,7 @@ import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
 import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
 import { placeholderItemIssue } from "@/lib/placeholder-items";
 import { dropWriterLayouts } from "@/lib/writer-layout";
+import { dropRepeatedBlocks } from "@/lib/dedupe-blocks";
 import { appendExercises, exercisesToAdd, extendExercises, extendPrompt, itemsToAdd, topUpPrompt } from "@/lib/exercise-topup";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import {
@@ -2776,12 +2777,13 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // whose key and word bank name things differently (reconcileWordBank),
 // puzzles whose words do not fit their grid (repairPuzzle), the exercises
 // on each page numbered 1, 2, 3... (numberExercises), and manual positions
-// the writer invented (dropWriterLayouts).
+// the writer invented (dropWriterLayouts), and exercises the writer
+// repeated on the same page (dropRepeatedBlocks).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   const fix = (pages?: GeneratedPage[]) =>
     pages?.map((page) =>
       fillZonePictures(
-        numberExercises(fixMapAnswers({ ...dropWriterLayouts(page), blocks: dropWriterLayouts(page).blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) }).page),
+        numberExercises(fixMapAnswers(dropRepeatedBlocks({ ...dropWriterLayouts(page), blocks: dropWriterLayouts(page).blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) })).page),
         (p) => fallbackImagePrompt(p, []),
       ),
     );
