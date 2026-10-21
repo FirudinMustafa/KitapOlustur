@@ -12,7 +12,7 @@ import { measureNumberMarks, measureTopBand } from "@/lib/design/page-furniture"
 
 const RASTER_WIDTH_PX = 600; // enough to see a gutter between comic panels
 const COLOUR_WIDTH_PX = 120; // design colours need no detail (Faz G1)
-const FURNITURE_WIDTH_PX = 300; // enough to see a 2 mm band and the disc behind an exercise number
+const FURNITURE_WIDTH_PX = 500; // a 2 mm band, and enough strong pixels in a thin coloured exercise numeral
 
 // Kept apart from source-layout.ts on purpose: the workflow bundle (CJS)
 // cannot contain mupdf (top-level await), and workflow-level code uses the

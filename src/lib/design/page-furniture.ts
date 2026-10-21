@@ -39,13 +39,20 @@ function pixel(raster: Raster, x: number, y: number): Rgb {
 }
 
 // The most common chromatic colour of a set of pixels (4-bit bins,
-// averaged), and the share of the pixels that are chromatic at all.
+// averaged), and the share of the pixels that are chromatic at all. The
+// edges of a thin coloured numeral blend into the paper (i5 Team's red
+// figures came out pink), so when there are enough strong pixels only they
+// vote.
+const STRONG = 80;
+const chroma = ([r, g, b]: Rgb) => Math.max(r, g, b) - Math.min(r, g, b);
+
 function dominant(pixels: Rgb[], skip?: Rgb): { color: Rgb | null; share: number } {
   const bins = new Map<number, { n: number; r: number; g: number; b: number }>();
-  let chromatic = 0;
-  for (const p of pixels) {
-    if (!isChromatic(p)) continue;
-    chromatic++;
+  const coloured = pixels.filter(isChromatic);
+  const strong = coloured.filter((p) => chroma(p) >= STRONG);
+  const voters = strong.length >= Math.max(3, coloured.length * 0.1) ? strong : coloured;
+  const chromatic = coloured.length;
+  for (const p of voters) {
     if (skip && distance(p, skip) < NEAR) continue;
     const key = ((p[0] >> 4) << 8) | ((p[1] >> 4) << 4) | (p[2] >> 4);
     const e = bins.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
