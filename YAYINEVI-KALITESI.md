@@ -69,10 +69,41 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
   - İlk 5 sayfa yapı %53–78; s.9'daki taşmadan sonra eşleşme kayıyor.
   - **Asıl fark kelime sayısı:** kaynak sayfa 11–38 kelime, bizimki 72–201. Pre-A1 için yazar 5–10 kat fazla metin yazıyor; taşma ve küçük resimler buradan geliyor.
 
+**KIYAS-13 elle inceleme (2026-10-21):** kaynağın 10 sayfası ve üretilen 36 sayfa görüntüye çevrilip tek tek incelendi.
+- Puan ~35/100, basıma hazır değil:
+  - Dil 7/10
+  - Alıştırmalar 3/10
+  - Resimler 5/10
+  - Düzen 3/10
+  - Benzerlik 4/10
+  - Baskı 2/10
+- En ağır hata, öğrenci kitabında basılı ve yanlış cevaplar: "I'm Misty — the boy", "1 — two". Sebep: web'e ait `interactive` alanı PDF'e de basılıyordu.
+- Kaynak çözümleyici vektör çizimleri resim saymıyor: s.4 uçurtmalar, s.9 şarkı sahnesi. Bu yüzden bizim şarkı sayfası resimsiz kaldı. **Açık.**
+
+**İncelemeden sonra yapılanlar (AI maliyeti 0 $, KIYAS-13 yeniden dizilerek doğrulandı):**
+
+| | Ne | Commit |
+|---|---|---|
+| 1 | `interactive` yalnızca blokta başka içerik yoksa basılıyor; eşleştirme iki sütun. Basılı cevaplar ve ikilenen maddeler gitti. | `cc92b29` |
+| 2 | Aynı sayfada tekrarlanan alıştırma düşüyor (`dedupe-blocks.ts`). | `cc92b29` |
+| 3 | Madde içindeki emoji Twemoji resmi olarak çiziliyor, bozuk glif yok. | `cc92b29` |
+| 4 | Pre-A1/A1 öğrenci ve çalışma kitabında sözlük yerine "My words" kelime listesi; tanımlar öğretmen kitabında. | `cc92b29` |
+| 5 | Resim satırında %15'ten dar dilim plandan çıkıyor (kesik şerit). | `ae5d227` |
+| 6 | Yalnız sayı ya da renk adı olan maddeler renkli karo / kalem olarak basılıyor (PDF ve web). | `685242d` |
+| 7 | Kaynak sayfanın kelime sayısı kesin bütçe: `max(1,5×, +20)`, aşan sayfa yazara dönüyor. KIYAS-13'te 10 sayfanın 3'ü dönerdi. | `394c265` |
+| 8 | Resimli kaynak alıştırmada maddeler tek kelime olarak isteniyor (yazar talimatı). | `394c265` |
+| 9 | Ücretli modda resim başına 2 deneme; güvenlik reddinde çocuk ifadeleri ve referanslar çıkarılıp 1 deneme daha. | `c9bf184` |
+
+- KIYAS-13 yeniden dizimi: öğrenci kitabı 17 → 13 sayfa, çalışma kitabı 19 → 16 sayfa.
+- Fidelity: yapı %40 → %57, görünüm %59 → %60.
+- 7, 8 ve 9 canlı üretimle henüz doğrulanmadı.
+
 **Sıradaki:**
-1. Yazara kaynağın sayfa başı kelime sayısını sert sınır olarak vermek; aşanı kısaltmak.
-2. Görsel QA yeniden denemesine resim başına üst sınır koymak.
-3. Düzeltilmiş karakter seçimiyle bozuk görselleri stüdyodan tek tek yeniden üretmek.
+1. Canlı doğrulama run'ı: 1 ünite, ~3–4 $; Gateway'de 6 $ kaldı. Kullanıcı onayı gerekli.
+2. Çözümleyicinin vektör çizimleri resim olarak sayması (şarkı ve uçurtma sayfaları).
+3. Kaynağın sayfa unsurları: üst bant, daire içinde alıştırma numarası, alt konu etiketi.
+4. 220×280 mm sayfa boyutu migrasyonu (onayla) ve kapak tasarımı.
+5. Bozuk ya da eksik 7 görselin stüdyodan yeniden üretilmesi (onayla).
 
 **Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
 
