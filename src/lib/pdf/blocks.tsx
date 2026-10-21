@@ -29,6 +29,8 @@ export type Look = {
   compact?: boolean;
   /** Faz G3: empty height (pt) a render of this page left at its foot - see planZones. */
   zoneSlack?: number;
+  /** KIYAS-13: how far a zoned page's text grew into its leftover room - number cards grow with it. */
+  grow?: number;
   /** Glossary as a compact word list (terms only) - young learners' books, see GlossaryGrid. */
   wordList?: boolean;
   /** Listening exercise -> its audio track number (audioTrackMap). */
@@ -338,7 +340,7 @@ const TILE_COLORS = ["#f39c12", "#29a9e1", "#8cc63f", "#3c8d7a", "#ec6fa8", "#43
 // Number cards and coloured pencils for a bare number / colour-word list
 // (tileKind), the way the source prints them.
 function ItemTiles({ items, kind, look }: { items: string[]; kind: "numbers" | "colors"; look: Look }) {
-  const size = look.compact ? 34 : 44;
+  const size = look.compact ? 34 : Math.round(44 * (look.grow ?? 1));
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }} wrap={false}>
       {items.map((raw, k) => {

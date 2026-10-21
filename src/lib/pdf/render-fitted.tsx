@@ -53,7 +53,8 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
   // Faz G3: the height estimate keeps a margin, and a mirrored page that
   // ended well short of its foot had its pictures shrunk for nothing. Each
   // page's real slack is measured and the page laid out again with it -
-  // bigger pictures, up to the source's size; a page that then runs over
+  // bigger pictures, up to the source's size and past it (KIYAS-13), more
+  // text and space spread between blocks (planZones); a page that then runs over
   // goes back to its earlier layout.
   const plain = new Set(result.flattened);
   const tight = new Set(result.compacted);

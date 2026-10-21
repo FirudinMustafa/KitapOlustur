@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet, Svg, Path, Rect, Circle, Image } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Svg, Rect, Circle, Image } from "@react-pdf/renderer";
 import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schemas";
 import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument";
 import { encodeEan13 } from "@/lib/barcode/ean13";
@@ -15,6 +15,7 @@ import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/des
 import { DENSE_LINE, MAX_PICTURE_ASPECT, panelledExercises, resolvePageTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, centredFigure, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
+import { CoursebookCover } from "./CoursebookCover";
 import { TWEMOJI_CREDIT } from "@/lib/activities";
 import { applySourceType, type SourceType } from "@/lib/design/source-theme";
 import type { TopBand } from "@/lib/design/page-furniture";
@@ -102,20 +103,7 @@ const styles = StyleSheet.create({
 
   // Cover
   coverPage: { padding: 0 },
-  // Portrait cover image (1024x1536, see BOOK_PIPELINE_COVER_IMAGE_SIZE):
-  // the band takes 38% so the illustration gets real vertical room below.
-  coverBand: { height: "38%", justifyContent: "center", paddingHorizontal: 48, position: "relative", overflow: "hidden" },
-  coverDecoration: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   unitBadgeDecoration: { position: "absolute", top: -10, left: -10 },
-  coverKicker: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 11, color: "#ffffff", opacity: 0.85, letterSpacing: 2, marginBottom: 14 },
-  coverTitle: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 32, color: "#ffffff", lineHeight: 1.25, marginBottom: 14 },
-  coverSubtitle: { fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 16, color: "#ffffff", opacity: 0.92 },
-  coverFooter: { flex: 1, paddingHorizontal: 48, paddingTop: 28, flexDirection: "column", gap: 14 },
-  coverIllustrationWrap: { borderRadius: 10, overflow: "hidden", flex: 1 },
-  // height:"100%" with flex:1 on the wrap - without an explicit height,
-  // react-pdf sizes the Image to its own aspect ratio instead of filling.
-  coverIllustration: { width: "100%", height: "100%", objectFit: "cover" },
-  coverPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   // QA fix (2026-10-06): the image box has a fixed height and the image is
   // contained in it whole (letterboxed, never cropped).
   pageIllustrationWrap: {
@@ -137,16 +125,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   coverLogo: { width: "100%", height: "100%", objectFit: "contain" },
-  coverPill: {
-    fontFamily: NOTO_SANS,
-    fontWeight: 700,
-    fontSize: 9,
-    color: "#374151",
-    backgroundColor: "#f3f4f6",
-    borderRadius: 10,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-  },
 
   // Running header + unit opener
   runningHeader: { marginBottom: 10 },
@@ -420,6 +398,10 @@ export type CoverProps = {
   logoStyle: { top?: number; bottom?: number; left?: number; right?: number } | null;
   contentLanguage?: string;
   pageHeight: number;
+  /** Unset = a coursebook proportion of pageHeight. */
+  pageWidth?: number;
+  /** KIYAS-13: the source's measured colours as printed (sourceStyle.dominantColors) - the coursebook cover keeps them bright. */
+  brandColors?: string[];
 };
 
 function CoverLogo({ logoUrl, logoStyle }: Pick<CoverProps, "logoUrl" | "logoStyle">) {
@@ -489,37 +471,22 @@ export function CoverBody(props: CoverProps) {
     );
   }
 
+  // KIYAS-13: the default cover is set like a published coursebook's (see
+  // CoursebookCover) - it was a dark band over a framed picture.
   return (
     <>
-      <View style={[styles.coverBand, { backgroundColor: palette.primaryDark }]}>
-        <Svg viewBox="0 0 600 480" style={styles.coverDecoration}>
-          <Circle cx="540" cy="60" r="150" fill="#ffffff" opacity={0.06} />
-          <Circle cx="60" cy="440" r="120" fill="#ffffff" opacity={0.06} />
-          <Circle cx="500" cy="420" r="60" fill={palette.accent} opacity={0.18} />
-          <Path d="M0 340 L600 260 L600 480 L0 480 Z" fill="#ffffff" opacity={0.05} />
-          <Circle cx="80" cy="70" r="5" fill={palette.accent} opacity={0.8} />
-          <Circle cx="110" cy="95" r="3" fill="#ffffff" opacity={0.5} />
-          <Circle cx="60" cy="110" r="3" fill="#ffffff" opacity={0.5} />
-        </Svg>
-        <CoverLogo logoUrl={props.logoUrl} logoStyle={props.logoStyle} />
-        <Text style={styles.coverKicker}>{upperFor(level, contentLanguage)}</Text>
-        <Text style={styles.coverTitle}>{bookTitle}</Text>
-        <Text style={styles.coverSubtitle}>{variantLabel}</Text>
-      </View>
-      <View style={styles.coverFooter}>
-        {coverImageSrc && (
-          // Explicit height: with only flex:1 react-pdf sized the portrait
-          // image to its own aspect ratio and pushed the pill row onto a
-          // second, otherwise blank cover page.
-          <View style={{ borderRadius: 10, overflow: "hidden", height: props.pageHeight * 0.62 - 28 - 14 - 24 - 40 }}>
-            {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-            <Image src={coverImageSrc} style={styles.coverIllustration} />
-          </View>
-        )}
-        <View style={styles.coverPillRow}>
-          {unitCount > 0 && <Text style={styles.coverPill}>{unitCount === 1 ? "1 unit" : `${unitCount} units`}</Text>}
-        </View>
-      </View>
+      <CoursebookCover
+        bookTitle={bookTitle}
+        level={level}
+        variantLabel={variantLabel}
+        coverImageSrc={coverImageSrc}
+        look={look}
+        brandColors={props.brandColors}
+        upper={(text) => upperFor(text, contentLanguage)}
+        pageWidth={props.pageWidth ?? props.pageHeight * 0.75}
+        pageHeight={props.pageHeight}
+      />
+      <CoverLogo logoUrl={props.logoUrl} logoStyle={props.logoStyle} />
     </>
   );
 }
@@ -740,6 +707,8 @@ export function BookDocument({
           logoStyle={logoStyle}
           contentLanguage={contentLanguage}
           pageHeight={sheetSize.height}
+          pageWidth={sheetSize.width}
+          brandColors={sourceStyle?.dominantColors}
         />
       </Page>
       )}

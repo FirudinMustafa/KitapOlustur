@@ -1,6 +1,6 @@
 import { diagramHeight, type Diagram } from "@/lib/diagrams";
 import { activityHeight, type Activity } from "@/lib/activities";
-import { layoutZones, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
+import { PAGE_ASPECT, layoutZones, shapeAspect, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
 // Faz 1 "Tasarım sistemi": named page-layout templates. The writer model
 // picks one per page (generatedPageSchema.layoutTemplate) and every renderer
 // (BookDocument.tsx for PDF, PageContent.tsx for the web reader/Dizilim)
@@ -297,6 +297,77 @@ export const ZONE_GAP = 12;
 // still at 2:1), so a wider slot keeps the picture at this shape, centred.
 export const MAX_PICTURE_ASPECT = 1.6;
 
+// KIYAS-13: a picture grown past its source size (a page with measured
+// room left, see planZones) keeps most of what was drawn - its frame stays
+// at least this share of the drawn picture's shape, so object-fit "cover"
+// never crops more than a fifth of it away.
+const MIN_FRAME_SHARE = 0.8;
+// A split band's picture column never takes more of the width than this.
+const MAX_SPLIT_WIDTH = 0.55;
+
+// The frames of a zoned picture row at a picture scale, in pt: the row's
+// offset and width in the content area, its height and each picture's
+// frame width. Below 1 a row shrinks as a whole (Faz G2); above 1 it grows
+// toward the full content width and down the page (KIYAS-13: the source's
+// pictures take 70-90% of a page, ours a quarter), until a frame would crop
+// its picture deeper than MIN_FRAME_SHARE. Shared by the fit estimate and
+// the PDF renderer so they agree.
+export function zoneRowFrames(
+  band: { height: number; widths: number[]; left?: number; span?: number },
+  contentWidth: number,
+  pageHeight: number,
+  scale: number,
+): { left: number; width: number; height: number; frames: number[] } {
+  const sourceSpan = band.span ?? 1;
+  const gaps = ZONE_GAP * (band.widths.length - 1);
+  const base = band.height * pageHeight;
+  if (scale <= 1) {
+    const width = contentWidth * sourceSpan;
+    const height = Math.round(base * scale);
+    return { left: contentWidth * (band.left ?? 0), width, height, frames: band.widths.map((w) => Math.min((width - gaps) * w * scale, height * MAX_PICTURE_ASPECT)) };
+  }
+  // Wider, staying centred where the source's row is.
+  const span = Math.min(1, sourceSpan * scale);
+  const left = Math.min(Math.max(0, (band.left ?? 0) + (sourceSpan - span) / 2), 1 - span);
+  const width = contentWidth * span;
+  const slots = band.widths.map((w) => (width - gaps) * w);
+  const deepest = Math.min(...slots.map((s, k) => s / (MIN_FRAME_SHARE * shapeAspect((sourceSpan * band.widths[k] * PAGE_ASPECT) / band.height))));
+  const height = Math.round(Math.max(base, Math.min(base * scale, deepest)));
+  return { left: contentWidth * left, width, height, frames: slots.map((s) => Math.min(s, height * MAX_PICTURE_ASPECT)) };
+}
+
+// A split band's picture column (width, total height) at a picture scale.
+export function zoneSplitFrame(
+  band: { height: number; imageWidth: number },
+  pictures: number,
+  contentWidth: number,
+  pageHeight: number,
+  scale: number,
+): { width: number; height: number } {
+  const base = band.height * pageHeight;
+  if (scale <= 1) return { width: contentWidth * band.imageWidth * scale, height: Math.round(base * scale) };
+  const n = Math.max(1, pictures);
+  const width = contentWidth * Math.min(MAX_SPLIT_WIDTH, band.imageWidth * scale);
+  const deepest = (n * width) / (MIN_FRAME_SHARE * shapeAspect((band.imageWidth * PAGE_ASPECT) / (band.height / n))) + ZONE_GAP * (n - 1);
+  return { width, height: Math.round(Math.max(base, Math.min(base * scale, deepest))) };
+}
+
+// A picture inside a column band (width, height) at a picture scale.
+export function zoneColumnFrame(itemHeight: number, columnWidth: number, pageHeight: number, scale: number): { width: number; height: number } {
+  const base = itemHeight * pageHeight;
+  if (scale <= 1) return { width: columnWidth * scale, height: Math.round(base * scale) };
+  const deepest = columnWidth / (MIN_FRAME_SHARE * shapeAspect((0.48 * PAGE_ASPECT) / itemHeight));
+  return { width: columnWidth, height: Math.round(Math.max(base, Math.min(base * scale, deepest))) };
+}
+
+// Gaps on a zoned page that take a share of leftover height (planZones
+// `spread`): between bands, and between blocks of a one-column text area.
+export function zoneSpreadGaps<B>(bands: ZonedBand<B>[]): number {
+  let n = Math.max(0, bands.length - 1);
+  for (const b of bands) if ((b.kind === "text" && b.columns === 1) || b.kind === "split") n += Math.max(0, b.blocks.length - 1);
+  return n;
+}
+
 // The one place a zoned page is measured, shared by the fit estimate and
 // both renderers so they agree: the bands with their blocks, and how far the
 // pictures are scaled down (to at most half their source height) so the
@@ -311,7 +382,26 @@ export const MAX_PICTURE_ASPECT = 1.6;
 // `measuredSlack` (Faz G3): the empty height (pt) a render of this page
 // actually left at its foot. The estimate is then corrected by how much it
 // overstated the page - pictures had been shrunk to a third of the
-// source's size on pages that ended a sixth of a page short.
+// source's size on pages that ended a sixth of a page short. Picture frames
+// are exact, so the error is the text's: KIYAS-13 measures it as a factor on
+// the text estimate (a page's text was estimated at up to twice its printed
+// height), which still holds when the text is set at another size - an
+// absolute correction did not, and left pages short of growing.
+//
+// KIYAS-13: a page that has its pictures at full size and still room left
+// grows into it - pictures past the source's size (pictureScale above 1, see
+// zoneRowFrames), then the text (textScale above 1; further on a page with
+// no picture at all), and whatever is left is spread between the bands and
+// blocks (`spread`, pt per gap) instead of pooling at the foot.
+export type ZonePlanResult<B> = {
+  bands: ZonedBand<B>[];
+  pictureScale: number;
+  textScale: number;
+  contentHeight: number;
+  needed: number;
+  spread: number;
+};
+
 export function planZones<B extends BlockLike>(
   page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
   pictureCount: number,
@@ -319,17 +409,25 @@ export function planZones<B extends BlockLike>(
   m: PageMetrics,
   tight = false,
   measuredSlack = 0,
-): { bands: ZonedBand<B>[]; pictureScale: number; textScale: number; contentHeight: number; needed: number } {
+): ZonePlanResult<B> {
   const contentHeight = m.height - MARGIN_TOP - MARGIN_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0);
-  if (!page.zonePlan) return { bands: [], pictureScale: 1, textScale: 1, contentHeight, needed: Infinity };
+  if (!page.zonePlan) return { bands: [], pictureScale: 1, textScale: 1, contentHeight, needed: Infinity, spread: 0 };
   if (measuredSlack > 0) {
     const first = planZones(page, pictureCount, isUnitFirstPage, m, tight);
-    // What the page really used vs. what the estimate said it would.
-    const overstated = first.needed - (contentHeight - measuredSlack);
-    if (overstated > 0) return choosePlan(page, pictureCount, m, contentHeight, tight, overstated * 0.9);
-    return first;
+    // The text factor that makes the estimate match what the page really
+    // used, by bisection (the estimate grows with it).
+    const used = contentHeight - measuredSlack;
+    const { neededAt } = measureZones(page, pictureCount, m, contentHeight, first.textScale);
+    let [lo, hi] = [MIN_TEXT_FACTOR, MAX_TEXT_FACTOR];
+    for (let i = 0; i < 20; i++) {
+      const mid = (lo + hi) / 2;
+      if (neededAt(first.pictureScale, mid) > used) hi = mid;
+      else lo = mid;
+    }
+    // An overstatement is trusted to 95% (the measured slack already keeps a margin).
+    return choosePlan(page, pictureCount, m, contentHeight, tight, lo < 1 ? lo + (1 - lo) * 0.05 : lo, true);
   }
-  return choosePlan(page, pictureCount, m, contentHeight, tight, 0);
+  return choosePlan(page, pictureCount, m, contentHeight, tight, undefined, false);
 }
 
 // [textScale, pictureScale] in the order a full page gives way. KIYAS-11
@@ -343,26 +441,80 @@ const ZONE_STEPS: [number, number][] = [
 ];
 const TIGHT_STEPS: [number, number][] = [...ZONE_STEPS, [0.85, 0.4], [0.8, 0.4], [0.8, 0.3]];
 
+// Growth into measured room (KIYAS-13): pictures up to 3x the source's size
+// (their frames stop earlier, see zoneRowFrames), then text - a little on a
+// page with pictures, more on a page that has nothing else to fill it.
+const GROW_STEP = 0.1;
+const MAX_PICTURE_GROW = 3;
+const MAX_TEXT_GROW = 1.2;
+const MAX_TEXT_GROW_BARE = 1.5;
+// No more than this between two bands or blocks: a page with little on it
+// keeps its content together rather than scattering it.
+const MAX_SPREAD = 40;
+// Bounds of the measured text factor (planZones `measuredSlack`).
+const MIN_TEXT_FACTOR = 0.3;
+const MAX_TEXT_FACTOR = 3;
+
 function choosePlan<B extends BlockLike>(
   page: { blocks: B[]; glossary?: unknown[]; zonePlan?: ZonePlan | null },
   pictureCount: number,
   m: PageMetrics,
   contentHeight: number,
   tight: boolean,
-  correction: number,
-): { bands: ZonedBand<B>[]; pictureScale: number; textScale: number; contentHeight: number; needed: number } {
-  let last = { bands: [] as ZonedBand<B>[], pictureScale: 0.5, textScale: 0.9, contentHeight, needed: Infinity };
+  textFactor: number | undefined,
+  grow: boolean,
+): ZonePlanResult<B> {
+  let last: ZonePlanResult<B> = { bands: [], pictureScale: 0.5, textScale: 0.9, contentHeight, needed: Infinity, spread: 0 };
   const measured = new Map<number, ReturnType<typeof measureZones<B>>>();
-  for (const [textScale, scale] of tight ? TIGHT_STEPS : ZONE_STEPS) {
+  const at = (textScale: number) => {
     if (!measured.has(textScale)) measured.set(textScale, measureZones(page, pictureCount, m, contentHeight, textScale));
-    const { bands, neededAt } = measured.get(textScale)!;
-    const needed = neededAt(scale) - correction;
+    return measured.get(textScale)!;
+  };
+  for (const [textScale, scale] of tight ? TIGHT_STEPS : ZONE_STEPS) {
+    const { bands, neededAt } = at(textScale);
+    const needed = neededAt(scale, textFactor);
     // A tight page already ran over at a size the estimate accepted, so
     // it is held to a stricter estimate.
-    if (needed * (tight ? 1.15 : 1) <= contentHeight) return { bands, pictureScale: scale, textScale, contentHeight, needed };
-    last = { bands, pictureScale: scale, textScale, contentHeight, needed };
+    if (needed * (tight ? 1.15 : 1) <= contentHeight) {
+      const fit = { bands, pictureScale: scale, textScale, contentHeight, needed, spread: 0 };
+      return grow && scale >= 1 && textScale >= 1 ? growPlan(fit, at, textFactor) : fit;
+    }
+    last = { bands, pictureScale: scale, textScale, contentHeight, needed, spread: 0 };
   }
   return last;
+}
+
+function growPlan<B extends BlockLike>(
+  fit: ZonePlanResult<B>,
+  at: (textScale: number) => ReturnType<typeof measureZones<B>>,
+  textFactor: number | undefined,
+): ZonePlanResult<B> {
+  const { contentHeight } = fit;
+  const hasPictures = fit.bands.some((b) => b.kind === "pictures" || b.kind === "split" || (b.kind === "columns" && b.columns.flat().some((i) => i.kind === "picture")));
+  let best = fit;
+  const steps = (from: number, to: number) => Array.from({ length: Math.round((to - from) / GROW_STEP) }, (_, i) => Math.round((from + (i + 1) * GROW_STEP) * 100) / 100);
+  // What growing adds is taken from the estimate at no less than its own
+  // size: a measured factor below 1 fits the page as printed, but bigger
+  // text (or text beside a wider picture) wraps onto new lines the factor
+  // does not foresee - a KIYAS-13 opener ran over that way.
+  const k = Math.max(1, textFactor ?? 1);
+  const neededAt = (textScale: number, scale: number) => fit.needed + at(textScale).neededAt(scale, k) - at(1).neededAt(1, k);
+  if (hasPictures) {
+    for (const scale of steps(1, MAX_PICTURE_GROW)) {
+      const needed = neededAt(1, scale);
+      if (needed > contentHeight) break;
+      // only a step that actually makes a frame bigger
+      if (needed > best.needed + 0.5) best = { ...best, pictureScale: scale, needed };
+    }
+  }
+  for (const textScale of steps(1, hasPictures ? MAX_TEXT_GROW : MAX_TEXT_GROW_BARE)) {
+    const needed = neededAt(textScale, best.pictureScale);
+    if (needed > contentHeight) break;
+    best = { ...best, bands: at(textScale).bands, textScale, needed };
+  }
+  const gaps = zoneSpreadGaps(best.bands);
+  const spread = gaps ? Math.min(MAX_SPREAD, Math.max(0, contentHeight - best.needed) / gaps) : 0;
+  return { ...best, spread: Math.floor(spread) };
 }
 
 function measureZones<B extends BlockLike>(
@@ -377,16 +529,21 @@ function measureZones<B extends BlockLike>(
   const panels = panelledExercises(page.blocks);
   const height = (b: B, w: number) =>
     panels.has(b) ? estimateBlockHeight(b, w - 2 * PANEL_PAD, size, true) + 2 * PANEL_PAD : estimateBlockHeight(b, w, size, true);
-  const column = (blocks: B[], w: number) => blocks.reduce((n, b) => n + height(b, w), 0);
   const bands = layoutZones(page.zonePlan!, page.blocks, pictureCount, (b) => height(b, cw));
-  const neededAt = (scale: number) => {
-    let needed = glossaryHeight(page, 3);
+  // `measured`: the text factor a render measured (planZones
+  // `measuredSlack`) - every text height is taken at that many times its
+  // estimate, and as picture frames are exact no safety factor is added.
+  const neededAt = (scale: number, measured?: number) => {
+    const k = measured ?? 1;
+    const column = (blocks: B[], w: number) => blocks.reduce((n, b) => n + height(b, w), 0) * k;
+    let needed = glossaryHeight(page, 3) * k;
     for (const band of bands) {
-      if (band.kind === "pictures") needed += band.height * m.height * scale + ZONE_GAP;
+      if (band.kind === "pictures") needed += zoneRowFrames(band, cw, m.height, scale).height + ZONE_GAP;
       else if (band.kind === "split") {
         // the picture column narrows with the picture (Faz G2)
-        const textW = cw * (1 - band.imageWidth * scale) - ZONE_GAP;
-        needed += Math.max(band.height * m.height * scale, column(band.blocks, textW)) + ZONE_GAP;
+        const frame = zoneSplitFrame(band, band.pictures.length, cw, m.height, scale);
+        const textW = cw - frame.width - ZONE_GAP;
+        needed += Math.max(frame.height, column(band.blocks, textW)) + ZONE_GAP;
       } else if (band.columns === 2) {
         const col = (cw - 16) / 2;
         const heights = band.blocks.map((b) => height(b, col));
@@ -397,16 +554,16 @@ function measureZones<B extends BlockLike>(
           if (left < total / 2) left += h;
           else right += h;
         }
-        needed += Math.max(left, right) + ZONE_GAP;
+        needed += Math.max(left, right) * k + ZONE_GAP;
       } else if (band.kind === "columns") {
         const col = (cw - 16) / 2;
         const heights = band.columns.map((items) =>
-          items.reduce((n, i) => n + (i.kind === "picture" ? i.height * m.height * scale : column(i.blocks, col)) + ZONE_GAP, 0),
+          items.reduce((n, i) => n + (i.kind === "picture" ? zoneColumnFrame(i.height, col, m.height, scale).height : column(i.blocks, col)) + ZONE_GAP, 0),
         );
         needed += Math.max(...heights);
       } else needed += column(band.blocks, cw) + ZONE_GAP;
     }
-    return needed * (TEMPLATE_SAFETY["source-zones"] ?? 1);
+    return measured === undefined ? needed * (TEMPLATE_SAFETY["source-zones"] ?? 1) : needed;
   };
   return { bands, neededAt };
 }
