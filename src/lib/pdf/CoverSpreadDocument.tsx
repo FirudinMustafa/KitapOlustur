@@ -152,6 +152,8 @@ export function CoverSpreadDocument(props: CoverSpreadProps) {
             logoStyle={sourceStyle?.logoUrl ? { top: 24 + BLEED_PT, right: 24 + BLEED_PT } : null}
             contentLanguage={contentLanguage}
             pageHeight={height}
+            pageWidth={width - frontLeft}
+            brandColors={sourceStyle?.dominantColors}
           />
         </View>
       </Page>
