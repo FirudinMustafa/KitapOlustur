@@ -60,12 +60,29 @@ export type StextBlock =
   | { type: "text"; bbox: Box; lines: StextLine[] };
 // rasterImages: picture boxes found in a rendering of the page (fractions,
 // see rasterPictureBoxes) - for pages whose artwork is flattened into one
-// page-sized image.
-export type StextPage = { width: number; height: number; blocks: StextBlock[]; rasterImages?: Box[] };
+// page-sized image. vectorPaths: the page's filled and stroked shapes (see
+// vectorPictureBoxes) - for artwork drawn as vectors, not stored as images.
+export type StextPage = { width: number; height: number; blocks: StextBlock[]; rasterImages?: Box[]; vectorPaths?: VectorPath[] };
 
 const BACKGROUND_AREA = 0.6; // an image covering more than this is the page background
 const STRIP_FRACTION = 0.06; // thinner than this (of the page side) is a strip, rule or icon bar
 const ICON_AREA = 0.004; // smaller than this is an icon or bullet
+
+// An image covering most of the page is its background - unless it sits
+// inside the margins on all four sides: that is a big framed picture.
+// Super Minds p.12 (2026-10-21): a classroom illustration inset in the
+// margins (66% of the page) was dropped as a background, the rendering
+// found no busy cells in its soft painted shading, and the page counted no
+// picture at all.
+const INSET_MARGIN = 0.02;
+function isBackground(b: Box): boolean {
+  if (b.w * b.h <= BACKGROUND_AREA) return false;
+  // (mupdf reports some degenerate image boxes with both sides negative;
+  // those stay backgrounds, as before.)
+  const inset =
+    b.w > 0 && b.h > 0 && b.x >= INSET_MARGIN && b.y >= INSET_MARGIN && b.x + b.w <= 1 - INSET_MARGIN && b.y + b.h <= 1 - INSET_MARGIN;
+  return !inset;
+}
 
 // A full-width band glued to the top or bottom edge is a running header /
 // footer graphic, not a picture.
@@ -81,16 +98,18 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
     return { x, y, w: Math.min(b.w / W, 1 - x), h: Math.min(b.h / H, 1 - y) };
   };
 
-  const images = dedupeNested(
+  const rasters = dedupeNested(
     page.blocks
       .filter((b): b is Extract<StextBlock, { type: "image" }> => b.type === "image")
       .map((b) => norm(b.bbox))
-      .filter((b) => b.w * b.h <= BACKGROUND_AREA)
+      .filter((b) => !isBackground(b))
       // A rendered region may cover most of the page: an edge-to-edge
       // illustration (comic panels with no gutter) is one big picture.
       .concat(page.rasterImages ?? [])
       .filter((b) => b.w >= STRIP_FRACTION && b.h >= STRIP_FRACTION && b.w * b.h >= ICON_AREA && !isEdgeBand(b)),
-  ).sort((a, b) => (Math.abs(a.y - b.y) < 0.05 ? a.x - b.x : a.y - b.y));
+  );
+  const vectors = page.vectorPaths ? vectorPictureBoxes(page.vectorPaths, page, rasters) : [];
+  const images = [...rasters, ...vectors].sort((a, b) => (Math.abs(a.y - b.y) < 0.05 ? a.x - b.x : a.y - b.y));
 
   const textBlocks = page.blocks.filter((b): b is Extract<StextBlock, { type: "text" }> => b.type === "text");
   // Text drawn several times in one place (an outlined or shadowed title -
@@ -322,7 +341,9 @@ export function designColors(raster: Raster, pictures: Box[], max = 8): DesignCo
 // pages counted 0 pictures. Such a page is rendered and its pictures found
 // from the pixels instead.
 export function hasBackgroundImage(page: StextPage): boolean {
-  return page.blocks.some((b) => b.type === "image" && (b.bbox.w * b.bbox.h) / (page.width * page.height) > BACKGROUND_AREA);
+  return page.blocks.some(
+    (b) => b.type === "image" && isBackground({ x: b.bbox.x / page.width, y: b.bbox.y / page.height, w: b.bbox.w / page.width, h: b.bbox.h / page.height }),
+  );
 }
 
 export type Raster = { width: number; height: number; channels: number; data: ArrayLike<number> };
@@ -441,6 +462,206 @@ function xyCut(
   let filled = 0;
   for (let r = r0; r <= r1; r++) filled += rowFill(r);
   leaf(r0, r1, c0, c1, filled);
+}
+
+// Artwork drawn as vector shapes, not stored as an image: Super Minds p.7
+// (ten kites, ten number tiles) and p.6 (six pencils) are paths, so the
+// image blocks above saw nothing and the writer was told "pictures: 0".
+// box is a fraction of the page, clipped to what is visible; paper marks a
+// shape painted in the paper colour (white knock-outs, invisible in print);
+// plain a single straight segment or an axis-aligned rectangle - a rule,
+// frame side, table cell, panel, band or answer box, never artwork
+// (i_5_team_2 p.4: the contents table's empty cells joined into a
+// "picture"; kids-box p.10: the sides of two dashed drawing frames).
+export type VectorPath = { box: Box; paper?: boolean; plain?: boolean };
+
+// A path given as its points (null = a curve segment) is plain: one
+// straight segment, or four or five points with no curves and every edge
+// horizontal or vertical.
+export function isPlainShape(points: ([number, number] | null)[]): boolean {
+  if (points.includes(null)) return false;
+  if (points.length === 2) return true;
+  if (points.length < 4 || points.length > 5) return false;
+  const pts = points as [number, number][];
+  const eps = 0.01;
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[(i + 1) % pts.length];
+    if (Math.abs(ax - bx) > eps && Math.abs(ay - by) > eps) return false;
+  }
+  return true;
+}
+
+const VECTOR_LINE = 0.004; // thinner than this (of the page side) is a rule or answer line
+const CONTAINER_AREA = 0.06; // one shape bigger than this is a panel, frame or tint, not artwork
+const FOLIO_BAND = 0.06; // shapes wholly inside the top/bottom band are running header/footer graphics
+const PANEL_WORDS = 3; // a shape with this many words on it is a text panel or word box
+const OBJECT_GAP = 0.012; // shapes closer than this are pieces of one drawing
+const MIN_PATHS = 3; // a lone drawing has this many shapes; fewer is a badge, card or swatch
+const ROW_ITEMS = 4; // this many drawings side by side are one picture strip (a row of kites)
+const STACK_GAP = 0.04; // strips closer than this, one above the other, are one picture band
+const MAX_TEXT_SHARE = 0.3; // a region this much covered by text is a table or panel
+
+// Picture boxes from a page's vector shapes. Shapes that cannot be artwork
+// are dropped first (rules, rectangles, panels, header/footer graphics,
+// white knock-outs, frames around raster pictures, badges behind numbers,
+// boxes holding text); the rest are joined into drawings by proximity. A drawing
+// of several shapes is a picture; drawings in a row of ROW_ITEMS or more
+// become one strip, and stacked strips one band - the zone plan keeps six
+// pictures at most, and ten kites are one picture area, not ten. Every box
+// then passes the raster pictures' size, fill and edge-band filters.
+export function vectorPictureBoxes(paths: VectorPath[], page: Pick<StextPage, "width" | "height" | "blocks">, rasters: Box[] = []): Box[] {
+  const { width: W, height: H } = page;
+  const lines = page.blocks
+    .filter((b): b is Extract<StextBlock, { type: "text" }> => b.type === "text")
+    .flatMap((b) =>
+      b.lines.map((l) => {
+        const bb = l.bbox ?? b.bbox;
+        return { box: { x: bb.x / W, y: bb.y / H, w: bb.w / W, h: bb.h / H }, words: l.text.split(/\s+/).filter(Boolean).length };
+      }),
+    );
+  const wordsIn = (b: Box) => lines.reduce((n, l) => (centreIn(l.box, b) ? n + l.words : n), 0);
+  const area = (b: Box) => b.w * b.h;
+
+  const shapes = paths
+    .filter((p) => !p.paper && !p.plain)
+    .map((p) => p.box)
+    .filter(
+      (b) =>
+        Math.min(b.w, b.h) >= VECTOR_LINE &&
+        area(b) <= CONTAINER_AREA &&
+        b.y + b.h > FOLIO_BAND &&
+        b.y < 1 - FOLIO_BAND &&
+        !rasters.some((r) => centreIn(b, r)) &&
+        !(area(b) < ICON_AREA && lines.some((l) => overlap(l.box, b) > 0)) &&
+        wordsIn(b) < PANEL_WORDS,
+    );
+  const worded = new Set(shapes.filter((b) => wordsIn(b) > 0));
+
+  // A drawing whose shapes mostly carry words is a table or a set of word
+  // cards (cells joined edge to edge), not artwork; a kite carries its
+  // number on one shape of several.
+  const objects = groupNear(shapes, OBJECT_GAP).filter((o) => {
+    if (area(o.box) < ICON_AREA) return false;
+    if (o.members.filter((m) => worded.has(m)).length * 2 >= o.members.length && wordsIn(o.box) > 0) return false;
+    return o.members.length >= MIN_PATHS || wordsIn(o.box) === 0;
+  });
+
+  // Rows by vertical overlap, as the zone plan groups pictures.
+  const rows: Drawing[][] = [];
+  for (const o of [...objects].sort((a, b) => a.box.y - b.box.y)) {
+    const row = rows.find((r) => r.some((m) => verticalOverlap(m.box, o.box) >= 0.4 * Math.min(m.box.h, o.box.h)));
+    if (row) row.push(o);
+    else rows.push([o]);
+  }
+  const strips: Drawing[] = [];
+  const singles: Drawing[] = [];
+  for (const row of rows) {
+    if (row.length >= ROW_ITEMS) strips.push(mergeDrawings(row));
+    else singles.push(...row.filter((o) => o.members.length >= MIN_PATHS));
+  }
+  // Stacked strips (two rows of five kites) are one band.
+  strips.sort((a, b) => a.box.y - b.box.y);
+  for (let i = 0; i + 1 < strips.length; ) {
+    const a = strips[i].box;
+    const b = strips[i + 1].box;
+    const gap = b.y - (a.y + a.h);
+    const shared = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    if (gap <= STACK_GAP && shared >= 0.6 * Math.min(a.w, b.w)) strips.splice(i, 2, mergeDrawings([strips[i], strips[i + 1]]));
+    else i++;
+  }
+
+  const textShare = (b: Box) => lines.reduce((s, l) => s + overlap(l.box, b), 0) / area(b);
+  const pictures = [...strips, ...singles]
+    .filter(({ box, members }) => {
+      if (area(box) < RASTER_MIN_AREA || box.w < RASTER_MIN_SIDE || box.h < RASTER_MIN_SIDE) return false;
+      if (isEdgeBand(box) || isBackground(box) || isEdgeCorner(box)) return false;
+      if (rasters.some((r) => overlap(r, box) >= 0.3 * Math.min(area(r), area(box)))) return false;
+      return coverage(box, members) >= MIN_FILL && textShare(box) < MAX_TEXT_SHARE;
+    })
+    .map((d) => d.box);
+  return dedupeNested(pictures);
+}
+
+type Drawing = { box: Box; members: Box[] };
+
+// Vector shapes bleeding off the top or bottom edge within the header or
+// footer depth are a unit tab or corner ornament (i_5_team_2 pp.6/10/14:
+// puzzle pieces in the top corner; p.18: the "1d Skills work" tab).
+const EDGE_GRAPHIC_DEPTH = 0.15;
+function isEdgeCorner(b: Box): boolean {
+  return (b.y <= 0.01 && b.y + b.h <= EDGE_GRAPHIC_DEPTH) || (b.y + b.h >= 0.99 && b.y >= 1 - EDGE_GRAPHIC_DEPTH);
+}
+
+function centreIn(inner: Box, outer: Box): boolean {
+  const cx = inner.x + inner.w / 2;
+  const cy = inner.y + inner.h / 2;
+  return cx >= outer.x && cx <= outer.x + outer.w && cy >= outer.y && cy <= outer.y + outer.h;
+}
+
+function verticalOverlap(a: Box, b: Box): number {
+  return Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+}
+
+function union(boxes: Box[]): Box {
+  const x0 = Math.min(...boxes.map((b) => b.x));
+  const y0 = Math.min(...boxes.map((b) => b.y));
+  const x1 = Math.max(...boxes.map((b) => b.x + b.w));
+  const y1 = Math.max(...boxes.map((b) => b.y + b.h));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+function mergeDrawings(ds: Drawing[]): Drawing {
+  return { box: union(ds.map((d) => d.box)), members: ds.flatMap((d) => d.members) };
+}
+
+// Boxes no further apart than `gap` (on both axes) end up in one group -
+// union-find over a coarse bucket grid, so an illustration of thousands of
+// shapes stays fast.
+export function groupNear(boxes: Box[], gap: number): Drawing[] {
+  const parent = boxes.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const near = (a: Box, b: Box) =>
+    a.x - gap <= b.x + b.w && b.x - gap <= a.x + a.w && a.y - gap <= b.y + b.h && b.y - gap <= a.y + a.h;
+  const BUCKET = 0.05;
+  const buckets = new Map<number, number[]>();
+  boxes.forEach((b, i) => {
+    const c0 = Math.floor((b.x - gap) / BUCKET);
+    const c1 = Math.floor((b.x + b.w + gap) / BUCKET);
+    const r0 = Math.floor((b.y - gap) / BUCKET);
+    const r1 = Math.floor((b.y + b.h + gap) / BUCKET);
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const key = (r + 100) * 1000 + (c + 100);
+        const list = buckets.get(key) ?? [];
+        for (const j of list) if (find(i) !== find(j) && near(b, boxes[j])) parent[find(i)] = find(j);
+        list.push(i);
+        buckets.set(key, list);
+      }
+    }
+  });
+  const groups = new Map<number, Box[]>();
+  boxes.forEach((b, i) => {
+    const root = find(i);
+    groups.set(root, [...(groups.get(root) ?? []), b]);
+  });
+  return [...groups.values()].map((members) => ({ box: union(members), members }));
+}
+
+// Share of a box's grid cells (CELL of the page) that its shapes cover -
+// a ring of ornaments around an empty frame is not a picture.
+function coverage(box: Box, members: Box[]): number {
+  const cols = Math.max(1, Math.round(box.w / CELL));
+  const rows = Math.max(1, Math.round(box.h / CELL));
+  const hit = new Uint8Array(cols * rows);
+  for (const m of members) {
+    const c0 = Math.max(0, Math.floor(((m.x - box.x) / box.w) * cols));
+    const c1 = Math.min(cols - 1, Math.ceil(((m.x + m.w - box.x) / box.w) * cols) - 1);
+    const r0 = Math.max(0, Math.floor(((m.y - box.y) / box.h) * rows));
+    const r1 = Math.min(rows - 1, Math.ceil(((m.y + m.h - box.y) / box.h) * rows) - 1);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) hit[r * cols + c] = 1;
+  }
+  return hit.reduce((s, v) => s + v, 0) / hit.length;
 }
 
 // Drops a box that lies (mostly) inside a bigger one - a framed picture is

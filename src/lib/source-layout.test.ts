@@ -3,12 +3,17 @@ import {
   analyzeStextPage,
   dominantTrim,
   furnitureKeys,
+  groupNear,
   hasBackgroundImage,
   isListeningRubric,
+  isPlainShape,
   rasterPictureBoxes,
   stripFurniture,
+  vectorPictureBoxes,
   type Raster,
+  type StextBlock,
   type StextPage,
+  type VectorPath,
 } from "./source-layout";
 
 const W = 600;
@@ -232,5 +237,118 @@ describe("page furniture (2026-10-21)", () => {
 
   it("needs at least three pages to call something furniture", () => {
     expect(furnitureKeys(pages.slice(0, 2)).size).toBe(0);
+  });
+});
+
+describe("big inset images", () => {
+  it("keeps a picture inside the margins as a picture even when it covers most of the page", () => {
+    const inset = image(35, 85, 530, 600); // 66% of the page, margins on all sides
+    expect(hasBackgroundImage({ width: W, height: H, blocks: [inset] })).toBe(false);
+    const layout = analyzeStextPage({ width: W, height: H, blocks: [inset] });
+    expect(layout.images).toHaveLength(1);
+    expect(layout.zone).toBe("full_width_image");
+    // Bleeding off an edge it is still the background.
+    expect(hasBackgroundImage({ width: W, height: H, blocks: [image(0, 85, 600, 600)] })).toBe(true);
+  });
+
+  it("treats a degenerate box with both sides negative as a background, as before", () => {
+    expect(hasBackgroundImage({ width: W, height: H, blocks: [image(300000, 200000, -600000, -500000)] })).toBe(true);
+  });
+});
+
+describe("isPlainShape", () => {
+  it("flags rules and axis-aligned rectangles only", () => {
+    expect(isPlainShape([[0, 0], [100, 0]])).toBe(true);
+    expect(isPlainShape([[0, 0], [100, 0], [100, 50], [0, 50]])).toBe(true);
+    expect(isPlainShape([[0, 0], [100, 0], [100, 50], [0, 50], [0, 0]])).toBe(true);
+    expect(isPlainShape([[0, 0], [100, 20], [80, 70], [-20, 50]])).toBe(false); // tilted
+    expect(isPlainShape([[0, 0], null, [100, 50], [0, 50]])).toBe(false); // has a curve
+    expect(isPlainShape([[0, 0], [50, 0], [60, 10], [60, 50], [0, 50], [0, 10]])).toBe(false);
+  });
+});
+
+describe("groupNear", () => {
+  it("joins boxes within the gap and keeps distant ones apart", () => {
+    const groups = groupNear(
+      [
+        { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
+        { x: 0.205, y: 0.1, w: 0.1, h: 0.1 }, // 0.005 away
+        { x: 0.5, y: 0.5, w: 0.1, h: 0.1 },
+      ],
+      0.01,
+    );
+    expect(groups).toHaveLength(2);
+    const pair = groups.find((g) => g.members.length === 2)!;
+    expect(pair.box.x).toBeCloseTo(0.1);
+    expect(pair.box.w).toBeCloseTo(0.205);
+  });
+});
+
+describe("vectorPictureBoxes (artwork drawn as paths)", () => {
+  const page = (blocks: StextBlock[] = []) => ({ width: W, height: H, blocks });
+  // A kite: body, tail, bow - three shapes touching.
+  const kite = (x: number, y: number): VectorPath[] => [
+    { box: { x, y, w: 0.14, h: 0.16 } },
+    { box: { x: x + 0.06, y: y + 0.16, w: 0.03, h: 0.06 } },
+    { box: { x: x + 0.05, y: y + 0.21, w: 0.05, h: 0.02 } },
+  ];
+  // A scene of many small overlapping shapes.
+  const scene = (x: number, y: number, w: number, h: number): VectorPath[] => {
+    const out: VectorPath[] = [];
+    for (let i = 0; i < 10; i++) for (let j = 0; j < 10; j++) out.push({ box: { x: x + (i * w) / 10, y: y + (j * h) / 10, w: w / 8, h: h / 8 } });
+    return out;
+  };
+
+  it("finds a drawing made of several shapes", () => {
+    const boxes = vectorPictureBoxes(scene(0.1, 0.3, 0.5, 0.4), page());
+    expect(boxes).toHaveLength(1);
+    expect(near(boxes[0].x, 0.1) && near(boxes[0].y, 0.3) && near(boxes[0].w, 0.5)).toBe(true);
+  });
+
+  it("makes two rows of five kites one picture band", () => {
+    const paths = [0, 1].flatMap((r) => [0, 1, 2, 3, 4].flatMap((c) => kite(0.09 + c * 0.17, 0.11 + r * 0.25)));
+    const boxes = vectorPictureBoxes(paths, page());
+    expect(boxes).toHaveLength(1);
+    expect(near(boxes[0].x, 0.09) && near(boxes[0].y, 0.11) && near(boxes[0].h, 0.48)).toBe(true);
+  });
+
+  it("keeps three kites in a row as three pictures", () => {
+    expect(vectorPictureBoxes([0, 1, 2].flatMap((c) => kite(0.1 + c * 0.3, 0.3)), page())).toHaveLength(3);
+  });
+
+  it("ignores rules, rectangles, white knock-outs, panels and header graphics", () => {
+    const paths: VectorPath[] = [
+      ...scene(0.1, 0.3, 0.5, 0.4).map((p) => ({ ...p, paper: true })),
+      ...scene(0.1, 0.3, 0.5, 0.4).map((p) => ({ ...p, plain: true })),
+      { box: { x: 0.05, y: 0.1, w: 0.9, h: 0.5 } }, // one big tinted panel
+      ...scene(0.3, 0, 0.5, 0.05), // header ornaments
+      ...scene(0, 0, 0.2, 0.13), // corner ornament bleeding off the top
+      ...Array.from({ length: 20 }, (_, i) => ({ box: { x: 0.1, y: 0.4 + i * 0.02, w: 0.8, h: 0.002 } })), // answer lines
+    ];
+    expect(vectorPictureBoxes(paths, page())).toEqual([]);
+  });
+
+  it("ignores table cells and word cards", () => {
+    // A 4x4 grid of cells edge to edge, each holding a word.
+    const cells: VectorPath[] = [];
+    const blocks: StextBlock[] = [];
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 4; c++) {
+        cells.push({ box: { x: 0.1 + c * 0.2, y: 0.3 + r * 0.05, w: 0.2, h: 0.05 } });
+        blocks.push(text((0.15 + c * 0.2) * W, (0.31 + r * 0.05) * H, 60, [line("word", 10)]));
+      }
+    }
+    expect(vectorPictureBoxes(cells, page(blocks))).toEqual([]);
+  });
+
+  it("leaves raster pictures alone: frames and overlays on them are not new pictures", () => {
+    expect(vectorPictureBoxes(scene(0.1, 0.3, 0.5, 0.4), page(), [{ x: 0.1, y: 0.3, w: 0.5, h: 0.4 }])).toEqual([]);
+  });
+
+  it("adds vector pictures to analyzeStextPage's images; a text-only page keeps zero", () => {
+    const layout = analyzeStextPage({ ...page([text(40, 40, 400, [line(words(6), 12)])]), vectorPaths: scene(0.1, 0.15, 0.8, 0.4) });
+    expect(layout.images).toHaveLength(1);
+    expect(layout.zone).toBe("image_top_text_bottom");
+    expect(analyzeStextPage({ ...page([text(40, 40, 400, [line(words(60), 12)])]), vectorPaths: [] }).images).toEqual([]);
   });
 });
