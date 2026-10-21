@@ -31,6 +31,7 @@ export const MAX_ZONE_PICTURES = 6;
 
 const ROW_OVERLAP = 0.4; // vertical overlap (of the smaller box) that puts two pictures in one row
 const MIN_TEXT_GAP = 0.06; // a vertical gap smaller than this between pictures carries no text band
+const MIN_ROW_SHARE = 0.15; // a picture narrower than this share of its row is a sliver, not a frame
 
 type Box = SourcePageLayout["images"][number];
 
@@ -66,7 +67,16 @@ export function buildZonePlan(layout: SourcePageLayout): ZonePlan | null {
   const pushText = (from: number, to: number) => {
     if (to - from >= MIN_TEXT_GAP) bands.push({ kind: "text", columns, weight: to - from });
   };
-  for (const row of rows.map((r) => r.sort((a, b) => a.x - b.x))) {
+  // A sliver beside a big picture (KIYAS-13 s.12: a door/locker edge the
+  // analyzer measured as its own image, under a tenth of the row) gives a
+  // frame too narrow for any picture - the book printed a cut-off strip at
+  // the page edge. It is left out; the row's other pictures take its width.
+  const wideEnough = (row: Box[]) => {
+    const total = row.reduce((n, b) => n + b.w, 0);
+    const kept = row.filter((b) => b.w / total >= MIN_ROW_SHARE);
+    return kept.length ? kept : row;
+  };
+  for (const row of rows.map((r) => wideEnough(r.sort((a, b) => a.x - b.x)))) {
     const top = Math.min(...row.map((b) => b.y));
     const bottom = Math.max(...row.map((b) => b.y + b.h));
     const left = Math.min(...row.map((b) => b.x));
