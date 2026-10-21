@@ -1,7 +1,62 @@
 # Yayınevi Kalitesinde Çıktı — Canlı Takip
 
 > **Amaç:** İnternetten bulunan bir Workbook / Student Book PDF'ini sisteme yüklediğimizde, yayınevi kalitesinde **benzer** (birebir kopya değil, özgün) bir kitap almak.
-> Bu dosya her çalışma adımında güncellenir. Son güncelleme: **2026-10-18**. Branch: `redesign/ui`.
+> Bu dosya her çalışma adımında güncellenir. Son güncelleme: **2026-10-21**. Branch: `redesign/ui`.
+
+---
+
+## 0. Faz P — ücretli modlar, dinleme, CEFR (2026-10-21)
+
+Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: `4174ae6`.
+
+**Modeller (Gateway, fiyatlar canlı katalogdan):**
+
+| Rol | Model |
+|---|---|
+| Yazar, kalite kontrol, görsel inceleme | `anthropic/claude-sonnet-5.5` (2 $ / 10 $ per M) |
+| Taslak metin | `google/gemini-3.5-flash-lite` |
+| Resim | `openai/gpt-image-2.5-flare` (iç sayfa medium, kapak high) |
+| Ses | `openai/tts-1-hd` |
+
+**Harcama sınırı:**
+- Metin maliyeti de `cost_usage.text`'e yazılıyor.
+- Resim maliyeti modelin bildirdiği token'dan hesaplanıyor.
+- Toplam `RUN_COST_CAP_USD`'yi (varsayılan 6 $) geçince run durduruluyor.
+- `scripts/gateway-spike.mts` her modeli birer çağrıyla deniyor.
+
+**Kaynak analizi:**
+- Sayfaların çoğunda üst/alt bantta tekrarlanan satırlar (filigran, sayfa başlığı) ölçüme ve kaynak metne girmiyor.
+- Alıştırma başlığındaki ses parça numarası ("1 03 Listen and point") okunuyor; dinleme alıştırmaları sayılıyor.
+- Resim üstündeki numaralar ve iki kez basılmış yazı artık alıştırma sayılmıyor.
+- `i_5_team_2.pdf` ölçümü değişmedi.
+
+**Dinleme:**
+- Yazara sayfa başına dinleme alıştırması sayısı gidiyor.
+- `fillMissingListeningScripts` eksik ses metinlerini yazıyor.
+- Parçalar kitap boyunca numaralanıyor: alıştırmanın yanında kulaklık + "01" rozeti.
+- Öğretmen kitabı ve çalışma kitabının sonunda "Audio Scripts" sayfası var.
+
+**CEFR:**
+- CEFR-J Wordlist 1.5 (Tono Lab, TUFS; ticari kullanım atıfla serbest), basit kök bulma ile kullanılıyor.
+- Seviye incelemesi, seviye üstü kelime oranı kaynağın oranını +5 puandan fazla aşan üniteyi geri gönderiyor ve kelimeleri listeliyor.
+- CEFR-J tabanlı dilbilgisi listesi yazara ve incelemeye gidiyor.
+- Kaynakların seviye üstü kelime oranı: Super Minds Starter (A1) %6,9, Kid's Box 1 AB (A1) %15,9, i5 Team 2 (A2) %6,2.
+
+**Doğrulama:**
+- tsc temiz; vitest 71 dosya / 433 test geçti.
+- KIYAS-11 yeniden dizimi: yapı %84, görünüm %56 (önce %83 / %56). Gerileme yok.
+- Rozet ve "Audio Scripts" sayfası örnek metinle render edilip görüldü.
+
+**Test kaynağı (KIYAS-13):** Cambridge *Super Minds Starter Student's Book* örnek ünitesi, 10 sayfa.
+- Kaynak: https://assets.cambridge.org/97811089/25402/excerpt/9781108925402_excerpt.pdf
+- Filigran bandı kırpıldı (CropBox 620×782 pt = kitabın gerçek sayfası): `.spike/super-minds-starter-sb-cropped.pdf`.
+- Yedek test: Kid's Box Level 1 Activity Book, `.spike/kids-box-1-ab-cropped.pdf`.
+
+**Bekleyen:** `.env.local` içine `AI_GATEWAY_API_KEY` ve Gateway kredisi. Spike (2026-10-21) "Unauthenticated request to AI Gateway" ile durdu.
+
+**Yapılmadı:**
+- Web okuyucuda parça rozeti.
+- Resim üretilemeyince "look at the picture" atfının düzeltilmesi (ücretli resimde nadir olmalı).
 
 ---
 
