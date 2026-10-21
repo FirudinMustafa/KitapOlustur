@@ -1,5 +1,6 @@
 import type { DesignColor, SourcePageLayout } from "@/lib/source-layout";
 import type { DesignTheme, FontRole } from "@/lib/design/themes";
+import { deriveFurniture, type PageFurniture } from "@/lib/design/page-furniture";
 
 // Faz G1 "Kaynağın görünümü": the source book's own colours and type,
 // measured (src/lib/source-layout.ts) instead of guessed. The page-map model
@@ -20,6 +21,10 @@ export type SourceTheme = {
   // Body text size as a share of the page height, so it carries over to the
   // trim size the book is printed at (bodySizeFor).
   bodySizeRatio: number | null;
+  // The page furniture most pages print (top band, number badge, track
+  // pill) - src/lib/design/page-furniture.ts. Optional: absent when the
+  // source shows none, or its page map predates the measurement.
+  furniture?: PageFurniture | null;
 };
 
 // Body size in pt for a page of this height, kept readable.
@@ -121,15 +126,18 @@ export function deriveSourceTheme(layouts: (SourcePageLayout | null | undefined)
   const sizes = measured.flatMap(({ l }) => (l.bodyFontPt ? [l.bodyFontPt / l.heightPt] : []));
   const ratio = mostCommon(sizes.map((s) => Math.round(s * 4000) / 4000));
 
+  const furniture = deriveFurniture(measured.map(({ l }) => l));
+
   return {
     colors,
     bodyFont,
     headingFont,
     bodySizeRatio: ratio,
+    ...(furniture ? { furniture } : {}),
   };
 }
 
-export type SourceType = Pick<SourceTheme, "headingFont" | "bodyFont" | "bodySizeRatio">;
+export type SourceType = Pick<SourceTheme, "headingFont" | "bodyFont" | "bodySizeRatio" | "furniture">;
 
 // The chosen theme with the source's typefaces and body size - the
 // theme's cards, radius and cover stay; the type is the source's.

@@ -10,9 +10,11 @@ import {
   type StextBlock,
   type VectorPath,
 } from "@/lib/source-layout";
+import { measureNumberMarks, measureTopBand } from "@/lib/design/page-furniture";
 
 const RASTER_WIDTH_PX = 600; // enough to see a gutter between comic panels
 const COLOUR_WIDTH_PX = 120; // design colours need no detail (Faz G1)
+const FURNITURE_WIDTH_PX = 500; // a 2 mm band, and enough strong pixels in a thin coloured exercise numeral
 
 // Kept apart from source-layout.ts on purpose: the workflow bundle (CJS)
 // cannot contain mupdf (top-level await), and workflow-level code uses the
@@ -55,11 +57,22 @@ export async function analyzeSourceLayout(pdf: Uint8Array): Promise<SourcePageLa
       }
       const vectorPaths = collectVectorPaths(mupdf, page, page.getBounds());
       const layout = analyzeStextPage({ ...stripFurniture(sp, furniture), rasterImages, vectorPaths });
+      // Page furniture: the top band and the exercise number badges.
+      const furnitureScale = FURNITURE_WIDTH_PX / sp.width;
+      const mid = page.toPixmap(mupdf.Matrix.scale(furnitureScale, furnitureScale), mupdf.ColorSpace.DeviceRGB, false, true);
+      const midRaster = { width: mid.getWidth(), height: mid.getHeight(), channels: mid.getNumberOfComponents(), data: mid.getPixels() };
+      const topBand = measureTopBand(midRaster);
+      const marks = measureNumberMarks(midRaster, layout.exerciseNumbers ?? []);
+      mid.destroy();
+      if (topBand || marks.numberBadge || marks.trackColor) layout.furniture = { ...(topBand ? { topBand } : {}), ...marks };
       const colourScale = COLOUR_WIDTH_PX / sp.width;
       const small = page.toPixmap(mupdf.Matrix.scale(colourScale, colourScale), mupdf.ColorSpace.DeviceRGB, false, true);
+      // The band is the page's frame, not its palette (it lives in furniture):
+      // left in, a yellow edge strip outvoted the red of every heading badge.
+      const band = topBand ? [{ x: 0, y: 0, w: 1, h: Math.max(topBand.heightRatio, topBand.tab?.heightRatio ?? 0) + 0.005 }] : [];
       layout.designColors = designColors(
         { width: small.getWidth(), height: small.getHeight(), channels: small.getNumberOfComponents(), data: small.getPixels() },
-        layout.images,
+        [...layout.images, ...band],
       );
       small.destroy();
       out.push(layout);

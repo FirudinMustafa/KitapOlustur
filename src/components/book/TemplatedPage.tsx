@@ -6,6 +6,7 @@ import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geom
 import { DENSE_LINE, MAX_PICTURE_ASPECT, ZONE_GAP, isExerciseBlock, panelledExercises, planZones, type DesignedTemplate } from "@/lib/design/layouts";
 import { stripExerciseNumber } from "@/lib/exercise-numbers";
 import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
+import type { PageFurniture } from "@/lib/design/page-furniture";
 
 // Faz 1 "Tasarım sistemi": web twin of src/lib/pdf/templates.tsx. Draws a
 // templated page on an A4-proportioned sheet (pt used directly as CSS px,
@@ -13,7 +14,8 @@ import type { DesignTheme, FontRole, ThemePalette } from "@/lib/design/themes";
 // flip-book and the printed PDF show the same arrangement. Blocks keep
 // their interactive exercises - they're rendered by the BlockView passed in.
 
-export type WebLook = { theme: DesignTheme; palette: ThemePalette };
+/** furniture: the source's page furniture (page-furniture.ts) - exercise numbers on discs, as in the PDF. */
+export type WebLook = { theme: DesignTheme; palette: ThemePalette; furniture?: PageFurniture | null };
 
 export type RenderBlock = (block: ContentBlock, opts: { frameless?: boolean; dense?: boolean; panel?: boolean }) => ReactNode;
 

@@ -13,10 +13,11 @@ import { blocksForRender, clampLayoutToPage } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
 import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/design/themes";
 import { DENSE_LINE, MAX_PICTURE_ASPECT, panelledExercises, resolvePageTemplate } from "@/lib/design/layouts";
-import { BlockCard, GlossaryGrid, makeLook, type Look } from "./blocks";
+import { BlockCard, GlossaryGrid, centredFigure, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
 import { TWEMOJI_CREDIT } from "@/lib/activities";
 import { applySourceType, type SourceType } from "@/lib/design/source-theme";
+import type { TopBand } from "@/lib/design/page-furniture";
 
 registerBookFonts();
 
@@ -236,22 +237,96 @@ function PageMarker({ id, onPageStart }: { id: string; onPageStart?: PageStartLi
   );
 }
 
-function Footer({ bookTitle, variantLabel, bleed = 0, tab }: { bookTitle: string; variantLabel: string; bleed?: number; tab?: string }) {
+function Footer({ bookTitle, variantLabel, bleed = 0 }: { bookTitle: string; variantLabel: string; bleed?: number }) {
   return (
     <View style={[styles.footer, bleed ? { left: 44 + bleed, right: 44 + bleed, bottom: 22 + bleed } : {}]} fixed>
       <Text>{variantLabel ? `${bookTitle} · ${variantLabel}` : bookTitle}</Text>
       {/* A printed book shows the folio alone; "n / total" read as a generated report.
-          Faz G4: a book mirroring a source prints it in a tab of the book's
-          colour, as coursebooks do. */}
-      {tab ? (
-        <View style={{ backgroundColor: tab, borderRadius: 3, paddingHorizontal: 6, paddingVertical: 1.5, marginTop: -2 }}>
-          <Text style={{ color: "#ffffff", fontWeight: 700, fontSize: 8.5 }} render={({ pageNumber }) => `${pageNumber}`} />
-        </View>
-      ) : (
-        <Text render={({ pageNumber }) => `${pageNumber}`} />
-      )}
+          A book mirroring a source prints TopicFooter instead. */}
+      <Text render={({ pageNumber }) => `${pageNumber}`} />
     </View>
   );
+}
+
+// Page furniture (KIYAS-13 review): the source's band across the top edge -
+// a full-width strip and, when it has one, a taller tab of a second colour
+// from the outer edge (the right on a recto, the left on a verso).
+function TopEdgeBand({ band, bleed = 0, pageSize }: { band: TopBand; bleed?: number; pageSize: { width: number; height: number } }) {
+  const h = Math.max(3, band.heightRatio * pageSize.height);
+  const tab = band.tab;
+  return (
+    <View
+      fixed
+      style={{ position: "absolute", top: 0, left: 0, right: 0 }}
+      render={({ pageNumber }) => {
+        const recto = pageNumber % 2 === 1;
+        // The tab starts halfway down the strip and ends in a round cap.
+        const tabBottom = tab ? Math.max(h + 2, tab.heightRatio * pageSize.height) : 0;
+        const tabTop = h / 2;
+        const tabW = tab ? tab.widthRatio * pageSize.width : 0;
+        const cap = (tabBottom - tabTop) / 2;
+        return (
+          <View style={{ position: "relative", height: Math.max(h, tabBottom) + bleed }}>
+            <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: h + bleed, backgroundColor: band.color }} />
+            {tab ? (
+              <View
+                style={[
+                  { position: "absolute", top: tabTop + bleed, width: tabW + bleed, height: tabBottom - tabTop, backgroundColor: tab.color },
+                  recto
+                    ? { right: 0, borderTopLeftRadius: cap, borderBottomLeftRadius: cap }
+                    : { left: 0, borderTopRightRadius: cap, borderBottomRightRadius: cap },
+                ]}
+              />
+            ) : null}
+          </View>
+        );
+      }}
+    />
+  );
+}
+
+// The footer of a book mirroring a source: the page's topic on a pill and
+// the folio in a ring, at the outer bottom corner - where coursebooks put
+// them - instead of the "title · book type" running line.
+function TopicFooter({ topic, look, bleed = 0 }: { topic?: string; look: Look; bleed?: number }) {
+  const ring = look.furniture?.numberBadge?.color ?? look.palette.primary;
+  return (
+    <View
+      fixed
+      style={{ position: "absolute", bottom: 22 + bleed, left: 44 + bleed, right: 44 + bleed }}
+      render={({ pageNumber }) => {
+        const recto = pageNumber % 2 === 1;
+        const pill = topic ? (
+          <View key="pill" style={{ backgroundColor: look.palette.primaryLight, borderRadius: 3, paddingHorizontal: 7, paddingVertical: 2, marginHorizontal: 5 }}>
+            <Text style={{ fontFamily: look.bodyFont, fontSize: 8, color: "#374151" }}>{topic}</Text>
+          </View>
+        ) : null;
+        const folio = (
+          <View
+            key="folio"
+            style={{ width: 17, height: 17, borderRadius: 8.5, borderWidth: 1.2, borderColor: ring, backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center" }}
+          >
+            <Text style={[{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 7.5, color: ring }, centredFigure(7.5)]}>{pageNumber}</Text>
+          </View>
+        );
+        return (
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: recto ? "flex-end" : "flex-start" }}>
+            {recto ? [pill, folio] : [folio, pill]}
+          </View>
+        );
+      }}
+    />
+  );
+}
+
+// A topic short enough for the footer pill: the page's section label (or
+// the unit title), cut at a word.
+export function footerTopic(label: string | undefined | null): string | undefined {
+  const t = label?.trim();
+  if (!t) return undefined;
+  if (t.length <= 32) return t;
+  const cut = t.slice(0, 32);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 20)).replace(/[\s,;:·-]+$/, "")}…`;
 }
 
 function ImprintPage({
@@ -620,7 +695,11 @@ export function BookDocument({
     pictureSrc,
     tracks: audioTrackMap(units),
     wordList: variant !== "teacher_book" && /^(pre-?a1|a1)\b/i.test(level.trim()),
+    furniture: sourceStyle?.type?.furniture ?? null,
   };
+  // A book mirroring a source prints its page furniture: the topic footer
+  // always, the top band when the source has one.
+  const mirrorsSource = !!sourceStyle?.type && !isPictureBook;
   // Audio scripts at the back (2026-10-21): every track in the Teacher's
   // Book; in the other books the tracks of their own exercises - a pupil's
   // book prints no scripts, as in published courses.
@@ -705,10 +784,13 @@ export function BookDocument({
                 metrics: { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
               });
           const edgeToEdge = template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template);
-          const sectionKicker = page.sectionLabel ? upperFor(page.sectionLabel, contentLanguage) : undefined;
+          // In a mirrored book the section label moves to the footer pill.
+          const sectionKicker = page.sectionLabel && !mirrorsSource ? upperFor(page.sectionLabel, contentLanguage) : undefined;
+          const topBand = mirrorsSource && !edgeToEdge ? look.furniture?.topBand : undefined;
           return (
             <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={sheetSize} style={pageStyle} wrap>
               <PageMarker id={`${unit.unitNumber}:${idx}`} onPageStart={onPageStart} />
+              {topBand ? <TopEdgeBand band={topBand} bleed={bleed} pageSize={pageSize} /> : null}
               {!edgeToEdge && (
                 <View style={styles.runningHeader}>
                   <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
@@ -747,9 +829,12 @@ export function BookDocument({
                 />
               )}
 
-              {template !== "full-bleed-illustration" && (
-                <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} tab={sourceStyle?.type ? palette.primary : undefined} />
-              )}
+              {template !== "full-bleed-illustration" &&
+                (mirrorsSource ? (
+                  <TopicFooter topic={footerTopic(page.sectionLabel || unit.title)} look={look} bleed={bleed} />
+                ) : (
+                  <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} />
+                ))}
             </Page>
           );
         }),

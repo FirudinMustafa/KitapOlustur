@@ -6,6 +6,7 @@ import type { GeneratedUnit, GeneratedPage } from "@/lib/ai/schemas";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { KaraokeAudio, PageView, type WebLook } from "@/components/book/PageContent";
 import { resolveDesignTheme } from "@/lib/design/themes";
+import type { PageFurniture } from "@/lib/design/page-furniture";
 import { BookFlipViewer, type FlipPageEntry } from "@/components/book/BookFlipViewer";
 import dynamic from "next/dynamic";
 
@@ -59,9 +60,12 @@ export function BookReader({
   logoPosition,
   paletteColors,
   designTheme,
+  furniture,
   pageRenderUrls,
   pageAspect = 595.28 / 841.89,
 }: {
+  /** The source's page furniture (deriveSourceTheme) - exercise numbers on discs, as in the PDF. */
+  furniture?: PageFurniture | null;
   /** Faz 5: the typeset pages as images - enables the 3D reader. */
   pageRenderUrls?: string[];
   pageAspect?: number;
@@ -88,7 +92,7 @@ export function BookReader({
   const unitsWithPages = units.filter((u) => pagesForVariant(u, variant).length > 0);
   const palette = derivePaletteFromColors(paletteColors);
   const theme = resolveDesignTheme(designTheme);
-  const look: WebLook = { theme, palette: palette ?? theme.palettes[variant] };
+  const look: WebLook = { theme, palette: palette ?? theme.palettes[variant], furniture };
   const accentStyle = palette ? { borderColor: palette.primary } : undefined;
   const [activeUnit, setActiveUnit] = useState(unitsWithPages[0]?.unitNumber ?? null);
   // Faz C1 ("gerçek sayfa-çevirmeli okuma deneyimi", 2026-09-28): the
