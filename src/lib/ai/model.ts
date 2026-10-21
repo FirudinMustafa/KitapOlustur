@@ -1,7 +1,9 @@
 import { google } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
 
-export const BOOK_PIPELINE_MODEL = "anthropic/claude-sonnet-5";
+// 2026-10-21: Sonnet 5.5 - same Gateway price as Sonnet 5 ($2/$10 per M,
+// checked against https://ai-gateway.vercel.sh/v1/models), newer model.
+export const BOOK_PIPELINE_MODEL = "anthropic/claude-sonnet-5.5";
 export const BOOK_PIPELINE_SPEECH_MODEL = "openai/tts-1-hd";
 
 // "Free mode" (2026-09-27): AI Gateway now requires a positive credit
@@ -99,7 +101,10 @@ export function toTextModel(modelId: string): string | LanguageModel {
 // çalışıyordu). Doğrulanmadan önce Anthropic'e (Haiku) geri dönmek en
 // güvenli yedek - bu yüzden bu değişiklik gerçek bir canlı testle
 // doğrulanana kadar Haiku'ya dönmek gerekirse buraya not düşülecek.
-export const BOOK_PIPELINE_MODEL_DRAFT = "google/gemini-2.5-flash-lite";
+// 2026-10-21: gemini-3.5-flash-lite ($0.30/$2.50 per M in the live Gateway
+// catalog) replaces 2.5 Flash-Lite, which Google no longer offers to new
+// users (see FREE_TEXT_MODEL_ID's comment above).
+export const BOOK_PIPELINE_MODEL_DRAFT = "google/gemini-3.5-flash-lite";
 
 export function resolveTextModel(qualityMode: "draft" | "final"): string {
   if (getAiProviderMode() === "free") {
@@ -132,7 +137,10 @@ export function resolveFinalTextModel(): string {
 // OpenAI's GPT Image 2 (current top-tier per Artificial Analysis Arena,
 // confirmed available - see ROADMAP.md "Hikaye Stüdyosu") for final, and
 // the smaller/cheaper GPT Image 1 Mini for draft.
-export const BOOK_PIPELINE_IMAGE_MODEL_FINAL = "openai/gpt-image-2";
+// 2026-10-21: GPT Image 2.5 Flare supersedes GPT Image 2 at the same token
+// rates (see STUDIO_IMAGE_MODELS below). scripts/gateway-spike.mts checks it
+// answers through generateImage() before a paid run relies on it.
+export const BOOK_PIPELINE_IMAGE_MODEL_FINAL = "openai/gpt-image-2.5-flare";
 export const BOOK_PIPELINE_IMAGE_MODEL_DRAFT = "openai/gpt-image-1-mini";
 
 export function resolveImageModel(qualityMode: "draft" | "final"): string {

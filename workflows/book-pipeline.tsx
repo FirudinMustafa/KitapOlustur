@@ -35,13 +35,15 @@ import {
   type RunStatus,
 } from "@/db/schema";
 import { ngramJaccardSimilarity } from "@/lib/originality";
-import { describeVocabularyCoverage, estimateVocabularyCoverage } from "@/lib/cefr-vocabulary";
+import { describeVocabularyCoverage, estimateVocabularyCoverage, levelIssue, levelProfile, targetBand } from "@/lib/cefr-vocabulary";
+import { grammarInventory } from "@/lib/cefr-grammar";
 import {
   pageMapSchema,
   bookOutlineSchema,
   improvementPlanSchema,
   generatedMirroredSideSchema,
   contentBlockSchema,
+  dialogueLineSchema,
   generatedPageSchema,
   pictureBookPagesSchema,
   generatedComplementarySideSchema,
@@ -76,7 +78,7 @@ import {
 } from "@/lib/ai/model";
 import { synthesizeWithElevenLabs } from "@/lib/ai/elevenlabs";
 import { generateImageWithCloudflare, lastCloudflareImageFailure } from "@/lib/ai/cloudflare-image";
-import { estimateImageCostUsd, estimateSpeechCostUsd } from "@/lib/ai/pricing";
+import { estimateSpeechCostUsd, imageCostFromUsage, isOverCostCap, runCostCapUsd, textCostUsd } from "@/lib/ai/pricing";
 import { translateAiError } from "@/lib/ai/error-messages";
 import { unitsToMarkdown } from "@/lib/markdown";
 import { BookDocument, type Variant, type BookDocumentSourceStyle } from "@/lib/pdf/BookDocument";
@@ -119,6 +121,7 @@ import { resetBookFonts } from "@/lib/pdf/fonts";
 import { renderBookFitted } from "@/lib/pdf/render-fitted";
 import { activityEmojis, loadEmojiIcons } from "@/lib/pdf/emoji-icons";
 import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
+import { applyListeningScripts, findListeningGaps } from "@/lib/listening";
 import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
 import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
@@ -287,7 +290,15 @@ async function withObjectDiagnostics<T>(
 // (jsonb_set computed from the row's own current value in one statement)
 // rather than JS-side read-modify-write, which would lose updates under
 // concurrency. See ROADMAP.md Faz G1.
-async function recordUsage(runId: string, key: string, usage: LanguageModelUsage) {
+//
+// `model` prices the call for the spend cap (recordCost below); call sites
+// that don't pass one are the always-final steps, billed at the final model.
+async function recordUsage(
+  runId: string,
+  key: string,
+  usage: LanguageModelUsage,
+  model: string = resolveFinalTextModel(),
+) {
   const tokens = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
   if (!tokens) return;
 
@@ -305,6 +316,8 @@ async function recordUsage(runId: string, key: string, usage: LanguageModelUsage
       )`,
     })
     .where(eq(generationRuns.id, runId));
+
+  await recordCost(runId, "text", textCostUsd(model, usage));
 }
 
 // Faz "Gerçek maliyet takibi" (2026-09-21, ROADMAP.md): the $-denominated
@@ -312,10 +325,15 @@ async function recordUsage(runId: string, key: string, usage: LanguageModelUsage
 // aren't priced per-token, so they can't share tokenUsage. Same atomic
 // jsonb_set accumulator shape (per-category key + "total"), just numeric
 // instead of bigint since costs are fractional dollars.
+//
+// 2026-10-21: also the run's spend cap. Text is recorded here too (under
+// "text", from recordUsage), so costUsage.total is the whole run's spend; once
+// it passes RUN_COST_CAP_USD the step fails with a FatalError and the run
+// stops with a readable reason instead of draining the Gateway balance.
 async function recordCost(runId: string, key: string, amountUsd: number | null) {
   if (!amountUsd) return;
 
-  await db
+  const [row] = await db
     .update(generationRuns)
     .set({
       costUsage: sql`jsonb_set(
@@ -328,7 +346,15 @@ async function recordCost(runId: string, key: string, amountUsd: number | null) 
         to_jsonb(coalesce((coalesce(${generationRuns.costUsage}, '{}'::jsonb)->>'total')::numeric, 0) + ${amountUsd}::numeric)
       )`,
     })
-    .where(eq(generationRuns.id, runId));
+    .where(eq(generationRuns.id, runId))
+    .returning({ costUsage: generationRuns.costUsage });
+
+  const total = Number(row?.costUsage?.total ?? 0);
+  if (isOverCostCap(total)) {
+    throw new FatalError(
+      `Bu üretimin harcaması ${total.toFixed(2)} $ oldu ve üretim başına sınırı (${runCostCapUsd()} $) aştı; üretim durduruldu. Sınırı RUN_COST_CAP_USD ile değiştirebilirsin.`,
+    );
+  }
 }
 
 // ---- Steps ----
@@ -757,7 +783,7 @@ async function generatePictureBookPages(
         .join("\n\n"),
     }),
   );
-  await recordUsage(runId, "unitGeneration", usage);
+  await recordUsage(runId, "unitGeneration", usage, input.textModel);
 
   return object.pages.map((p, i) => ({
     sourcePageNumber: input.outlineUnit.number * 1000 + i,
@@ -857,12 +883,20 @@ type UnitGenerationContext = {
   textModel: string;
 };
 
+// 2026-10-21: an English course's level as a grammar checklist (CEFR-J based,
+// src/lib/cefr-grammar.ts) - empty for other languages and non-CEFR levels.
+function englishGrammarInventory(contentLanguage: string, level: string): string {
+  const english = contentLanguage === "en" || contentLanguage.startsWith("en-");
+  return (english && grammarInventory(level)) || "";
+}
+
 function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
   return [
     `Book title: ${input.bookTitle}`,
     `Subject: ${input.subject}`,
     `Write ALL content in this language (BCP-47): ${input.contentLanguage}`,
     `Overall level: ${input.level}`,
+    englishGrammarInventory(input.contentLanguage, input.level),
     `Tone: ${input.tone}`,
     `Target audience: ${input.targetAudience}`,
     `Shared style bible for this book - reuse these characters/setting and this terminology consistently (this unit is one of several written independently, so consistency matters):\n${JSON.stringify(input.styleBible)}`,
@@ -922,7 +956,7 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
     }),
   );
 
-  await recordUsage(runId, "unitGeneration", usage);
+  await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return object;
 }
 
@@ -1019,7 +1053,7 @@ async function generateSkeletonSide(runId: string, input: UnitGenerationContext,
     }),
   );
 
-  await recordUsage(runId, "unitGeneration", usage);
+  await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return {
     ...object,
     // Deterministic, book-wide-unique reassignment - see the function's own
@@ -1064,7 +1098,7 @@ async function generateComplementarySide(
     }),
   );
 
-  await recordUsage(runId, "unitGeneration", usage);
+  await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return object;
 }
 
@@ -1159,7 +1193,7 @@ async function generateTeacherBookSide(
     }),
   );
 
-  await recordUsage(runId, "unitGeneration", usage);
+  await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return object;
 }
 
@@ -1183,7 +1217,7 @@ async function generateTestBookletSide(runId: string, input: UnitGenerationConte
     }),
   );
 
-  await recordUsage(runId, "unitGeneration", usage);
+  await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return object;
 }
 
@@ -1237,7 +1271,7 @@ async function generateCumulativeAssessment(
     }),
   );
 
-  await recordUsage(runId, "unitGeneration", usage);
+  await recordUsage(runId, "unitGeneration", usage, book.textModel);
   return object;
 }
 
@@ -1298,7 +1332,7 @@ async function generateUnitReviewSide(
     }),
   );
 
-  await recordUsage(runId, "unitGeneration", usage);
+  await recordUsage(runId, "unitGeneration", usage, book.textModel);
   return object;
 }
 
@@ -1668,16 +1702,26 @@ async function reviewReadingLevel(
   targetLevel: string,
   contentLanguage: string,
   generated: GeneratedUnit,
+  { sourceText, taught }: { sourceText: string; taught: string[] } = { sourceText: "", taught: [] },
 ) {
   "use step";
 
   let vocabularyEvidence = "";
+  // 2026-10-21: for an English book with a CEFR level the vocabulary check
+  // is a gate, not just evidence - see levelIssue (src/lib/cefr-vocabulary.ts).
+  let vocabularyIssue: string | null = null;
   if (contentLanguage === "en" || contentLanguage.startsWith("en-")) {
     const unitText = [...generated.studentBookPages, ...generated.workbookPages]
       .flatMap((page) => page.blocks.map((b) => [b.heading, b.body, ...(b.items ?? [])].join("\n")))
       .join("\n\n");
     const coverage = estimateVocabularyCoverage(unitText);
     vocabularyEvidence = `Deterministic vocabulary coverage (English-only supplementary signal, not a verdict on its own): ${describeVocabularyCoverage(coverage)}`;
+    const band = targetBand(targetLevel);
+    if (band) {
+      const unitTaught = [...taught, ...generated.glossary.map((g) => g.term)];
+      const source = sourceText.trim() ? levelProfile(sourceText, band, unitTaught) : null;
+      vocabularyIssue = levelIssue(levelProfile(unitText, band, unitTaught), source, band);
+    }
   }
 
   const { object, usage } = await withObjectDiagnostics(() =>
@@ -1689,6 +1733,7 @@ async function reviewReadingLevel(
         "You are a curriculum specialist who checks whether a coursebook unit's actual difficulty matches its stated target level - vocabulary complexity, sentence length/structure, grammar concepts assumed, and how much scaffolding is given.",
       prompt: [
         `Target level: "${targetLevel}" (content language: ${contentLanguage})`,
+        englishGrammarInventory(contentLanguage, targetLevel),
         `Generated unit content (JSON):\n${JSON.stringify(withoutPageBookkeeping(generated))}`,
         vocabularyEvidence,
         "Judge whether the reading/language difficulty of the explanations, examples, and practice items is appropriate for this level - not too advanced (assumes vocabulary/grammar a learner at this level wouldn't have yet) and not too simplistic (patronizing, or well below the stated level). List concrete issues (with the specific word/sentence/section) if the level doesn't match. Set passed=true only if the difficulty is genuinely appropriate throughout.",
@@ -1699,8 +1744,9 @@ async function reviewReadingLevel(
   );
 
   await recordUsage(runId, "review", usage);
-  await db.insert(unitReviews).values({ runId, unitNumber, reviewType: "level", passed: object.passed, issues: object.issues });
-  return object;
+  const review = vocabularyIssue ? { ...object, passed: false, issues: [vocabularyIssue, ...object.issues] } : object;
+  await db.insert(unitReviews).values({ runId, unitNumber, reviewType: "level", passed: review.passed, issues: review.issues });
+  return review;
 }
 
 // Content-safety/moderation check for generated text (ROADMAP.md, 2026-09-20
@@ -1891,6 +1937,47 @@ async function fillMissingPictures(runId: string, unit: GeneratedUnit): Promise<
   } catch (err) {
     await logRunWarning(runId, `Ünite ${unit.unitNumber}: ${gaps.length} resimli alıştırmanın resimleri seçilemedi - ${errorText(err)}`);
     return unit;
+  }
+}
+
+// Listening exercises the writer left without a script (2026-10-21) - a
+// "Listen and point" with no recording cannot be done in class. One small
+// call writes just those scripts, before the unit's audio is synthesized.
+async function fillMissingListeningScripts(
+  runId: string,
+  unitNumber: number,
+  pages: GeneratedPage[],
+  listeningAudio: GeneratedUnit["listeningAudio"],
+  contentLanguage: string,
+  level: string,
+): Promise<GeneratedUnit["listeningAudio"]> {
+  "use step";
+
+  const gaps = findListeningGaps(pages, listeningAudio);
+  if (!gaps.length) return listeningAudio;
+  try {
+    const { object, usage } = await withObjectDiagnostics(() =>
+      generateObject({
+        model: toTextModel(resolveFinalTextModel()),
+        schema: z.object({
+          scripts: z.array(z.object({ id: z.string(), script: z.string(), dialogueLines: z.array(dialogueLineSchema).optional() })),
+        }),
+        system:
+          "You write the audio scripts of a language coursebook - exactly what the recording says, ready to be read by voice actors.",
+        prompt: [
+          `Listening exercises without a recording yet (JSON):\n${JSON.stringify(gaps)}`,
+          `For each exercise return its id and the script. "Listen and point / number / circle / tick" - say each item's word or sentence in item order, as a teacher would (e.g. "Number one. A pencil."); "Listen and sing / chant" - the complete song or chant, short lines, repetitive, singable; a story or dialogue - the full text, with dialogueLines (speaker + line) for each turn. Level ${level}, written in ${contentLanguage}, nothing above the level.`,
+        ].join("\n\n"),
+      }),
+    );
+    await recordUsage(runId, "review", usage);
+    const filled = applyListeningScripts(pages, listeningAudio, object.scripts);
+    const left = findListeningGaps(pages, filled).length;
+    if (left) await logRunWarning(runId, `Ünite ${unitNumber}: ${left} dinleme alıştırmasının ses metni yazılamadı.`);
+    return filled;
+  } catch (err) {
+    await logRunWarning(runId, `Ünite ${unitNumber}: ${gaps.length} dinleme alıştırmasının ses metni eksik kaldı - ${errorText(err)}`);
+    return listeningAudio;
   }
 }
 
@@ -2093,6 +2180,7 @@ async function generateReviewedImage(
   for (let attempt = 1; attempt <= MAX_IMAGE_ATTEMPTS; attempt++) {
     let image: { uint8Array: Uint8Array; mediaType: string };
     let imageModel: string;
+    let imageUsage: { inputTokens?: number; outputTokens?: number } | undefined;
 
     if (isFreeImageModelActive()) {
       // Free mode: Cloudflare Workers AI (flux-1-schnell) via direct REST -
@@ -2109,21 +2197,31 @@ async function generateReviewedImage(
       image = result;
     } else {
       imageModel = resolveImageModel(qualityMode);
+      // 2026-10-21: interior pictures at "medium" quality (roughly a quarter
+      // of "high"'s output tokens - they print at a fraction of the page),
+      // the cover at "high".
+      const quality = unitNumber === null && size === BOOK_PIPELINE_COVER_IMAGE_SIZE ? "high" : "medium";
       const res = await generateImage({
         model: imageModel,
         prompt: fullPrompt(),
         size,
-        // Same reference-image path the studio's advanced panel uses
-        // (src/lib/ai/studio-generation.ts).
-        ...(references.length ? { providerOptions: { openai: { input_references: references.map((r) => r.url) } } } : {}),
+        providerOptions: {
+          openai: {
+            quality,
+            // Same reference-image path the studio's advanced panel uses
+            // (src/lib/ai/studio-generation.ts).
+            ...(references.length ? { input_references: references.map((r) => r.url) } : {}),
+          },
+        },
       });
       image = res.image;
+      imageUsage = res.usage;
     }
     // Every attempt is a real, separate paid call - including retries after
     // a failed QA check - so each one is recorded, not just the final image
-    // that ships. In free mode, imageModel isn't in IMAGE_PRICE_USD_ESTIMATE
-    // so this safely records null/no-op cost (see pricing.ts).
-    await recordCost(runId, "image", estimateImageCostUsd(imageModel));
+    // that ships. Priced from the tokens the call reported when it reports
+    // them; free mode's Cloudflare model has no price and records nothing.
+    await recordCost(runId, "image", imageCostFromUsage(imageModel, imageUsage));
 
     // Denetim sonrası düzeltme (2026-09-23, ilk gerçek canlı çalıştırmada
     // bulundu): retry döngüsü aynı deterministik storagePath'e birden fazla
@@ -3730,6 +3828,12 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       const unitSourcePages = pageMap.pages.filter(
         (p) => p.pageNumber >= outlineUnit.sourcePageRange.start && p.pageNumber <= outlineUnit.sourcePageRange.end,
       );
+      // reviewReadingLevel's yardstick: the source unit's own text and the
+      // words this unit sets out to teach.
+      const levelContext = {
+        sourceText: unitSourcePages.map((p) => p.sourceText ?? "").join("\n"),
+        taught: outlineUnit.keyTerms ?? [],
+      };
 
       const complementaryType: "student_book" | "workbook" =
         ctx.upload.bookType === "student_book" ? "workbook" : "student_book";
@@ -3832,6 +3936,16 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           ctx.upload.bookType === "workbook" ? mirrored.pages : complementary.pages,
         );
 
+        // Every listening exercise in either book needs its recording.
+        const scripts = await fillMissingListeningScripts(
+          runId,
+          outlineUnit.number,
+          [...studentBookPages, ...workbookPages],
+          mirrored.listeningAudio,
+          outline.contentLanguage,
+          outline.level,
+        );
+
         const [teacherBook, testBooklet, listeningAudio] = await Promise.all([
           requestedVariants.includes("teacher_book")
             ? generateTeacherBookSide(runId, { ...genContext, studentPages: studentBookPages, workbookPages })
@@ -3839,7 +3953,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           requestedVariants.includes("test_booklet")
             ? generateTestBookletSide(runId, genContext)
             : Promise.resolve(null),
-          generateListeningAudio(runId, outlineUnit.number, mirrored.listeningAudio, ctx.run.qualityMode).then(
+          generateListeningAudio(runId, outlineUnit.number, scripts, ctx.run.qualityMode).then(
             (audio) => alignListeningAudio(runId, outlineUnit.number, audio),
           ),
         ]);
@@ -3879,7 +3993,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
           isPictureBook ? notApplicable : reviewUnit(runId, n, outlineUnit, generated),
           reviewLanguageAccuracy(runId, n, outline.contentLanguage, generated),
-          reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, generated),
+          reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, generated, levelContext),
           reviewContentSafety(runId, n, generated),
           isPictureBook ? notApplicable : reviewSkillBalance(runId, n, generated),
         ]);
@@ -3959,7 +4073,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
             const [structureReview, languageReview, levelReview, safetyReview, skillBalanceReview] = await Promise.all([
               reviewUnit(runId, n, outlineUnit, unit),
               reviewLanguageAccuracy(runId, n, outline.contentLanguage, unit),
-              reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, unit),
+              reviewReadingLevel(runId, n, outline.level, outline.contentLanguage, unit, levelContext),
               reviewContentSafety(runId, n, unit),
               reviewSkillBalance(runId, n, unit),
             ]);

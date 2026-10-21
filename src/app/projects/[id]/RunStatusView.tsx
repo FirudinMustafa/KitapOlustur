@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { checkPrintReadiness } from "@/lib/print-readiness";
+import { TEXT_PRICE_PER_MILLION } from "@/lib/ai/pricing";
 import { PERSONA_LABELS, type PersonaReviewSummary } from "@/lib/personas";
 import { DeleteButton } from "@/components/app/delete-button";
 import { CancelRunButton } from "@/components/app/cancel-run-button";
@@ -222,22 +223,10 @@ const STEP_LABELS: Record<string, string> = {
 // styleBible) always bill at Sonnet 5 rates regardless of quality mode (see
 // src/lib/ai/model.ts), so a "draft" run's true cost sits somewhere between
 // the two models' rates, not purely at the cheaper one.
-const MODEL_PRICING_PER_MILLION: Record<string, { input: number; output: number }> = {
-  "anthropic/claude-sonnet-5": { input: 2, output: 10 },
-  "anthropic/claude-haiku-4-5": { input: 1, output: 5 },
-  // "Gateway kredisini idareli kullanma" (2026-09-23): draft mode's backing
-  // model (model.ts's BOOK_PIPELINE_MODEL_DRAFT) - confirmed live against
-  // the Vercel AI Gateway catalog. Without an entry here, a draft run's
-  // cost estimate would silently fall back to Sonnet 5's much higher rate
-  // (DEFAULT_PRICING below) and wildly overstate its actual cost.
-  // gpt-5-nano was tried first and replaced with gemini-2.5-flash-lite
-  // after a live run found gpt-5-nano structurally incompatible with this
-  // app's discriminated-union schemas (see model.ts's comment) - kept here
-  // too in case a future schema change makes it usable again.
-  "openai/gpt-5-nano": { input: 0.05, output: 0.4 },
-  "google/gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
-};
-const DEFAULT_PRICING = MODEL_PRICING_PER_MILLION["anthropic/claude-sonnet-5"];
+// Rates live in src/lib/ai/pricing.ts so the pipeline's spend cap uses the
+// same table.
+const MODEL_PRICING_PER_MILLION = TEXT_PRICE_PER_MILLION;
+const DEFAULT_PRICING = MODEL_PRICING_PER_MILLION["anthropic/claude-sonnet-5.5"];
 
 // Faz "Bütçe kontrolü - ön tahmin" (2026-09-20, ROADMAP.md): a rough,
 // honestly-labeled estimate for the outline-approval screen, computed from

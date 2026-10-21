@@ -34,6 +34,11 @@ export type SourcePageLayout = {
   // The instruction line of each exercise heading, in reading order - input
   // for classifying exercise formats, never printed.
   exerciseRubrics: string[];
+  // Exercises done with the recording (isListeningRubric), and the audio
+  // track numbers printed next to them. Optional: page maps stored before
+  // 2026-10-21 lack them.
+  listeningCount?: number;
+  trackNumbers?: string[];
   bodyFontPt: number | null;
   headingFontPt: number | null;
   zone: LayoutZone;
@@ -88,7 +93,19 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
   ).sort((a, b) => (Math.abs(a.y - b.y) < 0.05 ? a.x - b.x : a.y - b.y));
 
   const textBlocks = page.blocks.filter((b): b is Extract<StextBlock, { type: "text" }> => b.type === "text");
-  const lines = textBlocks.flatMap((b) => b.lines.map((l) => ({ ...l, block: b })));
+  // Text drawn several times in one place (an outlined or shadowed title -
+  // Kid's Box prints "Starters Listening" five times over) is read once;
+  // otherwise it outweighs the real body text when picking the body size.
+  const drawnAt = new Set<string>();
+  const lines = textBlocks
+    .flatMap((b) => b.lines.map((l) => ({ ...l, block: b })))
+    .filter((l) => {
+      const b = l.bbox ?? l.block.bbox;
+      const key = `${l.text.trim()}@${Math.round(b.x / 4)},${Math.round(b.y / 4)}`;
+      if (drawnAt.has(key)) return false;
+      drawnAt.add(key);
+      return true;
+    });
   const wordsOf = (t: string) => t.split(/\s+/).filter(Boolean).length;
   const wordCount = lines.reduce((s, l) => s + wordsOf(l.text), 0);
 
@@ -122,26 +139,65 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
   const headingFontName = bodyFontPt ? faceOf((s) => s >= bodyFontPt * 1.15) : null;
 
   const numbered = lines.filter((l) => {
-    // "1 ", "1." and "1)" - generated books number items "1.".
-    if (!/^\d{1,2}[.)]?(\s|$)/.test(l.text.trim())) return false;
+    // "1 ", "1." and "1)" - generated books number items "1.". A zero-padded
+    // "03" is an audio track number, never an exercise or item.
+    if (!/^\d{1,2}[.)]?(\s|$)/.test(l.text.trim()) || /^0\d/.test(l.text.trim())) return false;
     const y = (l.bbox ?? l.block.bbox).y / H;
     return y >= 0.06 && y <= 0.94; // not the folio
   });
   const isHeadingNumber = (l: StextLine) => bodyFontPt !== null && (l.font?.size ?? 0) >= bodyFontPt * 1.15;
-  const headings = numbered.filter(isHeadingNumber);
+  const candidates = numbered.filter(isHeadingNumber);
+  // The rubric is the rest of the heading line, or the block's next lines
+  // when the number stands alone. Coursebooks print an audio track number
+  // between the exercise number and the rubric ("1 03 Listen and point.",
+  // Super Minds; "1 [headphones] 3 Listen and colour.", Kid's Box), often as
+  // its own small line - it is taken off the rubric and kept as the track.
+  // A heading drawn twice a few points apart (a coloured copy over its
+  // outline) reads as the same number with the same rubric.
+  const seenHeading = new Set<string>();
+  const read = candidates
+    .map((l) => ({ line: l, ...readRubric(l) }))
+    .filter((r) => {
+      if (!r.rubric) return true;
+      const key = `${r.line.text.trim()}|${r.rubric}`;
+      if (seenHeading.has(key)) return false;
+      seenHeading.add(key);
+      return true;
+    });
+  // A young learners' page has little body text, so the big numbers on its
+  // pictures ("1 2 3" under six photos) clear the heading size too. An
+  // exercise has words after its number; a bare number counts as one only
+  // at the size the page's worded headings are printed at.
+  const headingSizes = new Set(read.filter((r) => /[A-Za-z]/.test(r.rubric)).map((r) => Math.round(r.line.font?.size ?? 0)));
+  const headings = headingSizes.size
+    ? read.filter((r) => /[A-Za-z]/.test(r.rubric) || (!r.rubric && headingSizes.has(Math.round(r.line.font?.size ?? 0))))
+    : read;
   const exerciseCount = headings.length;
   const itemCount = numbered.length - headings.length;
-  // The rubric is the rest of the heading line, or the block's next line
-  // when the number stands alone.
-  const exerciseRubrics = headings
-    .map((l) => {
-      const rest = l.text.trim().replace(/^\d{1,2}[.)]?\s*/, "");
-      if (rest) return rest;
+  const trackNumbers = headings.flatMap((h) => (h.track ? [h.track] : []));
+  const exerciseRubrics = headings.map((h) => h.rubric);
+  const listeningCount = exerciseRubrics.filter(isListeningRubric).length;
+
+  function readRubric(l: (typeof lines)[number]): { rubric: string; track: string | null } {
+    let rest = l.text.trim().replace(/^\d{1,2}[.)]?\s*/, "");
+    const ownLine = !rest;
+    if (ownLine) {
       const blockLines = l.block.lines;
       const at = blockLines.findIndex((bl) => bl.text === l.text && bl.bbox === l.bbox);
-      return blockLines[at + 1]?.text.trim() ?? "";
-    })
-    .map((t) => t.slice(0, 120));
+      // Up to the first line with words - past a track number on its own.
+      const following: string[] = [];
+      for (const bl of blockLines.slice(at + 1, at + 4)) {
+        following.push(bl.text.trim());
+        if (/[A-Za-z]/.test(bl.text)) break;
+      }
+      rest = following.join(" ").replace(/\s+/g, " ").trim();
+    }
+    // On the heading's own line only a zero-padded number is a track
+    // ("1 03 Listen"); "1 10 words" is a rubric.
+    const track = rest.match(ownLine ? /^(\d{1,3})\s+(?=\S*[A-Za-z])/ : /^(0\d{1,2})\s+(?=\S*[A-Za-z])/);
+    if (track) rest = rest.slice(track[0].length);
+    return { rubric: rest.slice(0, 120), track: track?.[1] ?? null };
+  }
 
   const textColumns = countColumns(textBlocks.map((b) => ({ box: norm(b.bbox), words: wordsOf(b.lines.map((l) => l.text).join(" ")) })));
 
@@ -154,12 +210,75 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
     exerciseCount,
     itemCount,
     exerciseRubrics,
+    listeningCount,
+    ...(trackNumbers.length ? { trackNumbers } : {}),
     bodyFontPt,
     headingFontPt,
     bodyFontName,
     headingFontName,
     zone: classifyZone(images, textColumns),
   };
+}
+
+// An exercise the class does with the recording: "Listen and point",
+// "Watch and listen to the story", "Listen and sing", "Say the chant".
+export function isListeningRubric(rubric: string): boolean {
+  return /\b(listen|listening|sing|chant)\b/i.test(rubric);
+}
+
+// Page furniture (2026-10-21): text printed in the same place on most pages -
+// a running head, a copyright line, a publisher's "Excerpt" watermark band
+// (every page of the Cambridge sample units carries five such lines). It is
+// not the book's content: it must not count as words, exercises or fonts,
+// nor reach the writer as source text. Lines are compared with digits
+// masked, so "Unit 3" and "Unit 4" running heads match.
+const FURNITURE_TOP = 0.12;
+const FURNITURE_BOTTOM = 0.9;
+const FURNITURE_SHARE = 0.6;
+
+export function furnitureKey(text: string): string {
+  return text.toLowerCase().replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
+}
+
+// Keys of the lines that sit in the top or bottom band of at least 60% of
+// the pages (3 pages minimum - two pages say nothing about a pattern). A
+// bare number is a folio, which the analysis already places by position.
+export function furnitureKeys(pages: Pick<StextPage, "height" | "blocks">[]): Set<string> {
+  if (pages.length < 3) return new Set();
+  const counts = new Map<string, number>();
+  for (const page of pages) {
+    const seen = new Set<string>();
+    for (const block of page.blocks) {
+      if (block.type !== "text") continue;
+      for (const l of block.lines) {
+        const y = (l.bbox ?? block.bbox).y / page.height;
+        if (y > FURNITURE_TOP && y < FURNITURE_BOTTOM) continue;
+        const key = furnitureKey(l.text);
+        if (key && key !== "#") seen.add(key);
+      }
+    }
+    for (const key of seen) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const min = Math.ceil(pages.length * FURNITURE_SHARE);
+  return new Set([...counts].filter(([, n]) => n >= min).map(([key]) => key));
+}
+
+// The page without its furniture lines (only where they sit in the bands).
+export function stripFurniture<P extends Pick<StextPage, "height" | "blocks">>(page: P, keys: Set<string>): P {
+  if (!keys.size) return page;
+  const blocks: StextBlock[] = [];
+  for (const block of page.blocks) {
+    if (block.type !== "text") {
+      blocks.push(block);
+      continue;
+    }
+    const lines = block.lines.filter((l) => {
+      const y = (l.bbox ?? block.bbox).y / page.height;
+      return (y > FURNITURE_TOP && y < FURNITURE_BOTTOM) || !keys.has(furnitureKey(l.text));
+    });
+    if (lines.length) blocks.push(lines.length === block.lines.length ? block : { ...block, lines });
+  }
+  return { ...page, blocks };
 }
 
 // Faz G1: the colours a page prints outside its pictures, clustered (4 bits

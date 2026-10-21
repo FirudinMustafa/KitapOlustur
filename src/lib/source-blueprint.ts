@@ -23,6 +23,7 @@ export function writerBlueprint(pages: SourcePage[]) {
               textColumns: p.layout.textColumns,
               words: p.layout.wordCount,
               exerciseFormats: p.layout.exerciseRubrics.length ? p.layout.exerciseRubrics : undefined,
+              listeningExercises: p.layout.listeningCount || undefined,
             },
           }
         : { layoutZone: p.visualStyle?.layoutZone }),
@@ -35,6 +36,7 @@ export const BLUEPRINT_INSTRUCTIONS = [
   "- pictures: give the generated page exactly that many pictures - imagePrompt for the first, extraImagePrompts for the rest (each a simple, separate subject that reads in a small frame, e.g. one vocabulary item each). 0 means no imagePrompt.",
   "- numberedExercises: write the same number of exercise blocks (each with items and a matching answerKey), with about itemsPerExercise items each.",
   "- exerciseFormats: the source's exercise instructions, in order. Reproduce each exercise's FORMAT (circle, match, complete, listen and number, write, ask and answer...) with entirely new content and your own wording - never copy the instruction text.",
+  "- listeningExercises: that many of the page's exercises are done with a recording (listen and point / number / tick, listen and sing / chant, watch and listen to the story). Write each as a listening exercise and add a listeningAudio entry for every one: blockRef = that exercise block's exact heading, script = exactly what the recording says (the words or sentences to point at in item order, the full song or chant lyrics, the story's dialogue with dialogueLines per speaker).",
   "- words: keep the page's total text within about 25% of this.",
   "- textColumns: 2 means short, parallel blocks rather than one long block.",
 ].join("\n");

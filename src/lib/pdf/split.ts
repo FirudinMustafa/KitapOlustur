@@ -1,3 +1,5 @@
+import { furnitureKey, furnitureKeys, type StextBlock } from "@/lib/source-layout";
+
 // Page-range helpers over a source PDF (mupdf, imported lazily as in
 // rasterize.ts). Used to analyze long books in chunks: one model call over a
 // whole 150-page coursebook ran into the output-token cap and silently
@@ -20,17 +22,35 @@ export async function slicePdf(pdf: Uint8Array, from: number, to: number): Promi
   }
 }
 
-// The text layer of pages from..to, verbatim, one string per page. Empty
-// strings mean the page has no text layer (a scan).
+// The text layer of pages from..to, one string per page, without the lines
+// repeated in the top/bottom band of most pages of the whole document - a
+// running head or a publisher's watermark is not source content (see
+// furnitureKeys). Empty strings mean the page has no text layer (a scan).
 export async function pdfPageTexts(pdf: Uint8Array, from: number, to: number): Promise<string[]> {
   const mupdf = await import("mupdf");
   const doc = mupdf.Document.openDocument(pdf, "application/pdf");
   try {
+    const pages: { height: number; blocks: StextBlock[] }[] = [];
+    for (let i = 0; i < doc.countPages(); i++) {
+      const page = doc.loadPage(i);
+      const [, y0, , y1] = page.getBounds();
+      const stext = page.toStructuredText("preserve-whitespace");
+      pages.push({ height: y1 - y0, blocks: (JSON.parse(stext.asJSON()) as { blocks: StextBlock[] }).blocks });
+      stext.destroy();
+      page.destroy();
+    }
+    const furniture = furnitureKeys(pages);
+
     const out: string[] = [];
     for (let i = from - 1; i < Math.min(to, doc.countPages()); i++) {
       const page = doc.loadPage(i);
       const stext = page.toStructuredText("preserve-whitespace");
-      out.push(stext.asText().replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim());
+      const text = stext
+        .asText()
+        .split("\n")
+        .filter((line) => !furniture.has(furnitureKey(line)))
+        .join("\n");
+      out.push(text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim());
       stext.destroy();
       page.destroy();
     }

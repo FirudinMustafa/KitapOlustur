@@ -1,4 +1,13 @@
-import { analyzeStextPage, designColors, hasBackgroundImage, rasterPictureBoxes, type SourcePageLayout, type StextBlock } from "@/lib/source-layout";
+import {
+  analyzeStextPage,
+  designColors,
+  furnitureKeys,
+  hasBackgroundImage,
+  rasterPictureBoxes,
+  stripFurniture,
+  type SourcePageLayout,
+  type StextBlock,
+} from "@/lib/source-layout";
 
 const RASTER_WIDTH_PX = 600; // enough to see a gutter between comic panels
 const COLOUR_WIDTH_PX = 120; // design colours need no detail (Faz G1)
@@ -12,14 +21,25 @@ export async function analyzeSourceLayout(pdf: Uint8Array): Promise<SourcePageLa
   const mupdf = await import("mupdf");
   const doc = mupdf.Document.openDocument(pdf, "application/pdf");
   try {
-    const out: SourcePageLayout[] = [];
+    // First pass: every page's text, so running heads and watermark lines
+    // repeated across the book can be told from content (furnitureKeys).
     const total = doc.countPages();
+    const parsedPages: { width: number; height: number; blocks: StextBlock[] }[] = [];
     for (let i = 0; i < total; i++) {
       const page = doc.loadPage(i);
       const [x0, y0, x1, y1] = page.getBounds();
       const stext = page.toStructuredText("preserve-images");
       const parsed = JSON.parse(stext.asJSON()) as { blocks: StextBlock[] };
-      const sp = { width: x1 - x0, height: y1 - y0, blocks: parsed.blocks };
+      parsedPages.push({ width: x1 - x0, height: y1 - y0, blocks: parsed.blocks });
+      stext.destroy();
+      page.destroy();
+    }
+    const furniture = furnitureKeys(parsedPages);
+
+    const out: SourcePageLayout[] = [];
+    for (let i = 0; i < total; i++) {
+      const page = doc.loadPage(i);
+      const sp = parsedPages[i];
       // Artwork flattened into a page-sized image is found from a rendering.
       let rasterImages;
       if (hasBackgroundImage(sp)) {
@@ -31,7 +51,7 @@ export async function analyzeSourceLayout(pdf: Uint8Array): Promise<SourcePageLa
         );
         pix.destroy();
       }
-      const layout = analyzeStextPage({ ...sp, rasterImages });
+      const layout = analyzeStextPage({ ...stripFurniture(sp, furniture), rasterImages });
       const colourScale = COLOUR_WIDTH_PX / sp.width;
       const small = page.toPixmap(mupdf.Matrix.scale(colourScale, colourScale), mupdf.ColorSpace.DeviceRGB, false, true);
       layout.designColors = designColors(
@@ -40,7 +60,6 @@ export async function analyzeSourceLayout(pdf: Uint8Array): Promise<SourcePageLa
       );
       small.destroy();
       out.push(layout);
-      stext.destroy();
       page.destroy();
     }
     return out;

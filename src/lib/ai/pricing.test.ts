@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { estimateImageCostUsd, estimateSpeechCostUsd, estimateStudioImageCostUsd } from "./pricing";
+import {
+  estimateImageCostUsd,
+  estimateSpeechCostUsd,
+  estimateStudioImageCostUsd,
+  imageCostFromUsage,
+  isOverCostCap,
+  textCostUsd,
+} from "./pricing";
 
 describe("estimateImageCostUsd", () => {
   it("returns a known price for a priced model", () => {
@@ -42,5 +49,34 @@ describe("estimateStudioImageCostUsd", () => {
   it("returns null for an unknown size or zero count", () => {
     expect(estimateStudioImageCostUsd("2048x2048", 1)).toBeNull();
     expect(estimateStudioImageCostUsd("1024x1024", 0)).toBeNull();
+  });
+});
+
+describe("imageCostFromUsage", () => {
+  it("prices the reported tokens", () => {
+    expect(imageCostFromUsage("openai/gpt-image-2.5-flare", { inputTokens: 1000, outputTokens: 2000 })).toBeCloseTo(0.065);
+  });
+
+  it("falls back to the flat estimate without usage", () => {
+    expect(imageCostFromUsage("openai/gpt-image-2.5-flare", undefined)).toBeCloseTo(0.08);
+    expect(imageCostFromUsage("cloudflare/flux-1-schnell", undefined)).toBeNull();
+  });
+});
+
+describe("textCostUsd", () => {
+  it("prices input and output separately", () => {
+    expect(textCostUsd("anthropic/claude-sonnet-5.5", { inputTokens: 1_000_000, outputTokens: 100_000 })).toBeCloseTo(3);
+  });
+
+  it("is null for free-mode model ids", () => {
+    expect(textCostUsd("gemini-3.1-flash-lite", { inputTokens: 5000, outputTokens: 500 })).toBeNull();
+  });
+});
+
+describe("isOverCostCap", () => {
+  it("stops only past a positive cap", () => {
+    expect(isOverCostCap(6.01, 6)).toBe(true);
+    expect(isOverCostCap(5.99, 6)).toBe(false);
+    expect(isOverCostCap(100, 0)).toBe(false);
   });
 });

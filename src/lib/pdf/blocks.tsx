@@ -7,6 +7,7 @@ import { BLOCK_COLORS } from "@/lib/block-colors";
 import { itemText } from "@/lib/item-text";
 import { HEADING_LINE, PANEL_PAD, inlineRubric, isChecklistBlock, itemColumns } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, speakerColorMap, type DesignTheme, type ThemePalette } from "@/lib/design/themes";
+import { trackOf } from "@/lib/listening";
 import { NOTO_SANS, NOTO_SERIF, pdfFontFamily, withSymbols } from "./fonts";
 import { CrosswordView, MarkingList, MatchLinesView, WordSearchView } from "./puzzle-blocks";
 
@@ -27,6 +28,8 @@ export type Look = {
   compact?: boolean;
   /** Faz G3: empty height (pt) a render of this page left at its foot - see planZones. */
   zoneSlack?: number;
+  /** Listening exercise -> its audio track number (audioTrackMap). */
+  tracks?: ReadonlyMap<string, string>;
 };
 
 // Activity and diagram sizes shrink by this on a compact page.
@@ -629,6 +632,34 @@ export function blockLines(block: ContentBlock): number {
 // Absolute positioning (Dizilim's manual `layout`) is applied here so it
 // stays page-relative - see BookDocument.tsx's notes on the coordinate
 // space and the reflow caveat.
+// A listening exercise's audio track, printed between its number and its
+// rubric as coursebooks do: a headphones mark and the track number on a
+// pill in the book's accent colour. Sized to the heading line, so it adds
+// no height (estimateBlockHeight needs no change).
+function TrackBadge({ track, look, size }: { track: string; look: Look; size: number }) {
+  const h = Math.round(size * 1.15);
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        height: h,
+        paddingHorizontal: 4,
+        marginRight: 5,
+        borderRadius: h / 2,
+        backgroundColor: look.palette.accent,
+      }}
+    >
+      <Svg viewBox="0 0 24 24" style={{ width: h * 0.7, height: h * 0.7, marginRight: 2 }}>
+        <Path d="M4 14v-2a8 8 0 0 1 16 0v2" stroke="#ffffff" strokeWidth={2.6} fill="none" />
+        <Rect x={3} y={13} width={5} height={8} rx={2} fill="#ffffff" />
+        <Rect x={16} y={13} width={5} height={8} rx={2} fill="#ffffff" />
+      </Svg>
+      <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: size * 0.72, color: "#ffffff" }}>{track}</Text>
+    </View>
+  );
+}
+
 export function BlockCard({
   block,
   showAnswerKey,
@@ -646,6 +677,7 @@ export function BlockCard({
   /** KIYAS-11: set on the book's tinted panel (panelledExercises). */
   panel?: boolean;
 }) {
+  const track = trackOf(look.tracks, block);
   const layoutStyle = block.layout
     ? { position: "absolute" as const, left: block.layout.x, top: block.layout.y, width: block.layout.width, height: block.layout.height }
     : {};
@@ -686,14 +718,34 @@ export function BlockCard({
         ]}
         wrap={blockLines(block) > UNSPLIT_MAX_LINES}
       >
-        <Text style={{ marginBottom: 3, lineHeight: `${(look.theme.bodySize * HEADING_LINE).toFixed(1)}pt` }}>
-          <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, color: "#1f2937" }}>
-            {/* the number a size up, as coursebooks print it (and as the source analyzer finds exercises) */}
-            {numbered ? <Text style={{ color: look.palette.primary, fontSize: look.theme.bodySize * 1.25 }}>{numbered[1]} </Text> : null}
-            {numbered ? numbered[2] : block.heading}
+        {track ? (
+          // Number, track badge, then heading and rubric wrapping beside them.
+          <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 3 }}>
+            {numbered ? (
+              <Text
+                style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.25, color: look.palette.primary, marginRight: 4 }}
+              >
+                {numbered[1]}
+              </Text>
+            ) : null}
+            <TrackBadge track={track} look={look} size={look.theme.bodySize * 1.1} />
+            <Text style={{ flex: 1, lineHeight: `${(look.theme.bodySize * HEADING_LINE).toFixed(1)}pt` }}>
+              <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, color: "#1f2937" }}>
+                {numbered ? numbered[2] : block.heading}
+              </Text>
+              {inline ? `  ${block.body}` : null}
+            </Text>
+          </View>
+        ) : (
+          <Text style={{ marginBottom: 3, lineHeight: `${(look.theme.bodySize * HEADING_LINE).toFixed(1)}pt` }}>
+            <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, color: "#1f2937" }}>
+              {/* the number a size up, as coursebooks print it (and as the source analyzer finds exercises) */}
+              {numbered ? <Text style={{ color: look.palette.primary, fontSize: look.theme.bodySize * 1.25 }}>{numbered[1]} </Text> : null}
+              {numbered ? numbered[2] : block.heading}
+            </Text>
+            {inline ? `  ${block.body}` : null}
           </Text>
-          {inline ? `  ${block.body}` : null}
-        </Text>
+        )}
         <BlockInner block={inline ? { ...block, body: "" } : block} showAnswerKey={showAnswerKey} look={look} plain dense />
       </View>
     );
@@ -701,9 +753,18 @@ export function BlockCard({
 
   return (
     <View style={[frameless ? { marginBottom: 12 } : cardFrame(look), layoutStyle]} wrap={blockLines(block) > UNSPLIT_MAX_LINES}>
-      <Text style={[s.heading, { fontFamily: look.headingFont, color: look.theme.cardStyle === "accent-bar" ? "#1f2937" : look.palette.primaryDark }]}>
-        {block.heading}
-      </Text>
+      {track ? (
+        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+          <TrackBadge track={track} look={look} size={12} />
+          <Text style={[s.heading, { flex: 1, fontFamily: look.headingFont, color: look.theme.cardStyle === "accent-bar" ? "#1f2937" : look.palette.primaryDark }]}>
+            {block.heading}
+          </Text>
+        </View>
+      ) : (
+        <Text style={[s.heading, { fontFamily: look.headingFont, color: look.theme.cardStyle === "accent-bar" ? "#1f2937" : look.palette.primaryDark }]}>
+          {block.heading}
+        </Text>
+      )}
       <BlockInner block={block} showAnswerKey={showAnswerKey} look={look} plain={frameless} />
     </View>
   );

@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { analyzeStextPage, dominantTrim, hasBackgroundImage, rasterPictureBoxes, type Raster, type StextPage } from "./source-layout";
+import {
+  analyzeStextPage,
+  dominantTrim,
+  furnitureKeys,
+  hasBackgroundImage,
+  isListeningRubric,
+  rasterPictureBoxes,
+  stripFurniture,
+  type Raster,
+  type StextPage,
+} from "./source-layout";
 
 const W = 600;
 const H = 800;
@@ -123,5 +133,104 @@ describe("rasterPictureBoxes (artwork flattened into the page background)", () =
       { x: 494, y: 100, w: 6, h: 300 },
     ];
     expect(rasterPictureBoxes(render(frame), page)).toEqual([]);
+  });
+});
+
+describe("listening exercises and track numbers (2026-10-21)", () => {
+  it("takes the track number off the rubric and counts listening exercises", () => {
+    const page: StextPage = {
+      width: W,
+      height: H,
+      blocks: [
+        // Super Minds: "1" alone, then "03  Listen and point." on the next line
+        text(40, 120, 500, [line("1 ", 22), line("03  Listen and point. Say the names.", 12)]),
+        // Kid's Box: number, small track number, rubric as three lines
+        text(40, 400, 500, [line("2", 22), line("4", 9, "bold"), line("Listen and colour.", 18, "bold")]),
+        text(40, 600, 500, [line("3 Ask and answer.", 22)]),
+        text(40, 700, 500, [line(words(40), 10)]),
+      ],
+    };
+    const layout = analyzeStextPage(page);
+    expect(layout.exerciseRubrics).toEqual(["Listen and point. Say the names.", "Listen and colour.", "Ask and answer."]);
+    expect(layout.trackNumbers).toEqual(["03", "4"]);
+    expect(layout.listeningCount).toBe(2);
+  });
+
+  it("does not take a rubric's own number for a track", () => {
+    const page: StextPage = {
+      width: W,
+      height: H,
+      blocks: [text(40, 120, 500, [line("1 10 words to learn.", 14, "bold")]), text(40, 300, 500, [line(words(40), 10)])],
+    };
+    const layout = analyzeStextPage(page);
+    expect(layout.exerciseRubrics).toEqual(["10 words to learn."]);
+    expect(layout.trackNumbers).toBeUndefined();
+  });
+
+  it("recognises listening rubrics", () => {
+    expect(isListeningRubric("Watch and listen to the story.")).toBe(true);
+    expect(isListeningRubric("Say the chant.")).toBe(true);
+    expect(isListeningRubric("Read and match.")).toBe(false);
+  });
+});
+
+describe("young learners' pages (2026-10-21)", () => {
+  it("does not count the numbers on pictures as exercises", () => {
+    const page: StextPage = {
+      width: W,
+      height: H,
+      blocks: [
+        text(40, 120, 500, [line("1 Listen and write the number.", 26, "bold")]),
+        text(40, 200, 20, [line("1", 14, "bold")]),
+        text(200, 200, 20, [line("2", 14, "bold")]),
+        text(360, 200, 20, [line("3", 14, "bold")]),
+        text(40, 500, 500, [line("2 Draw and write.", 26, "bold")]),
+        text(40, 600, 500, [line(words(20), 11)]),
+      ],
+    };
+    const layout = analyzeStextPage(page);
+    expect(layout.exerciseCount).toBe(2);
+    expect(layout.itemCount).toBe(3);
+  });
+
+  it("reads text drawn several times in one place once", () => {
+    const shadow = text(60, 150, 300, [line("Starters Listening", 30), line("Starters Listening", 30)]);
+    shadow.lines[1].bbox = shadow.lines[0].bbox; // same spot
+    const page: StextPage = {
+      width: W,
+      height: H,
+      blocks: [shadow, text(40, 300, 500, [line(words(12), 11)]), text(40, 400, 500, [line("1 Listen and colour.", 26, "bold")])],
+    };
+    const layout = analyzeStextPage(page);
+    expect(layout.wordCount).toBe(2 + 12 + 4);
+  });
+});
+
+describe("page furniture (2026-10-21)", () => {
+  const furniturePage = (folio: string, content: string): StextPage => ({
+    width: W,
+    height: H,
+    blocks: [
+      text(20, 30, 400, [line("Cambridge University Press", 9), line("Excerpt", 9)]),
+      text(40, 300, 500, [line(content, 12)]),
+      text(20, 780, 400, [line("© in this web service Cambridge University Press", 9)]),
+      text(560, 760, 20, [line(folio, 10, "bold")]),
+    ],
+  });
+  const pages = [furniturePage("4", "1 Listen and sing."), furniturePage("5", "Hello! What's your name?"), furniturePage("6", "Colors")];
+
+  it("finds lines repeated in the top/bottom band of most pages", () => {
+    const keys = furnitureKeys(pages);
+    expect([...keys].sort()).toEqual(["cambridge university press", "excerpt", "© in this web service cambridge university press"]);
+  });
+
+  it("strips them, and only them, before measuring", () => {
+    const keys = furnitureKeys(pages);
+    const layout = analyzeStextPage(stripFurniture(pages[1], keys));
+    expect(layout.wordCount).toBe(4 + 1); // the content line and the folio
+  });
+
+  it("needs at least three pages to call something furniture", () => {
+    expect(furnitureKeys(pages.slice(0, 2)).size).toBe(0);
   });
 });

@@ -8,6 +8,7 @@ import { resolvePageImageUrl, resolvePageImageUrls } from "@/lib/page-image";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF, withSymbols } from "./fonts";
 import { derivePaletteFromColors } from "./derive-palette";
 import { withUnitGlossary } from "@/lib/unit-glossary";
+import { audioTrackMap, audioTracks } from "@/lib/listening";
 import { blocksForRender, clampLayoutToPage } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
 import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/design/themes";
@@ -614,7 +615,15 @@ export function BookDocument({
   // A source PDF's own colours win over the theme palette (the user chose
   // to mirror that book); otherwise the theme's palette for this book type.
   const palette = derivePaletteFromColors(sourceStyle?.dominantColors) ?? theme.palettes[variant];
-  const look = { ...makeLook(theme, palette), pictureSrc };
+  const look = { ...makeLook(theme, palette), pictureSrc, tracks: audioTrackMap(units) };
+  // Audio scripts at the back (2026-10-21): every track in the Teacher's
+  // Book; in the other books the tracks of their own exercises - a pupil's
+  // book prints no scripts, as in published courses.
+  const printedHeadings = new Set(units.flatMap((u) => pagesForVariant(u, variant).flatMap((pg) => pg.blocks.map((b) => b.heading))));
+  const scriptTracks =
+    variant === "student_book" || isPictureBook
+      ? []
+      : audioTracks(units).filter((t) => variant === "teacher_book" || printedHeadings.has(t.heading));
   const usesIcons = !!pictureSrc && Object.keys(pictureSrc).length > 0;
   const logoStyle = sourceStyle?.logoUrl ? LOGO_POSITION_STYLE[sourceStyle.logoPosition ?? "top_right"] : null;
   const pageImageHeight = sourceStyle?.density === "compact" ? 180 : sourceStyle?.density === "spacious" ? 280 : 230;
@@ -773,6 +782,33 @@ export function BookDocument({
                     </View>
                   </View>
                 ))}
+            </View>
+          ))}
+          <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} />
+        </Page>
+      )}
+
+      {scriptTracks.length > 0 && (
+        <Page size={sheetSize} style={pageStyle} wrap>
+          <PageMarker id="audio_scripts" onPageStart={onPageStart} />
+          <View style={[styles.answerKeyTitleBand, { backgroundColor: palette.primaryDark, borderRadius: theme.radius }]}>
+            <Text style={styles.answerKeyTitle}>Audio Scripts</Text>
+          </View>
+          {scriptTracks.map((t) => (
+            <View key={t.track} style={styles.answerKeyEntry} wrap={false}>
+              <Text style={[styles.answerKeyLabel, { color: palette.primaryDark }]}>
+                {`TRACK ${t.track} · UNIT ${t.unitNumber} · ${t.heading}`}
+              </Text>
+              {t.entry.dialogueLines?.length ? (
+                t.entry.dialogueLines.map((l, i) => (
+                  <Text key={i} style={{ marginBottom: 1.5 }}>
+                    <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, color: palette.primary }}>{`${l.speaker}: `}</Text>
+                    {l.line}
+                  </Text>
+                ))
+              ) : (
+                <Text>{t.entry.script}</Text>
+              )}
             </View>
           ))}
           <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} />
