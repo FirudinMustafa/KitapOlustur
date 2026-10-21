@@ -126,4 +126,35 @@ describe("BookDocument source-zones pages", () => {
     // imprint + contents + 2 zoned pages
     expect(pages.length).toBe(4);
   }, 60_000);
+
+  it("prints the source's page furniture without pushing anything onto another page", async () => {
+    const buffer = await renderToBuffer(
+      <BookDocument
+        bookTitle="Open Streets"
+        variant="student_book"
+        units={[unit]}
+        level="A2"
+        contentsUnits={sampleContents}
+        designTheme="classic"
+        contentLanguage="en"
+        includeCover={false}
+        sourceStyle={{
+          dominantColors: ["#f15d52", "#ffe104", "#fbd6cd"],
+          type: {
+            headingFont: "sans",
+            bodyFont: "sans",
+            bodySizeRatio: null,
+            furniture: {
+              topBand: { color: "#ffdb00", heightRatio: 0.021, tab: { color: "#ef4a46", widthRatio: 0.48, heightRatio: 0.037 } },
+              numberBadge: { color: "#ef4a46", filled: true },
+              trackColor: "#c5d92c",
+            },
+          },
+        }}
+      />,
+    );
+    const pages = await rasterizePdf(new Uint8Array(buffer), { dpi: OUT ? 70 : 20 });
+    if (OUT) for (const p of pages) writeFileSync(path.join(OUT, `zones-furniture-${p.pageNumber}.png`), p.png);
+    expect(pages.length).toBe(4);
+  }, 60_000);
 });

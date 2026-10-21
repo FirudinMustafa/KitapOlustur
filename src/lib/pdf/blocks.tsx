@@ -8,6 +8,7 @@ import { itemText } from "@/lib/item-text";
 import { HEADING_LINE, PANEL_PAD, inlineRubric, isChecklistBlock, itemColumns } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, speakerColorMap, type DesignTheme, type ThemePalette } from "@/lib/design/themes";
 import { trackOf } from "@/lib/listening";
+import type { PageFurniture } from "@/lib/design/page-furniture";
 import { NOTO_SANS, NOTO_SERIF, pdfFontFamily, withSymbols } from "./fonts";
 import { CrosswordView, MarkingList, MatchLinesView, WordSearchView } from "./puzzle-blocks";
 
@@ -32,6 +33,8 @@ export type Look = {
   wordList?: boolean;
   /** Listening exercise -> its audio track number (audioTrackMap). */
   tracks?: ReadonlyMap<string, string>;
+  /** The source's page furniture - number badges, track pill, top band, topic footer (page-furniture.ts). */
+  furniture?: PageFurniture | null;
 };
 
 // Activity and diagram sizes shrink by this on a compact page.
@@ -385,8 +388,11 @@ function ItemList({ block, look, dense }: { block: ContentBlock; look: Look; den
   }
   return (
     <>
-      {block.items?.map((item, k) => (
-        <View key={k} wrap={false}>
+      {block.items?.map((item, k, all) => (
+        // No last item alone on a page: the one before it goes along
+        // (minPresenceAhead stops at the last sibling, so this only acts
+        // when the last item would not fit).
+        <View key={k} wrap={false} minPresenceAhead={all.length >= 3 && k === all.length - 2 ? KEEP_WITH_NEXT : undefined}>
           <ItemLine n={k + 1} item={item} look={look} style={[s.item]} />
           {lines > 0 && <RuledLines count={lines} gap={sized(look, RULE_GAP)} />}
         </View>
@@ -653,11 +659,37 @@ export function TableView({ table, look }: { table: NonNullable<ContentBlock["ta
   );
 }
 
-function cardFrame(look: Look) {
+// A card's frame in two pieces - the heading's (top) and the exercise's
+// (bottom) - inside an unframed wrapper: when the heading has to move to the
+// next page with its exercise (KEEP_WITH_NEXT), react-pdf leaves the
+// wrapper's empty fragment behind, and an unframed fragment prints nothing
+// (one frame left a bare bar or tint at the page foot).
+type CardPieces = { outer: Style; top: Style; bottom: Style };
+// The bottom piece tucks 1pt under the top one: two abutting fills print a
+// hairline seam.
+const SEAM = { marginTop: -1, paddingTop: 1 };
+
+function cardFrame(look: Look): CardPieces {
   const { cardStyle, radius } = look.theme;
-  if (cardStyle === "tinted") return { backgroundColor: look.palette.primaryLight, borderRadius: radius, padding: 12, marginBottom: 12 };
-  if (cardStyle === "outlined") return { borderWidth: 0.75, borderColor: "#d1d5db", borderRadius: radius, padding: 10, marginBottom: 12 };
-  return { paddingLeft: 12, borderLeftWidth: 2.5, borderLeftColor: look.palette.primary, marginBottom: 14 };
+  if (cardStyle === "tinted") return tintPieces(look.palette.primaryLight, radius, 12, 12);
+  if (cardStyle === "outlined") {
+    const side = { borderLeftWidth: 0.75, borderRightWidth: 0.75, borderColor: "#d1d5db", paddingHorizontal: 10 };
+    return {
+      outer: { marginBottom: 12 },
+      top: { ...side, borderTopWidth: 0.75, borderTopLeftRadius: radius, borderTopRightRadius: radius, paddingTop: 10 },
+      bottom: { ...side, borderBottomWidth: 0.75, borderBottomLeftRadius: radius, borderBottomRightRadius: radius, paddingBottom: 10, ...SEAM },
+    };
+  }
+  const bar = { paddingLeft: 12, borderLeftWidth: 2.5, borderLeftColor: look.palette.primary };
+  return { outer: { marginBottom: 14 }, top: bar, bottom: { ...bar, ...SEAM } };
+}
+
+function tintPieces(color: string, radius: number, pad: number, marginBottom: number): CardPieces {
+  return {
+    outer: { marginBottom },
+    top: { backgroundColor: color, borderTopLeftRadius: radius, borderTopRightRadius: radius, paddingTop: pad, paddingHorizontal: pad },
+    bottom: { backgroundColor: color, borderBottomLeftRadius: radius, borderBottomRightRadius: radius, paddingBottom: pad, paddingHorizontal: pad, ...SEAM },
+  };
 }
 
 function BlockInner({ block, showAnswerKey, look, plain, dense }: { block: ContentBlock; showAnswerKey: boolean; look: Look; plain?: boolean; dense?: boolean }) {
@@ -699,26 +731,98 @@ export function blockLines(block: ContentBlock): number {
 // no height (estimateBlockHeight needs no change).
 function TrackBadge({ track, look, size }: { track: string; look: Look; size: number }) {
   const h = Math.round(size * 1.15);
+  // The source's own pill colour when it was measured (page furniture) -
+  // often a light green, so the figure goes dark on it to stay legible.
+  const measured = look.furniture?.trackColor;
+  const fill = measured ?? look.palette.accent;
+  const ink = measured && luminance(measured) > 0.55 ? shade(measured, 0.45) : "#ffffff";
   return (
     <View
       style={{
         flexDirection: "row",
         alignItems: "center",
         height: h,
-        paddingHorizontal: 4,
+        paddingLeft: measured ? 0 : 4,
+        paddingRight: 4,
         marginRight: 5,
         borderRadius: h / 2,
-        backgroundColor: look.palette.accent,
+        backgroundColor: fill,
       }}
     >
-      <Svg viewBox="0 0 24 24" style={{ width: h * 0.7, height: h * 0.7, marginRight: 2 }}>
-        <Path d="M4 14v-2a8 8 0 0 1 16 0v2" stroke="#ffffff" strokeWidth={2.6} fill="none" />
-        <Rect x={3} y={13} width={5} height={8} rx={2} fill="#ffffff" />
-        <Rect x={16} y={13} width={5} height={8} rx={2} fill="#ffffff" />
-      </Svg>
-      <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: size * 0.72, color: "#ffffff" }}>{track}</Text>
+      {/* the headphones on a darker disc at the pill's start, as the source prints it */}
+      <View
+        style={
+          measured
+            ? { width: h, height: h, borderRadius: h / 2, backgroundColor: shade(measured, 0.75), alignItems: "center", justifyContent: "center", marginRight: 2 }
+            : { marginRight: 2 }
+        }
+      >
+        <Svg viewBox="0 0 24 24" style={{ width: h * 0.7, height: h * 0.7 }}>
+          <Path d="M4 14v-2a8 8 0 0 1 16 0v2" stroke="#ffffff" strokeWidth={2.6} fill="none" />
+          <Rect x={3} y={13} width={5} height={8} rx={2} fill="#ffffff" />
+          <Rect x={16} y={13} width={5} height={8} rx={2} fill="#ffffff" />
+        </Svg>
+      </View>
+      <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: size * 0.72, color: ink }}>{track}</Text>
     </View>
   );
+}
+
+// A figure centred on a disc: react-pdf hangs a line from the font's
+// ascent, so a one-line box centred in a View prints its figures low; set
+// solid and lifted by the gap between ascent and cap height, they sit in
+// the middle.
+export function centredFigure(fontSize: number): Style {
+  return { lineHeight: 1, marginTop: -fontSize * 0.2 };
+}
+
+// Relative luminance (0-1) of a #rrggbb colour, and the colour scaled
+// towards black by f (1 = unchanged).
+function luminance(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function shade(hex: string, f: number): string {
+  return `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * f).toString(16).padStart(2, "0")).join("")}`;
+}
+
+// The exercise number as the source prints it (page furniture): a white
+// figure on a disc of the source's badge colour, as tall as the heading
+// line - so it adds no height (estimateBlockHeight needs no change).
+export function NumberBadge({ n, look, size }: { n: string; look: Look; size: number }) {
+  const d = Math.round(size * HEADING_LINE);
+  const fill = look.furniture?.numberBadge?.color ?? look.palette.primary;
+  return (
+    <View
+      style={{
+        width: d * (n.length > 1 ? 1.2 : 1),
+        height: d,
+        borderRadius: d / 2,
+        backgroundColor: fill,
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: 5,
+      }}
+    >
+      {/* a size up from the body, as the source prints it (and as the source analyzer finds exercises) */}
+      <Text style={[{ fontFamily: look.headingFont, fontWeight: 700, fontSize: size * 1.2, color: luminance(fill) > 0.6 ? shade(fill, 0.35) : "#ffffff" }, centredFigure(size * 1.2)]}>
+        {n}
+      </Text>
+    </View>
+  );
+}
+
+// Space kept below an exercise heading for its rubric and the first rows of
+// its exercise: a heading alone at the foot of a page, its exercise on the
+// next (KIYAS-13 Workbook p.12), moves over with it. react-pdf only breaks
+// when the exercise itself runs past the page (minPresenceAhead stops at
+// the last sibling), so a short exercise near the foot stays put.
+const KEEP_WITH_NEXT = 96;
+// react-pdf never breaks before a card's first child (it takes it for the
+// top of the page), so minPresenceAhead on the heading needs something
+// ahead of it: an empty anchor.
+function KeepAnchor() {
+  return <View style={{ height: 0 }} />;
 }
 
 export function BlockCard({
@@ -770,63 +874,74 @@ export function BlockCard({
     // (estimateBlockHeight's frameless branch measures the same).
     const inline = inlineRubric(block);
     const numbered = /^(\d{1,2})[.)]?\s+(.*)$/.exec(block.heading ?? "");
+    // The source's own number style when it was measured: a disc, or a
+    // numeral in its colour.
+    const measured = look.furniture?.numberBadge;
+    const badge = !!numbered && !!measured?.filled;
+    const numberColor = measured && !measured.filled ? measured.color : look.palette.primary;
+    const pieces = panel ? tintPieces(look.palette.primaryLight, Math.max(4, look.theme.radius), PANEL_PAD, 8) : null;
+    const wraps = blockLines(block) > UNSPLIT_MAX_LINES;
     return (
-      <View
-        style={[
-          { marginBottom: 8 },
-          panel ? { backgroundColor: look.palette.primaryLight, borderRadius: Math.max(4, look.theme.radius), padding: PANEL_PAD } : {},
-          layoutStyle,
-        ]}
-        wrap={blockLines(block) > UNSPLIT_MAX_LINES}
-      >
-        {track ? (
-          // Number, track badge, then heading and rubric wrapping beside them.
-          <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 3 }}>
-            {numbered ? (
-              <Text
-                style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.25, color: look.palette.primary, marginRight: 4 }}
-              >
-                {numbered[1]}
+      <View style={[pieces?.outer ?? { marginBottom: 8 }, layoutStyle]} wrap={wraps}>
+        {wraps ? <KeepAnchor /> : null}
+        <View style={pieces?.top} minPresenceAhead={KEEP_WITH_NEXT}>
+          {track || badge ? (
+            // Number, track badge, then heading and rubric wrapping beside them.
+            <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 3 }}>
+              {badge && numbered ? (
+                <NumberBadge n={numbered[1]} look={look} size={look.theme.bodySize} />
+              ) : numbered ? (
+                <Text
+                  style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.25, color: numberColor, marginRight: 4 }}
+                >
+                  {numbered[1]}
+                </Text>
+              ) : null}
+              {track ? <TrackBadge track={track} look={look} size={look.theme.bodySize * 1.1} /> : null}
+              <Text style={{ flex: 1, lineHeight: `${(look.theme.bodySize * HEADING_LINE).toFixed(1)}pt` }}>
+                <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, color: "#1f2937" }}>
+                  {numbered ? numbered[2] : block.heading}
+                </Text>
+                {inline ? `  ${block.body}` : null}
               </Text>
-            ) : null}
-            <TrackBadge track={track} look={look} size={look.theme.bodySize * 1.1} />
-            <Text style={{ flex: 1, lineHeight: `${(look.theme.bodySize * HEADING_LINE).toFixed(1)}pt` }}>
+            </View>
+          ) : (
+            <Text style={{ marginBottom: 3, lineHeight: `${(look.theme.bodySize * HEADING_LINE).toFixed(1)}pt` }}>
               <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, color: "#1f2937" }}>
+                {/* the number a size up, as coursebooks print it (and as the source analyzer finds exercises) */}
+                {numbered ? <Text style={{ color: numberColor, fontSize: look.theme.bodySize * 1.25 }}>{numbered[1]} </Text> : null}
                 {numbered ? numbered[2] : block.heading}
               </Text>
               {inline ? `  ${block.body}` : null}
             </Text>
-          </View>
-        ) : (
-          <Text style={{ marginBottom: 3, lineHeight: `${(look.theme.bodySize * HEADING_LINE).toFixed(1)}pt` }}>
-            <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, color: "#1f2937" }}>
-              {/* the number a size up, as coursebooks print it (and as the source analyzer finds exercises) */}
-              {numbered ? <Text style={{ color: look.palette.primary, fontSize: look.theme.bodySize * 1.25 }}>{numbered[1]} </Text> : null}
-              {numbered ? numbered[2] : block.heading}
-            </Text>
-            {inline ? `  ${block.body}` : null}
-          </Text>
-        )}
-        <BlockInner block={inline ? { ...block, body: "" } : block} showAnswerKey={showAnswerKey} look={look} plain dense />
+          )}
+        </View>
+        <View style={pieces?.bottom}>
+          <BlockInner block={inline ? { ...block, body: "" } : block} showAnswerKey={showAnswerKey} look={look} plain dense />
+        </View>
       </View>
     );
   }
 
+  const pieces = frameless ? null : cardFrame(look);
+  const wraps = blockLines(block) > UNSPLIT_MAX_LINES;
+  const headingColor = look.theme.cardStyle === "accent-bar" ? "#1f2937" : look.palette.primaryDark;
   return (
-    <View style={[frameless ? { marginBottom: 12 } : cardFrame(look), layoutStyle]} wrap={blockLines(block) > UNSPLIT_MAX_LINES}>
-      {track ? (
-        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-          <TrackBadge track={track} look={look} size={12} />
-          <Text style={[s.heading, { flex: 1, fontFamily: look.headingFont, color: look.theme.cardStyle === "accent-bar" ? "#1f2937" : look.palette.primaryDark }]}>
-            {block.heading}
-          </Text>
-        </View>
-      ) : (
-        <Text style={[s.heading, { fontFamily: look.headingFont, color: look.theme.cardStyle === "accent-bar" ? "#1f2937" : look.palette.primaryDark }]}>
-          {block.heading}
-        </Text>
-      )}
-      <BlockInner block={block} showAnswerKey={showAnswerKey} look={look} plain={frameless} />
+    <View style={[pieces?.outer ?? { marginBottom: 12 }, layoutStyle]} wrap={wraps}>
+      {wraps ? <KeepAnchor /> : null}
+      <View style={pieces?.top} minPresenceAhead={KEEP_WITH_NEXT}>
+        {track ? (
+          <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+            <TrackBadge track={track} look={look} size={12} />
+            <Text style={[s.heading, { flex: 1, fontFamily: look.headingFont, color: headingColor }]}>{block.heading}</Text>
+          </View>
+        ) : (
+          <Text style={[s.heading, { fontFamily: look.headingFont, color: headingColor }]}>{block.heading}</Text>
+        )}
+      </View>
+      <View style={pieces?.bottom}>
+        <BlockInner block={block} showAnswerKey={showAnswerKey} look={look} plain={frameless} />
+      </View>
     </View>
   );
 }

@@ -7,6 +7,8 @@
 // Boxes are fractions of the page (0-1), so they carry over to any trim size
 // and never reproduce the source's literal coordinates.
 
+import type { NumberMark, PageFurniture } from "@/lib/design/page-furniture";
+
 export type Box = { x: number; y: number; w: number; h: number };
 
 export type LayoutZone =
@@ -49,6 +51,12 @@ export type SourcePageLayout = {
   bodyFontName?: string | null;
   headingFontName?: string | null;
   designColors?: DesignColor[];
+  // Where each exercise heading's number sits (input for measuring its
+  // badge), and the page furniture measured from a rendering - top band,
+  // number badge, track pill (src/lib/design/page-furniture.ts). Optional:
+  // page maps stored before 2026-10-21 lack them.
+  exerciseNumbers?: NumberMark[];
+  furniture?: PageFurniture;
 };
 
 export type DesignColor = { hex: string; share: number };
@@ -212,6 +220,11 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
     exerciseRubrics,
     listeningCount,
     ...(trackNumbers.length ? { trackNumbers } : {}),
+    exerciseNumbers: headings.map((h) => ({
+      box: norm(h.line.bbox ?? h.line.block.bbox),
+      digits: /^\d+/.exec(h.line.text.trim())?.[0].length ?? 1,
+      track: !!h.track,
+    })),
     bodyFontPt,
     headingFontPt,
     bodyFontName,

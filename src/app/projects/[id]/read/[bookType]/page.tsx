@@ -5,8 +5,9 @@ import { auth } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { projects, generatedBooks, type BookType } from "@/db/schema";
-import type { GeneratedUnit } from "@/lib/ai/schemas";
+import { projects, generatedBooks, sourcePageMaps, type BookType } from "@/db/schema";
+import type { GeneratedUnit, PageMap } from "@/lib/ai/schemas";
+import { deriveSourceTheme } from "@/lib/design/source-theme";
 import type { Variant } from "@/lib/pdf/BookDocument";
 import { BookReader } from "./BookReader";
 import { latestDoneRun } from "@/lib/project-runs";
@@ -55,6 +56,10 @@ export default async function BookReaderPage({
   const availableTypes = (await db.query.generatedBooks.findMany({ where: eq(generatedBooks.runId, run.id) }))
     .filter((b) => b.content)
     .map((b) => b.bookType as Variant);
+  // The source's page furniture (number badges), re-derived from the
+  // measured page map as the PDF assembly does.
+  const pageMapRow = await db.query.sourcePageMaps.findFirst({ where: eq(sourcePageMaps.runId, run.id) });
+  const furniture = deriveSourceTheme(((pageMapRow?.pages as PageMap["pages"] | undefined) ?? []).map((p) => p.layout))?.furniture ?? null;
 
   return (
     <BookReader
@@ -70,6 +75,7 @@ export default async function BookReaderPage({
       logoPosition={run.logoPosition}
       paletteColors={(run.paletteColors as string[] | null) ?? undefined}
       designTheme={run.designTheme}
+      furniture={furniture}
       pageRenderUrls={(book.pageRenderUrls as string[] | null) ?? undefined}
       pageAspect={TRIM_SIZES[resolveTrimSize(project.trimSize)].widthPt / TRIM_SIZES[resolveTrimSize(project.trimSize)].heightPt}
     />

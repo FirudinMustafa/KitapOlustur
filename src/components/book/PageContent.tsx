@@ -575,7 +575,17 @@ export function BlockView({
       {block.heading && inline ? (
         <p className="leading-snug">
           <span className="font-bold" style={{ fontFamily: lookFonts(look!).heading }}>
-            {numbered ? <span style={{ color: look!.palette.primary, fontSize: "1.15em" }}>{numbered[1]} </span> : null}
+            {numbered && look!.furniture?.numberBadge?.filled ? (
+              // the source's number style: a white figure on a disc (PDF: NumberBadge)
+              <span
+                className="mr-1.5 inline-flex h-[1.45em] min-w-[1.45em] items-center justify-center rounded-full px-1 align-middle text-white"
+                style={{ background: look!.furniture.numberBadge.color }}
+              >
+                {numbered[1]}
+              </span>
+            ) : numbered ? (
+              <span style={{ color: look!.furniture?.numberBadge?.color ?? look!.palette.primary, fontSize: "1.15em" }}>{numbered[1]} </span>
+            ) : null}
             {numbered ? numbered[2] : block.heading}
           </span>{" "}
           {block.body}
