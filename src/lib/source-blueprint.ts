@@ -35,9 +35,10 @@ export const BLUEPRINT_INSTRUCTIONS = [
   "Where a source page has \"measured\", match that page's shape - it was measured from the printed page, so it is how the page really looks:",
   "- pictures: give the generated page exactly that many pictures - imagePrompt for the first, extraImagePrompts for the rest (each a simple, separate subject that reads in a small frame, e.g. one vocabulary item each). 0 means no imagePrompt.",
   "- numberedExercises: write the same number of exercise blocks (each with items and a matching answerKey), with about itemsPerExercise items each.",
+  "- itemsPerExercise 0: the source's exercises have no written items - learners point at, colour, stick or count things in the pictures. Keep each item to the single word or number the picture shows (e.g. \"chair\", \"3\", \"blue\"), never a sentence describing a picture; a list of numbers or colour words prints as coloured cards.",
   "- exerciseFormats: the source's exercise instructions, in order. Reproduce each exercise's FORMAT (circle, match, complete, listen and number, write, ask and answer...) with entirely new content and your own wording - never copy the instruction text.",
   "- listeningExercises: that many of the page's exercises are done with a recording (listen and point / number / tick, listen and sing / chant, watch and listen to the story). Write each as a listening exercise and add a listeningAudio entry for every one: blockRef = that exercise block's exact heading, script = exactly what the recording says (the words or sentences to point at in item order, the full song or chant lyrics, the story's dialogue with dialogueLines per speaker).",
-  "- words: keep the page's total text within about 25% of this.",
+  "- words: the printed page's whole text (headings, instructions, items, speech). A hard limit: at most 1.5 times this (or this + 20, whichever is more) - a page over it is sent back. For young learners' pages the pictures carry the exercise: one short instruction, items of a word or two.",
   "- textColumns: 2 means short, parallel blocks rather than one long block.",
 ].join("\n");
 
@@ -53,6 +54,7 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
       exercises: layout.exerciseCount,
       pictures: plan ? zonePictureCount(plan) : 0,
       items: layout.exerciseCount ? Math.round(layout.itemCount / layout.exerciseCount) : 0,
+      words: layout.wordCount,
     };
     if (!plan) return { ...page, sourceShape };
     const extraSlots = Math.max(0, zonePictureCount(plan) - 1);

@@ -34,6 +34,30 @@ describe("shapeIssues", () => {
   });
 });
 
+describe("word budget", () => {
+  const page = (items: string[], words: number) => ({
+    sourcePageNumber: 4,
+    blocks: [{ kind: "practice", heading: "1 Listen and point", body: "Say the words.", items, answerKey: items }],
+    sourceShape: { exercises: 0, pictures: 0, words },
+  });
+
+  it("sends back a page far over its source's word count", () => {
+    const long = Array.from({ length: 10 }, (_, i) => `Picture ${i}: the boy with the red sweatshirt`);
+    const issues = shapeIssues(page(long, 11), "Student Book");
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatch(/only 11 - at most 31 words/);
+  });
+
+  it("accepts a page within its budget", () => {
+    expect(shapeIssues(page(["chair", "book", "pencil"], 11), "Student Book")).toEqual([]);
+  });
+
+  it("does not check pages without a measured word count", () => {
+    const long = Array.from({ length: 30 }, () => "a long item with many words");
+    expect(shapeIssues({ ...page(long, 0), sourceShape: { exercises: 0, pictures: 0 } }, "Student Book")).toEqual([]);
+  });
+});
+
 describe("fillZonePictures", () => {
   it("fills every frame from the page's own content", () => {
     const page: Parameters<typeof fillZonePictures>[0] = {

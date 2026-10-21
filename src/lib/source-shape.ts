@@ -9,11 +9,13 @@ import { zonePictureCount, type ZonePlan } from "@/lib/design/zones";
 // its layout has frames for, is sent back to the writer; pictures still
 // missing after that are filled in from the page's own content.
 
-export type SourceShape = { exercises: number; pictures: number };
+export type SourceShape = { exercises: number; pictures: number; items?: number; words?: number };
+
+type TextBlock = { heading?: string; body?: string; items?: string[]; dialogue?: { line: string }[] };
 
 type ShapedPage = {
   sourcePageNumber: number;
-  blocks: Parameters<typeof isExerciseBlock>[0][];
+  blocks: (Parameters<typeof isExerciseBlock>[0] & TextBlock)[];
   imagePrompt?: string;
   extraImagePrompts?: string[];
   zonePlan?: ZonePlan | null;
@@ -45,7 +47,38 @@ export function shapeIssues(page: ShapedPage, label: string): string[] {
       `${label}, page ${page.sourcePageNumber}: the source page has ${frames} pictures; set imagePrompt (the main scene) and ${frames - 1} extraImagePrompts (simple single subjects from this page, e.g. its vocabulary).`,
     );
   }
+  const words = wordBudgetIssue(page, label);
+  if (words) issues.push(words);
   return issues;
+}
+
+const words = (text: string | undefined) => (text ?? "").split(/\s+/).filter(Boolean).length;
+
+// The printed words on a generated page, counted the way the source page
+// was measured (its whole text layer: headings, instructions, items, speech).
+export function pageWordCount(page: { blocks: TextBlock[] }): number {
+  return page.blocks.reduce(
+    (n, b) => n + words(b.heading) + words(b.body) + (b.items ?? []).reduce((m, i) => m + words(i), 0) + (b.dialogue ?? []).reduce((m, d) => m + words(d.line), 0),
+    0,
+  );
+}
+
+// KIYAS-13 (live, 2026-10-21): told "words: 11" for a Pre-A1 page as a soft
+// "within about 25%", the writer wrote 86 - and 72-201 words against the
+// source's 11-38 on every page. The text pushed pictures down to a quarter
+// of the page and ran pages over. The source's word count is now a hard
+// budget like its exercise count: a page over it goes back to the writer.
+export function wordBudget(sourceWords: number): number {
+  return Math.round(Math.max(sourceWords * 1.5, sourceWords + 20));
+}
+
+export function wordBudgetIssue(page: ShapedPage, label: string): string | null {
+  const source = page.sourceShape?.words;
+  if (source === undefined) return null;
+  const have = pageWordCount(page);
+  const budget = wordBudget(source);
+  if (have <= budget) return null;
+  return `${label}, page ${page.sourcePageNumber}: the page has ${have} words, but the source page has only ${source} - at most ${budget} words. Cut it down: one short instruction line per exercise, short items (a word or a short phrase), no explanatory paragraphs or extra boxes. The pictures carry the page.`;
 }
 
 // Deterministic backstop: picture prompts for every frame of the page's

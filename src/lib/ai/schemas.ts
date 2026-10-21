@@ -460,8 +460,9 @@ export const storedPageSchema = generatedPageSchema.extend({
   zonePlan: zonePlanSchema.optional(),
   // The measured source page's numbered exercises and pictures, checked by
   // validateUnitStructure (src/lib/source-shape.ts); items = items per
-  // exercise, the length topUpExercises brings short exercises up to.
-  sourceShape: z.object({ exercises: z.number(), pictures: z.number(), items: z.number().optional() }).optional(),
+  // exercise, the length topUpExercises brings short exercises up to;
+  // words = the printed page's word count, a hard budget (wordBudgetIssue).
+  sourceShape: z.object({ exercises: z.number(), pictures: z.number(), items: z.number().optional(), words: z.number().optional() }).optional(),
 });
 export type GeneratedPage = z.infer<typeof storedPageSchema>;
 
