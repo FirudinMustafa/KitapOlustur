@@ -40,7 +40,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const failure = await resumeApprovalHook(run, currentGateToken(run)!, { decisions });
   if (failure) return failure;
 
-  await logHumanDecision(run.id, `awaiting_image_review`, `Görsel incelemesi: ${decisions.filter((d) => d.action === "regenerate").length} yeniden üretilecek, ${decisions.filter((d) => d.action === "accept").length} kabul edildi`);
+  // Flagged images left out of the body are accepted by the workflow, so
+  // they count as accepted here too (an empty body logged "0 kabul edildi").
+  const regenerated = decisions.filter((d) => d.action === "regenerate").length;
+  await logHumanDecision(run.id, `awaiting_image_review`, `Görsel incelemesi: ${regenerated} yeniden üretilecek, ${Math.max(flagged.length, decisions.length) - regenerated} kabul edildi`);
 
   return NextResponse.json({ success: true });
 }

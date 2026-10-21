@@ -30,16 +30,24 @@ function mentions(text: string, name: string): boolean {
   return !!escaped && new RegExp(`(^|[^\\p{L}])${escaped}($|[^\\p{L}])`, "iu").test(text);
 }
 
-// Which characters to send as references for one page's picture: the ids
-// the writer listed in imageCharacters, plus anyone the prompt names
-// without listing (the model doesn't always fill the field).
+const NO_PEOPLE = /\bno (people|persons?|children|kids|characters|humans|figures|hands)\b|\bwithout (any )?(people|children|characters)\b/i;
+
+// Which characters to send as references for one picture. The prompt's own
+// names win: imageCharacters is filled per page, so on a page with several
+// pictures it lists everyone on the page (KIYAS-13, 2026-10-21: all six
+// characters went to every picture, the image model drew the whole cast
+// into object pictures and "only Misty and Leo" scenes, 19 of 34 failed QA).
+// The listed ids only count when the prompt names nobody and does not ask
+// for an empty scene - and callers pass them for a page's main picture only.
 export function charactersForImage<T extends CharacterLike>(
-  page: { imagePrompt?: string; imageCharacters?: string[] },
+  picture: { imagePrompt?: string; imageCharacters?: string[] },
   sheets: T[],
 ): T[] {
-  const listed = new Set((page.imageCharacters ?? []).map((id) => id.toLowerCase()));
-  const prompt = page.imagePrompt ?? "";
-  return sheets.filter((c) => listed.has(c.id.toLowerCase()) || listed.has(c.name.toLowerCase()) || mentions(prompt, c.name));
+  const prompt = picture.imagePrompt ?? "";
+  const named = sheets.filter((c) => mentions(prompt, c.name));
+  if (named.length || NO_PEOPLE.test(prompt)) return named;
+  const listed = new Set((picture.imageCharacters ?? []).map((id) => id.toLowerCase()));
+  return sheets.filter((c) => listed.has(c.id.toLowerCase()) || listed.has(c.name.toLowerCase()));
 }
 
 // Cloudflare's flux endpoint rejects prompts over 2048 characters (live

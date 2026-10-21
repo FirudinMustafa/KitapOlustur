@@ -22,6 +22,14 @@ describe("charactersForImage", () => {
   it("returns nobody for a scene without the cast", () => {
     expect(charactersForImage({ imagePrompt: "A quiet harbour at dawn" }, sheets)).toEqual([]);
   });
+
+  it("sends only the characters the prompt names, not the whole page's list", () => {
+    expect(charactersForImage({ imagePrompt: "Leo stands on a white background", imageCharacters: ["leo", "ayse"] }, sheets)).toEqual([leo]);
+  });
+
+  it("sends nobody when the prompt asks for no people", () => {
+    expect(charactersForImage({ imagePrompt: "Two green pencils on a table, no people, no hands", imageCharacters: ["leo", "ayse"] }, sheets)).toEqual([]);
+  });
 });
 
 describe("prompts", () => {

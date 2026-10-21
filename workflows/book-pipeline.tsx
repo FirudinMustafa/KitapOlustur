@@ -2361,7 +2361,7 @@ async function generateUnitImages(
           `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}-${i + 1}.png`,
           qualityMode,
           sizes?.[i + 1] ?? EXTRA_PICTURE_SIZE,
-          { styleSuffix: framedStyle(artStyle.prompt, framing[i + 1]), characters: charactersForImage(page, characterSheets) },
+          { styleSuffix: framedStyle(artStyle.prompt, framing[i + 1]), characters: charactersForImage({ imagePrompt: prompt }, characterSheets) },
         );
       } catch (err) {
         console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber} picture ${i + 1}: image skipped -`, err instanceof Error ? err.message : err);
@@ -2527,7 +2527,8 @@ async function regenerateFlaggedImage(
     size,
     {
       styleSuffix: framedStyle(artStyle.prompt, page.zonePlan ? pictureFraming(page.zonePlan, 1 + (page.extraImagePrompts?.length ?? 0))[slot] : undefined),
-      characters: charactersForImage(page, characterSheets),
+      // The writer's imageCharacters list belongs to the main picture only.
+      characters: charactersForImage(slot === 0 ? { imagePrompt: prompt, imageCharacters: page.imageCharacters } : { imagePrompt: prompt }, characterSheets),
     },
   );
 }

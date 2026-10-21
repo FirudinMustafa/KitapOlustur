@@ -52,7 +52,29 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
 - Filigran bandı kırpıldı (CropBox 620×782 pt = kitabın gerçek sayfası): `.spike/super-minds-starter-sb-cropped.pdf`.
 - Yedek test: Kid's Box Level 1 Activity Book, `.spike/kids-box-1-ab-cropped.pdf`.
 
-**Bekleyen:** `.env.local` içine `AI_GATEWAY_API_KEY` ve Gateway kredisi. Spike (2026-10-21) "Unauthenticated request to AI Gateway" ile durdu.
+**KIYAS-13 sonucu (2026-10-21, proje `d811a1e3`, run `d81dc571`, ücretli modeller, 2 ünite) — tamamlandı:**
+- Maliyet **8,80 $**: metin 6,80 / görsel 1,79 / ses 0,21. Sınır bu run için `RUN_COST_CAP_USD="10"` yapıldı (`.env.local`).
+- Metin maliyetinin çoğu görsel QA: 1,4 M token; yalnızca Ünite 0'da 80 yeniden deneme oldu.
+- Yaklaşık 1,5 $ boşa gitti. Kapatılan konsol sunucuyu EPIPE ile bozdu, yeniden başlatmada Ünite 0 görsel adımı iki kez kuyruğa girdi ve paralel çalıştı.
+- İçerik ve tutarlılık iyi: zorluk ilerlemesi 82, kelime tekrarı 80, gramer sıralaması 84, tema 88.
+- Görseller: 34 görselden 19'u QA'dan geçemedi, 7'si OpenAI güvenlik filtresine takıldı.
+  - Sebep: `imageCharacters` sayfa geneli doldurulup sayfanın her resmine gidiyordu (ör. s.1'de 6 karakterin hepsi).
+  - Sonuç: "no people" ve nesne resimlerine bütün kadro çizildi.
+  - **Düzeltildi:** her resim yalnızca kendi promptunda adı geçen karakterleri alıyor; liste yalnızca ana resimde ve prompt kimseyi adlandırmıyorsa kullanılıyor; "no people" diyen resme karakter gitmiyor. Canlı doğrulanmadı.
+- Sanat yönetmeni puanı: Student Book 49, Workbook 46.
+  - s.15 şarkı sayfası %75 boş.
+  - s.7 sayı listesi iki kez basılmış.
+  - 7 sayfa taşıyor.
+- Fidelity (`fidelity.mts … sb.pdf 1 4 10`): yapı %40, görünüm %59 (aynı tasarım referansı %66).
+  - İlk 5 sayfa yapı %53–78; s.9'daki taşmadan sonra eşleşme kayıyor.
+  - **Asıl fark kelime sayısı:** kaynak sayfa 11–38 kelime, bizimki 72–201. Pre-A1 için yazar 5–10 kat fazla metin yazıyor; taşma ve küçük resimler buradan geliyor.
+
+**Sıradaki:**
+1. Yazara kaynağın sayfa başı kelime sayısını sert sınır olarak vermek; aşanı kısaltmak.
+2. Görsel QA yeniden denemesine resim başına üst sınır koymak.
+3. Düzeltilmiş karakter seçimiyle bozuk görselleri stüdyodan tek tek yeniden üretmek.
+
+**Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
 
 **Yapılmadı:**
 - Web okuyucuda parça rozeti.
