@@ -6,7 +6,7 @@ import { PAGE_WIDTH_PT, PAGE_HEIGHT_PT, PAGE_PADDING } from "@/lib/pdf/page-geom
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { blocksForRender } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
-import { isEmoji, letterFor, twemojiUrl, type ActivityPicture } from "@/lib/activities";
+import { COLOR_HEX, isEmoji, letterFor, tileKind, twemojiUrl, type ActivityPicture } from "@/lib/activities";
 import { PUZZLE_TYPES, PuzzleView } from "./PuzzleViews";
 import { SCENE_H, SCENE_W, mapGrid, prepositionScene, type Shape } from "@/lib/diagrams";
 import { inlineRubric, isChecklistBlock, itemColumns, resolvePageTemplate } from "@/lib/design/layouts";
@@ -422,6 +422,33 @@ function TownMap({ block, primary }: { block: ContentBlock; primary: string }) {
   );
 }
 
+const TILE_COLORS = ["#f39c12", "#29a9e1", "#8cc63f", "#3c8d7a", "#ec6fa8", "#43a047", "#e53935", "#1e5aa8", "#fdd835", "#00a99d"];
+
+// Same number cards / colour swatches as the PDF (src/lib/pdf/blocks.tsx).
+function ItemTiles({ items, kind }: { items: string[]; kind: "numbers" | "colors" }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {items.map((raw, i) => {
+        const item = raw.trim().replace(/[.!]$/, "");
+        return kind === "numbers" ? (
+          <span
+            key={i}
+            className="flex h-11 w-11 items-center justify-center rounded-md text-xl font-bold text-white"
+            style={{ backgroundColor: TILE_COLORS[i % TILE_COLORS.length] }}
+          >
+            {item}
+          </span>
+        ) : (
+          <span key={i} className="flex flex-col items-center gap-1 text-xs">
+            <span className="h-4 w-14 rounded-sm border border-neutral-700" style={{ backgroundColor: COLOR_HEX[item.toLowerCase()] ?? "#9e9e9e" }} />
+            {item}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function ActivityView({ block, primary, light }: { block: ContentBlock; primary: string; light: string }) {
   const a = block.activity!;
   if (PUZZLE_TYPES.has(a.type)) return <PuzzleView block={block} primary={primary} />;
@@ -585,6 +612,8 @@ export function BlockView({
         <PrepositionList block={block} />
       ) : block.activity ? (
         <ActivityView block={block} primary={primary} light={light} />
+      ) : tileKind(block.items) ? (
+        <ItemTiles items={block.items!} kind={tileKind(block.items)!} />
       ) : (
         !!block.items?.length && (
           <ol

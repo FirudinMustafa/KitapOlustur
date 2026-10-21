@@ -212,7 +212,35 @@ export function isEmoji(text: string): boolean {
   return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(text);
 }
 
-const EMOJI_RUN = /\p{Extended_Pictographic}️?(?:‍\p{Extended_Pictographic}️?)*/gu;
+export const COLOR_HEX: Record<string, string> = {
+  red: "#e53935",
+  blue: "#1e88e5",
+  green: "#43a047",
+  yellow: "#fdd835",
+  orange: "#fb8c00",
+  pink: "#ec6fa8",
+  purple: "#8e44ad",
+  brown: "#8d5524",
+  black: "#212121",
+  white: "#ffffff",
+  gray: "#9e9e9e",
+  grey: "#9e9e9e",
+};
+
+// KIYAS-13: Super Minds prints "listen and say the numbers" as ten coloured
+// number cards and its colour words as coloured pencils; the writer gives
+// the same exercise as a bare text list ("1. 1", "2. 2"). An item list that
+// is only numbers, or only colour words, is drawn as such tiles - no image
+// model, no cost.
+export function tileKind(items: string[] | undefined): "numbers" | "colors" | null {
+  const clean = (items ?? []).map((i) => i.trim().toLowerCase().replace(/[.!]$/, ""));
+  if (clean.length < 3) return null;
+  if (clean.every((i) => /^\d{1,2}$/.test(i) && Number(i) <= 20)) return "numbers";
+  if (clean.every((i) => i in COLOR_HEX)) return "colors";
+  return null;
+}
+
+const EMOJI_RUN =/\p{Extended_Pictographic}️?(?:‍\p{Extended_Pictographic}️?)*/gu;
 
 // KIYAS-13 (live, 2026-10-21): counting items written as emoji in the text
 // ("🍎🍎 = ___") printed as broken glyphs - the book fonts have no emoji.

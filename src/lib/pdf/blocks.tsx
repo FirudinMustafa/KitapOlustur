@@ -1,7 +1,7 @@
 import { Text, View, Svg, Path, Rect, Circle, Line, Image, Polygon } from "@react-pdf/renderer";
 import type { Style } from "@react-pdf/types";
 import { MAP_CELL_H, SCENE_H, SCENE_ROW, SCENE_W, mapGrid, prepositionScene, type Shape } from "@/lib/diagrams";
-import { DRAW_LINE, MATCH_ROW, PICTURE_CELL, RULE_GAP, isEmoji, letterFor, splitEmoji, type ActivityPicture } from "@/lib/activities";
+import { COLOR_HEX, DRAW_LINE, MATCH_ROW, PICTURE_CELL, RULE_GAP, isEmoji, letterFor, splitEmoji, tileKind, type ActivityPicture } from "@/lib/activities";
 import type { ContentBlock, ContentBlockKind, GeneratedPage } from "@/lib/ai/schemas";
 import { BLOCK_COLORS } from "@/lib/block-colors";
 import { itemText } from "@/lib/item-text";
@@ -330,9 +330,48 @@ function ItemLine({ n, item, look, style }: { n: number; item: string; look: Loo
   );
 }
 
+const TILE_COLORS = ["#f39c12", "#29a9e1", "#8cc63f", "#3c8d7a", "#ec6fa8", "#43a047", "#e53935", "#1e5aa8", "#fdd835", "#00a99d"];
+
+// Number cards and coloured pencils for a bare number / colour-word list
+// (tileKind), the way the source prints them.
+function ItemTiles({ items, kind, look }: { items: string[]; kind: "numbers" | "colors"; look: Look }) {
+  const size = look.compact ? 34 : 44;
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }} wrap={false}>
+      {items.map((raw, k) => {
+        const item = raw.trim().replace(/[.!]$/, "");
+        if (kind === "numbers") {
+          return (
+            <View
+              key={k}
+              style={{ width: size, height: size, borderRadius: 7, backgroundColor: TILE_COLORS[k % TILE_COLORS.length], alignItems: "center", justifyContent: "center" }}
+            >
+              <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: size * 0.5, color: "#ffffff" }}>{item}</Text>
+            </View>
+          );
+        }
+        const color = COLOR_HEX[item.toLowerCase()] ?? "#9e9e9e";
+        return (
+          <View key={k} style={{ width: size * 1.6, alignItems: "center" }}>
+            <Text style={{ ...{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 8, color: look.palette.primary }, marginBottom: 2 }}>{k + 1}</Text>
+            <Svg width={size * 1.5} height={size * 0.45} viewBox="0 0 60 18">
+              <Rect x={0} y={2} width={46} height={14} rx={2} fill={color} stroke="#333333" strokeWidth={1} />
+              <Polygon points="46,2 60,9 46,16" fill="#f1d9b5" stroke="#333333" strokeWidth={1} />
+              <Polygon points="55,6.5 60,9 55,11.5" fill={color} />
+            </Svg>
+            <Text style={{ fontSize: 9, marginTop: 2 }}>{item}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function ItemList({ block, look, dense }: { block: ContentBlock; look: Look; dense?: boolean }) {
   const a = block.activity;
   const lines = a?.type === "write_lines" ? (a.lines ?? 1) : 0;
+  const tiles = !lines && !a ? tileKind(block.items) : null;
+  if (tiles) return <ItemTiles items={block.items ?? []} kind={tiles} look={look} />;
   // Faz G4: on a mirrored page short items sit side by side (itemColumns).
   const columns = dense && !lines ? itemColumns(block.items) : 1;
   if (columns > 1) {
