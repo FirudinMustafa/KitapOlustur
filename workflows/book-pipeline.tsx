@@ -132,6 +132,7 @@ import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
 import { placeholderItemIssue } from "@/lib/placeholder-items";
 import { dropWriterLayouts } from "@/lib/writer-layout";
 import { dropRepeatedBlocks } from "@/lib/dedupe-blocks";
+import { isSafetyRejection, softenForSafety } from "@/lib/ai/image-safety";
 import { appendExercises, exercisesToAdd, extendExercises, extendPrompt, itemsToAdd, topUpPrompt } from "@/lib/exercise-topup";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import {
@@ -2086,6 +2087,10 @@ async function reviewBookCoherence(
 // gets before we give up and ship the last one produced, flagged for manual
 // review instead of blocking the run. See ROADMAP.md "Faz D".
 const MAX_IMAGE_ATTEMPTS = 3;
+// Paid models (2026-10-21, KIYAS-13): every attempt is a priced image plus a
+// priced vision review, and third attempts rarely fixed what the second did
+// not - image QA was the run's largest cost. Two attempts there.
+const PAID_MAX_IMAGE_ATTEMPTS = 2;
 
 // Vision-based art-director check: does the generated image actually match
 // what was asked for and the page/context it's going on? Runs after every
@@ -2172,13 +2177,16 @@ async function generateReviewedImage(
 ): Promise<string> {
   let prompt = initialPrompt;
   let lastBlobUrl: string | null = null;
-  const references = characters
+  let references = characters
     .filter((c): c is CharacterSheet & { imageUrl: string } => !!c.imageUrl)
     .slice(0, 4) // GPT Image's documented reference-image limit
     .map((c) => ({ name: c.name, url: c.imageUrl }));
-  const fullPrompt = () => [prompt, describeCharactersForPrompt(characters), styleSuffix].filter(Boolean).join("\n\n");
+  let softened = false;
+  const characterText = () => (softened ? softenForSafety(describeCharactersForPrompt(characters)) : describeCharactersForPrompt(characters));
+  const fullPrompt = () => [prompt, characterText(), styleSuffix].filter(Boolean).join("\n\n");
+  const maxAttempts = isFreeImageModelActive() ? MAX_IMAGE_ATTEMPTS : PAID_MAX_IMAGE_ATTEMPTS;
 
-  for (let attempt = 1; attempt <= MAX_IMAGE_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let image: { uint8Array: Uint8Array; mediaType: string };
     let imageModel: string;
     let imageUsage: { inputTokens?: number; outputTokens?: number } | undefined;
@@ -2202,19 +2210,33 @@ async function generateReviewedImage(
       // of "high"'s output tokens - they print at a fraction of the page),
       // the cover at "high".
       const quality = unitNumber === null && size === BOOK_PIPELINE_COVER_IMAGE_SIZE ? "high" : "medium";
-      const res = await generateImage({
-        model: imageModel,
-        prompt: fullPrompt(),
-        size,
-        providerOptions: {
-          openai: {
-            quality,
-            // Same reference-image path the studio's advanced panel uses
-            // (src/lib/ai/studio-generation.ts).
-            ...(references.length ? { input_references: references.map((r) => r.url) } : {}),
+      let res: Awaited<ReturnType<typeof generateImage>>;
+      try {
+        res = await generateImage({
+          model: imageModel,
+          prompt: fullPrompt(),
+          size,
+          providerOptions: {
+            openai: {
+              quality,
+              // Same reference-image path the studio's advanced panel uses
+              // (src/lib/ai/studio-generation.ts).
+              ...(references.length ? { input_references: references.map((r) => r.url) } : {}),
+            },
           },
-        },
-      });
+        });
+      } catch (err) {
+        // One more try with the child wording and reference sheets taken
+        // out (src/lib/ai/image-safety.ts); a second rejection skips the
+        // picture as before.
+        if (softened || !isSafetyRejection(err)) throw err;
+        console.warn(`Image ${unitNumber ?? "cover"}/${pageNumber ?? ""}: safety rejection, retrying softened. Prompt: ${prompt.slice(0, 300)}`);
+        softened = true;
+        prompt = softenForSafety(prompt);
+        references = [];
+        attempt--;
+        continue;
+      }
       image = res.image;
       imageUsage = res.usage;
     }
@@ -2260,7 +2282,7 @@ async function generateReviewedImage(
       });
       break;
     }
-    if (review.passed || attempt === MAX_IMAGE_ATTEMPTS) break;
+    if (review.passed || attempt === maxAttempts) break;
     if (review.suggestedPromptFix) prompt = review.suggestedPromptFix;
   }
 
