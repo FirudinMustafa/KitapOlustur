@@ -23,6 +23,16 @@ describe("dropRepeatedBlocks", () => {
     expect(dropRepeatedBlocks(page)).toBe(page);
   });
 
+  it("keeps differently numbered exercises over the same words", () => {
+    const page = {
+      blocks: [
+        { heading: "3 Listen", items: ["chair", "book"] },
+        { heading: "4 Listen and repeat", items: ["chair", "book"] },
+      ],
+    };
+    expect(dropRepeatedBlocks(page)).toBe(page);
+  });
+
   it("keeps blocks without items", () => {
     const page = { blocks: [{ heading: "Remember" }, { heading: "Remember" }] };
     expect(dropRepeatedBlocks(page)).toBe(page);

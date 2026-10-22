@@ -15,7 +15,13 @@ const norm = (text: string) =>
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 
+const numberOf = (heading: string | undefined) => /^\s*(\d+)/.exec(heading ?? "")?.[1];
+
 function sameHeading(a: string | undefined, b: string | undefined): boolean {
+  // "3 Listen" and "4 Listen and repeat" are two exercises, not a repeat.
+  const na = numberOf(a);
+  const nb = numberOf(b);
+  if (na && nb && na !== nb) return false;
   const x = norm(a ?? "");
   const y = norm(b ?? "");
   return !!x && !!y && (x.startsWith(y) || y.startsWith(x));

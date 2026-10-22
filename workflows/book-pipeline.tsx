@@ -2229,6 +2229,9 @@ async function generateReviewedImage(
         // One more try with the child wording and reference sheets taken
         // out (src/lib/ai/image-safety.ts); a second rejection skips the
         // picture as before.
+        // An earlier attempt already made (and paid for) a picture: ship it
+        // rather than lose it to a rejected retry.
+        if (lastBlobUrl) break;
         if (softened || !isSafetyRejection(err)) throw err;
         console.warn(`Image ${unitNumber ?? "cover"}/${pageNumber ?? ""}: safety rejection, retrying softened. Prompt: ${prompt.slice(0, 300)}`);
         softened = true;
@@ -2283,7 +2286,8 @@ async function generateReviewedImage(
       break;
     }
     if (review.passed || attempt === maxAttempts) break;
-    if (review.suggestedPromptFix) prompt = review.suggestedPromptFix;
+    // A softened prompt stays softened (the QA fix can bring ages back).
+    if (review.suggestedPromptFix) prompt = softened ? softenForSafety(review.suggestedPromptFix) : review.suggestedPromptFix;
   }
 
   return lastBlobUrl as string;

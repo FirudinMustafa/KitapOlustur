@@ -25,9 +25,12 @@ export function describeCharactersForPrompt(characters: CharacterLike[]): string
   ].join("\n");
 }
 
+// Diacritics folded: the writer spells "Ayşe" as "Ayse" as often as not.
+const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "");
+
 function mentions(text: string, name: string): boolean {
-  const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return !!escaped && new RegExp(`(^|[^\\p{L}])${escaped}($|[^\\p{L}])`, "iu").test(text);
+  const escaped = fold(name.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return !!escaped && new RegExp(`(^|[^\\p{L}])${escaped}($|[^\\p{L}])`, "iu").test(fold(text));
 }
 
 const NO_PEOPLE = /\bno (people|persons?|children|kids|characters|humans|figures|hands)\b|\bwithout (any )?(people|children|characters)\b/i;

@@ -1,3 +1,4 @@
+import { targetBand } from "@/lib/cefr-vocabulary";
 import { Document, Page, Text, View, StyleSheet, Svg, Rect, Circle, Image } from "@react-pdf/renderer";
 import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schemas";
 import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument";
@@ -661,7 +662,8 @@ export function BookDocument({
     ...makeLook(theme, palette),
     pictureSrc,
     tracks: audioTrackMap(units),
-    wordList: variant !== "teacher_book" && /^(pre-?a1|a1)\b/i.test(level.trim()),
+    // targetBand reads "Pre-A1", "CEFR A1", "Starters" alike.
+    wordList: variant !== "teacher_book" && targetBand(level) === "A1",
     furniture: sourceStyle?.type?.furniture ?? null,
   };
   // A book mirroring a source prints its page furniture: the topic footer

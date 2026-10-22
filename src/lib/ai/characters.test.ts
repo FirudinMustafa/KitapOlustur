@@ -27,6 +27,10 @@ describe("charactersForImage", () => {
     expect(charactersForImage({ imagePrompt: "Leo stands on a white background", imageCharacters: ["leo", "ayse"] }, sheets)).toEqual([leo]);
   });
 
+  it("matches a name written without its diacritics", () => {
+    expect(charactersForImage({ imagePrompt: "Leo gives Ayse a kite", imageCharacters: ["leo", "ayse"] }, sheets)).toEqual([leo, ayse]);
+  });
+
   it("sends nobody when the prompt asks for no people", () => {
     expect(charactersForImage({ imagePrompt: "Two green pencils on a table, no people, no hands", imageCharacters: ["leo", "ayse"] }, sheets)).toEqual([]);
   });

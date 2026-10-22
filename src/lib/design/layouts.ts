@@ -1,5 +1,5 @@
 import { diagramHeight, type Diagram } from "@/lib/diagrams";
-import { activityHeight, type Activity } from "@/lib/activities";
+import { activityHeight, tileKind, type Activity } from "@/lib/activities";
 import { PAGE_ASPECT, layoutZones, shapeAspect, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
 // Faz 1 "Tasarım sistemi": named page-layout templates. The writer model
 // picks one per page (generatedPageSchema.layoutTemplate) and every renderer
@@ -223,7 +223,9 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
     const act = safeActivityHeight(b, inner - 24, size);
     const dia = diagramHeight(b);
     h += act.extra + (dia.replacesItems ? dia.extra : 0);
-    if (!act.replacesItems && !dia.replacesItems) {
+    const tiles = !b.activity ? tileKind(b.items) : null;
+    if (tiles) h += tilesHeight(tiles, b.items?.length ?? 0, inner);
+    else if (!act.replacesItems && !dia.replacesItems) {
       const cols = frameless && b.activity?.type !== "write_lines" ? itemColumns(b.items) : 1;
       if (cols > 1) h += Math.ceil((b.items?.length ?? 0) / cols) * (size * line + 3);
       else for (const i of b.items ?? []) h += th(i, inner - 24, size) + 3;
@@ -234,6 +236,16 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
     if (it?.type === "fill_blank") h += th(it.template, inner - 24, size) + 6;
   }
   return h;
+}
+
+// Number cards and colour pencils as ItemTiles draws them (44pt cards, 8pt
+// gaps, ten numbers 5 + 5; a pencil column ~70pt wide and ~48pt tall).
+function tilesHeight(kind: "numbers" | "colors", n: number, width: number): number {
+  const cell = kind === "numbers" ? 44 : 70;
+  const tall = kind === "numbers" ? 44 : 48;
+  let perRow = Math.max(1, Math.floor((width + 8) / (cell + 8)));
+  if (kind === "numbers" && n > 7) perRow = Math.min(perRow, Math.ceil(n / Math.ceil(n / 7)));
+  return 4 + Math.ceil(n / perRow) * (tall + 8);
 }
 
 // An estimate must never take a run down (live run 2026-10-13: one bad

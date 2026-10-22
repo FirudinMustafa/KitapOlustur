@@ -128,7 +128,14 @@ const s = {
 // list that read as a wrong answer key in the Student Book.
 function InteractiveExerciseView({ block, showAnswerKey, look }: { block: ContentBlock; showAnswerKey: boolean; look: Look }) {
   const interactive = block.interactive;
-  if (!interactive || block.items?.length || block.activity) return null;
+  if (!interactive) return null;
+  if (block.items?.length || block.activity) {
+    // Multiple-choice options the items do not already print (stems in
+    // items, options only here) would be lost - audit 2026-10-22.
+    if (interactive.type !== "multiple_choice") return null;
+    const printed = (block.items ?? []).join(" ").toLowerCase();
+    if (interactive.options.every((o) => printed.includes(o.trim().toLowerCase()))) return null;
+  }
 
   if (interactive.type === "multiple_choice") {
     return (
@@ -168,6 +175,8 @@ function InteractiveExerciseView({ block, showAnswerKey, look }: { block: Conten
       <MatchLinesView
         block={{ ...block, items: interactive.pairs.map((p) => p.left), answerKey: interactive.pairs.map((p) => p.right) }}
         look={look}
+        // The Teacher's Book prints the pairs in order - it is the key.
+        ordered={showAnswerKey}
       />
     </View>
   );

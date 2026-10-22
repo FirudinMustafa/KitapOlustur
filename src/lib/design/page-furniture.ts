@@ -180,7 +180,7 @@ function mostCommon(colors: Rgb[]): Rgb | null {
 
 // Book level: what most measured pages print. A band on fewer than half of
 // the pages is a unit opener's or a picture's, not the book's.
-export function deriveFurniture(layouts: Pick<SourcePageLayout, "furniture">[]): PageFurniture | null {
+export function deriveFurniture(layouts: Pick<SourcePageLayout, "furniture" | "exerciseNumbers">[]): PageFurniture | null {
   const pages = layouts.map((l) => l.furniture).filter((f): f is PageFurniture => !!f);
   if (layouts.length < 2) return null;
   const out: PageFurniture = {};
@@ -203,8 +203,11 @@ export function deriveFurniture(layouts: Pick<SourcePageLayout, "furniture">[]):
 
   const badges = pages.flatMap((p) => (p.numberBadge ? [p.numberBadge] : []));
   const badge = mostCommon(badges.map((b) => rgbOf(b.color)));
-  if (badge) {
-    const same = badges.filter((b) => distance(rgbOf(b.color), badge) < NEAR);
+  const same = badge ? badges.filter((b) => distance(rgbOf(b.color), badge) < NEAR) : [];
+  // Like the band: the style of most numbered pages, not of a few (black
+  // numerals on tinted panels measure as a pale badge on those pages only).
+  const numbered = layouts.filter((l) => l.exerciseNumbers?.length).length;
+  if (badge && same.length >= 2 && same.length * 2 >= numbered) {
     out.numberBadge = { color: hex(badge), filled: same.filter((b) => b.filled).length * 2 >= same.length };
   }
   const track = mostCommon(pages.flatMap((p) => (p.trackColor ? [rgbOf(p.trackColor)] : [])));

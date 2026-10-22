@@ -144,9 +144,9 @@ export function MarkingList({ block, look }: { block: ContentBlock; look: Look }
   );
 }
 
-export function MatchLinesView({ block, look }: { block: ContentBlock; look: Look }) {
+export function MatchLinesView({ block, look, ordered }: { block: ContentBlock; look: Look; ordered?: boolean }) {
   const left = block.items ?? [];
-  const right = seededShuffle(block.answerKey ?? [], block.heading);
+  const right = ordered ? (block.answerKey ?? []) : seededShuffle(block.answerKey ?? [], block.heading);
   return (
     <View>
       {left.map((item, i) => (
