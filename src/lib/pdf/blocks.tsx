@@ -341,8 +341,14 @@ const TILE_COLORS = ["#f39c12", "#29a9e1", "#8cc63f", "#3c8d7a", "#ec6fa8", "#43
 // (tileKind), the way the source prints them.
 function ItemTiles({ items, kind, look }: { items: string[]; kind: "numbers" | "colors"; look: Look }) {
   const size = look.compact ? 34 : Math.round(44 * (look.grow ?? 1));
+  const gap = 8;
+  // Rows of even length: ten number cards wrap 5 + 5, not 7 + 3. Capping the
+  // row's width at that many cards lets flexWrap do the rest (and still wrap
+  // earlier in a narrow column).
+  const perRow = kind === "numbers" && items.length > 7 ? Math.ceil(items.length / Math.ceil(items.length / 7)) : 0;
+  const maxWidth = perRow ? perRow * size + (perRow - 1) * gap : undefined;
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }} wrap={false}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap, marginTop: 4, ...(maxWidth ? { maxWidth } : {}) }} wrap={false}>
       {items.map((raw, k) => {
         const item = raw.trim().replace(/[.!]$/, "");
         if (kind === "numbers") {
@@ -351,7 +357,7 @@ function ItemTiles({ items, kind, look }: { items: string[]; kind: "numbers" | "
               key={k}
               style={{ width: size, height: size, borderRadius: 7, backgroundColor: TILE_COLORS[k % TILE_COLORS.length], alignItems: "center", justifyContent: "center" }}
             >
-              <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: size * 0.5, color: "#ffffff" }}>{item}</Text>
+              <Text style={[{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: size * 0.5, color: "#ffffff" }, centredFigure(size * 0.5)]}>{item}</Text>
             </View>
           );
         }
