@@ -688,8 +688,11 @@ function cardFrame(look: Look): CardPieces {
       bottom: { ...side, borderBottomWidth: 0.75, borderBottomLeftRadius: radius, borderBottomRightRadius: radius, paddingBottom: 10, ...SEAM },
     };
   }
+  // No seam tuck for a bar: two abutting border edges print no hairline,
+  // and the tuck's 1pt of padding stayed behind as a red sliver at the page
+  // foot when the card moved to the next page (KIYAS-13 Workbook p.13).
   const bar = { paddingLeft: 12, borderLeftWidth: 2.5, borderLeftColor: look.palette.primary };
-  return { outer: { marginBottom: 14 }, top: bar, bottom: { ...bar, ...SEAM } };
+  return { outer: { marginBottom: 14 }, top: bar, bottom: bar };
 }
 
 function tintPieces(color: string, radius: number, pad: number, marginBottom: number): CardPieces {

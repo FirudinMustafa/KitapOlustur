@@ -14,6 +14,9 @@ import { measureNumberMarks, measureTopBand } from "@/lib/design/page-furniture"
 
 const RASTER_WIDTH_PX = 600; // enough to see a gutter between comic panels
 const COLOUR_WIDTH_PX = 120; // design colours need no detail (Faz G1)
+// A page of map hatching or a pattern can paint hundreds of thousands of
+// shapes; past this many the page is art throughout and more add nothing.
+const MAX_VECTOR_PATHS = 20000;
 const FURNITURE_WIDTH_PX = 500; // a 2 mm band, and enough strong pixels in a thin coloured exercise numeral
 
 // Kept apart from source-layout.ts on purpose: the workflow bundle (CJS)
@@ -104,7 +107,7 @@ function collectVectorPaths(mupdf: Mupdf, page: ReturnType<InstanceType<Mupdf["D
     return [Math.max(r[0], t[0]), Math.max(r[1], t[1]), Math.min(r[2], t[2]), Math.min(r[3], t[3])];
   };
   const add = (path: Path, ctm: number[], r: Rect, cs: { getNumberOfComponents(): number; isCMYK(): boolean } | null, color: number[], alpha: number) => {
-    if (masks.length || alpha < 0.1) return;
+    if (masks.length || alpha < 0.1 || out.length >= MAX_VECTOR_PATHS) return;
     const [a, b, c, d] = clip(r);
     if (c <= a || d <= b) return;
     // The path's points on the page (a rectangle under a rotating ctm is a
