@@ -6,6 +6,10 @@ import { buildZonePlan, zonePictureCount } from "@/lib/design/zones";
 // comes first and is binding; the model's prose summary supplies the topic.
 // The source's verbatim text is left out on purpose - it was only ever an
 // invitation to paraphrase too closely.
+// Below this many measured words a page's text is taken as not extractable
+// (a scan, or text outlined to shapes) - no word budget is set for it.
+const MIN_MEASURED_WORDS = 8;
+
 export function writerBlueprint(pages: SourcePage[]) {
   return pages.map((p) => {
     const plan = p.layout ? buildZonePlan(p.layout) : null;
@@ -21,7 +25,7 @@ export function writerBlueprint(pages: SourcePage[]) {
               numberedExercises: p.layout.exerciseCount,
               itemsPerExercise: p.layout.exerciseCount ? Math.round(p.layout.itemCount / p.layout.exerciseCount) : undefined,
               textColumns: p.layout.textColumns,
-              words: p.layout.wordCount,
+              words: p.layout.wordCount >= MIN_MEASURED_WORDS ? p.layout.wordCount : undefined,
               exerciseFormats: p.layout.exerciseRubrics.length ? p.layout.exerciseRubrics : undefined,
               listeningExercises: p.layout.listeningCount || undefined,
             },
@@ -54,7 +58,10 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
       exercises: layout.exerciseCount,
       pictures: plan ? zonePictureCount(plan) : 0,
       items: layout.exerciseCount ? Math.round(layout.itemCount / layout.exerciseCount) : 0,
-      words: layout.wordCount,
+      // A hard budget only where the page has a real text layer: a scanned
+      // page (or one with outlined text) measures ~0 words, and a budget of
+      // 20 would send every unit back to be rewritten and crush its text.
+      ...(layout.wordCount >= MIN_MEASURED_WORDS ? { words: layout.wordCount } : {}),
     };
     if (!plan) return { ...page, sourceShape };
     const extraSlots = Math.max(0, zonePictureCount(plan) - 1);

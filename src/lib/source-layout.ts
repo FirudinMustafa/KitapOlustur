@@ -83,6 +83,10 @@ const ICON_AREA = 0.004; // smaller than this is an icon or bullet
 // found no busy cells in its soft painted shading, and the page counted no
 // picture at all.
 const INSET_MARGIN = 0.02;
+function isBig(b: Box): boolean {
+  return b.w * b.h > BACKGROUND_AREA;
+}
+
 function isBackground(b: Box): boolean {
   if (b.w * b.h <= BACKGROUND_AREA) return false;
   // (mupdf reports some degenerate image boxes with both sides negative;
@@ -111,6 +115,9 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
       .filter((b): b is Extract<StextBlock, { type: "image" }> => b.type === "image")
       .map((b) => norm(b.bbox))
       .filter((b) => !isBackground(b))
+      // A big inset picture is only the fallback: when the rendering found
+      // pictures inside it (a flattened comic page with a margin), those count.
+      .filter((b) => !(isBig(b) && (page.rasterImages ?? []).some((r) => centreIn(r, b))))
       // A rendered region may cover most of the page: an edge-to-edge
       // illustration (comic panels with no gutter) is one big picture.
       .concat(page.rasterImages ?? [])
@@ -353,9 +360,12 @@ export function designColors(raster: Raster, pictures: Box[], max = 8): DesignCo
 // classroom photo - which the background filter above drops, so 10 of those
 // pages counted 0 pictures. Such a page is rendered and its pictures found
 // from the pixels instead.
+// Big inset pictures are rendered and scanned too (audit 2026-10-22): kept
+// whole, a flattened three-panel comic with a white margin would count one
+// picture instead of three.
 export function hasBackgroundImage(page: StextPage): boolean {
   return page.blocks.some(
-    (b) => b.type === "image" && isBackground({ x: b.bbox.x / page.width, y: b.bbox.y / page.height, w: b.bbox.w / page.width, h: b.bbox.h / page.height }),
+    (b) => b.type === "image" && isBig({ x: b.bbox.x / page.width, y: b.bbox.y / page.height, w: b.bbox.w / page.width, h: b.bbox.h / page.height }),
   );
 }
 
@@ -557,6 +567,7 @@ export function vectorPictureBoxes(paths: VectorPath[], page: Pick<StextPage, "w
   const objects = groupNear(shapes, OBJECT_GAP).filter((o) => {
     if (area(o.box) < ICON_AREA) return false;
     if (o.members.filter((m) => worded.has(m)).length * 2 >= o.members.length && wordsIn(o.box) > 0) return false;
+    if (isTextLike(o.members)) return false;
     return o.members.length >= MIN_PATHS || wordsIn(o.box) === 0;
   });
 
@@ -598,6 +609,26 @@ export function vectorPictureBoxes(paths: VectorPath[], page: Pick<StextPage, "w
 
 type Drawing = { box: Box; members: Box[] };
 
+const GLYPH_H = 0.025; // a shape lower than this (of the page height) could be one letter
+const GLYPH_ROW = 0.004; // shapes whose feet sit this close share a baseline
+const MIN_GLYPHS = 12;
+
+// Text outlined to shapes (display type in print-ready PDFs, or a whole page
+// whose fonts were converted) has no text layer, so it would pass every
+// other filter as a dense drawing. Its shapes are letter-sized and stand on
+// shared baselines; an illustration's small strokes do not line up.
+export function isTextLike(members: Box[]): boolean {
+  const small = members.filter((m) => m.h < GLYPH_H && m.w < GLYPH_H * 2);
+  if (small.length < MIN_GLYPHS || small.length < 0.7 * members.length) return false;
+  const rows = new Map<number, number>();
+  for (const m of small) {
+    const k = Math.round((m.y + m.h) / GLYPH_ROW);
+    rows.set(k, (rows.get(k) ?? 0) + 1);
+  }
+  const onRows = [...rows.values()].filter((n) => n >= 5).reduce((t, n) => t + n, 0);
+  return onRows >= 0.8 * small.length;
+}
+
 // Vector shapes bleeding off the top or bottom edge within the header or
 // footer depth are a unit tab or corner ornament (i_5_team_2 pp.6/10/14:
 // puzzle pieces in the top corner; p.18: the "1d Skills work" tab).
@@ -637,6 +668,7 @@ export function groupNear(boxes: Box[], gap: number): Drawing[] {
   const near = (a: Box, b: Box) =>
     a.x - gap <= b.x + b.w && b.x - gap <= a.x + a.w && a.y - gap <= b.y + b.h && b.y - gap <= a.y + a.h;
   const BUCKET = 0.05;
+  const BUCKET_SCAN = 400;
   const buckets = new Map<number, number[]>();
   boxes.forEach((b, i) => {
     const c0 = Math.floor((b.x - gap) / BUCKET);
@@ -647,7 +679,12 @@ export function groupNear(boxes: Box[], gap: number): Drawing[] {
       for (let c = c0; c <= c1; c++) {
         const key = (r + 100) * 1000 + (c + 100);
         const list = buckets.get(key) ?? [];
-        for (const j of list) if (find(i) !== find(j) && near(b, boxes[j])) parent[find(i)] = find(j);
+        // A crowded bucket checks its latest shapes only: neighbours this
+        // dense are already joined through them, and a full scan is O(n^2).
+        for (let k = Math.max(0, list.length - BUCKET_SCAN); k < list.length; k++) {
+          const j = list[k];
+          if (find(i) !== find(j) && near(b, boxes[j])) parent[find(i)] = find(j);
+        }
         list.push(i);
         buckets.set(key, list);
       }
@@ -656,7 +693,9 @@ export function groupNear(boxes: Box[], gap: number): Drawing[] {
   const groups = new Map<number, Box[]>();
   boxes.forEach((b, i) => {
     const root = find(i);
-    groups.set(root, [...(groups.get(root) ?? []), b]);
+    const group = groups.get(root);
+    if (group) group.push(b);
+    else groups.set(root, [b]);
   });
   return [...groups.values()].map((members) => ({ box: union(members), members }));
 }

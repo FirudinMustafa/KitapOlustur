@@ -10,6 +10,7 @@ import {
   rasterPictureBoxes,
   stripFurniture,
   vectorPictureBoxes,
+  isTextLike,
   type Raster,
   type StextBlock,
   type StextPage,
@@ -243,10 +244,15 @@ describe("page furniture (2026-10-21)", () => {
 describe("big inset images", () => {
   it("keeps a picture inside the margins as a picture even when it covers most of the page", () => {
     const inset = image(35, 85, 530, 600); // 66% of the page, margins on all sides
-    expect(hasBackgroundImage({ width: W, height: H, blocks: [inset] })).toBe(false);
-    const layout = analyzeStextPage({ width: W, height: H, blocks: [inset] });
+    // Rendered and scanned like a background...
+    expect(hasBackgroundImage({ width: W, height: H, blocks: [inset] })).toBe(true);
+    // ...and kept whole when the scan finds nothing inside it,
+    const layout = analyzeStextPage({ width: W, height: H, blocks: [inset], rasterImages: [] });
     expect(layout.images).toHaveLength(1);
     expect(layout.zone).toBe("full_width_image");
+    // but a flattened comic with a margin counts its panels.
+    const panels = [0.1, 0.4, 0.7].map((y) => ({ x: 0.08, y, w: 0.84, h: 0.25 }));
+    expect(analyzeStextPage({ width: W, height: H, blocks: [inset], rasterImages: panels }).images).toHaveLength(3);
     // Bleeding off an edge it is still the background.
     expect(hasBackgroundImage({ width: W, height: H, blocks: [image(0, 85, 600, 600)] })).toBe(true);
   });
@@ -350,5 +356,21 @@ describe("vectorPictureBoxes (artwork drawn as paths)", () => {
     expect(layout.images).toHaveLength(1);
     expect(layout.zone).toBe("image_top_text_bottom");
     expect(analyzeStextPage({ ...page([text(40, 40, 400, [line(words(60), 12)])]), vectorPaths: [] }).images).toEqual([]);
+  });
+});
+
+describe("isTextLike", () => {
+  it("finds outlined text: letter-sized shapes on shared baselines", () => {
+    const glyphs = Array.from({ length: 8 }, (_, line) =>
+      Array.from({ length: 30 }, (_, i) => ({ x: 0.1 + i * 0.022, y: 0.5 + line * 0.02, w: 0.015, h: 0.014 })),
+    ).flat();
+    expect(isTextLike(glyphs)).toBe(true);
+  });
+
+  it("leaves an illustration's scattered small strokes alone", () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const strokes = Array.from({ length: 200 }, () => ({ x: 0.2 + rnd() * 0.5, y: 0.3 + rnd() * 0.4, w: 0.004 + rnd() * 0.02, h: 0.004 + rnd() * 0.02 }));
+    expect(isTextLike(strokes)).toBe(false);
   });
 });
