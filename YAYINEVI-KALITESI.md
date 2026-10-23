@@ -134,11 +134,39 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
 - Şarkı ve uçurtma sayfalarının resmi yok; içerik eski analizle yazılmıştı. Yeni run ya da tek tek resim üretimi gerekiyor.
 - Resim alanı %28, kaynakta %70–90. Bunun asıl sebebi metin fazlası; kelime bütçesi yeni bir run'da sınanacak.
 
+**Önce sayfa tasarımı (2026-10-23):**
+
+| Commit | Ne |
+|---|---|
+| `96057ba` | İncelemeler ve görsel kontrol `gemini-3.5-flash-lite`'a geçti (`resolveReviewModel`, `REVIEW_MODEL` ile değiştirilebilir); yazar ve yapı incelemesi Sonnet 5.5'te kaldı. |
+| `3f354bb`, `701797a` | Sayfa tipleri (`page-types.ts`: scene / cards / panels / mixed, `sourceShape.pageType`) ve tip şablonları (`type-templates.tsx`, `type-layout.ts`). Yazara tipe göre talimat gidiyor. Ek resim sınırı 10. |
+| `0d40d71` | Kart seti: N nesne tek resimde üretilip kartlara bölünüyor (`card-sheet.ts`). Sahne etiketleri: `locateLabels` ile ucuz görme modeli konum buluyor, `LabelOverlay` sarı oklu etiketleri basıyor. |
+| `fb657ee` | Birleştirme; sahne sayfasında etiketler. |
+| `9b4cc00` | KIYAS-14 düzeltmeleri (aşağıda). |
+
+**KIYAS-14** (proje `fc25b88f`, run `e79072da`, 2026-10-23; yalnız karşılama ünitesi, çünkü ünite sınırı 1 artık ünite 0'ı da sayıyor):
+- **Maliyet 2,30 $** (KIYAS-13: 8,80 $): metin 1,75, resim 0,46, ses 0,09.
+- **Fidelity (kaynak s.1–6):** yapı **%66** (KIYAS-13 %47–57), görünüm %64, resim sayısı alt puanı %87.
+- **Görülenler:**
+  - s.1 tam sayfa sahne ve "boy / girl / kitten" etiketleri; kaynağın s.1'i gibi.
+  - Renkler sayfası: tek resimden kesilmiş 6 numaralı kalem kartı.
+  - Sayılar sayfası: büyük sayı karoları.
+- **Bulunan hatalar ve düzeltmeler (`9b4cc00`):**
+  - Tasarım incelemesinin yeniden yazdığı sayfa `sourceShape` (tip) ve `labels` alanlarını kaybediyordu; 3 sayfa şablondan düştü, bir alıştırma ikilendi. Artık alanlar taşınıyor ve tekrar ayıklanıyor.
+  - Öğrenci kitabına öğretmen "tip" kutuları giriyordu. Küçük öğrenci kitaplarında basılmıyor.
+  - Panel şablonu sığmayınca kutusuz bir kez daha deneniyor. Taşan tipli sayfa şablonunu kaybetmiyor, daha sıkı diziliyor. Hikâye sayfası artık numaralı 6 kare ve altlarında konuşma satırı.
+- **Yeniden dizilmiş KIYAS-14:** görünüm %66, resim alanı %29. i5 %87 / %56, gerileme yok.
+
+**Hâlâ açık:**
+- **Çalışma kitabı:** kaynağı yok, tamamlayıcı olarak kuruluyor. Tip şablonları uygulanmıyor; taşan alıştırma kuyrukları sayfayı neredeyse boş bırakıyor, resim az.
+- **Kelime ve resim alanı:** metin hâlâ kaynağın 2–4 katı; resim alanı %29, kaynakta %70+.
+- **İsimler sayfası (kaynak s.2, mixed):** küçük resimler, büyük boşluk.
+- **Kart ızgarası:** "Find and color" gibi resim kartları yeni üretimde hâlâ tam kullanılmıyor.
+
 **Sıradaki:**
-1. Canlı doğrulama run'ı, 1 ünite, ~3–4 $ (onayla).
-2. Hikâye sonu sayfasının yerleşimi.
-3. Baskı: 220×280 mm, bleed, CMYK (onayla).
-4. Ajan worktree'lerinin temizliği (onayla).
+1. Çalışma kitabına sayfa tipleri (kart/sahne) ve taşma kuyruğu dengelemesi.
+2. Kelime bütçesini öğrenci kitabı sayfalarında yazar sonrası kesin uygulamak.
+3. Ünite 1 ile ikinci doğrulama (sınıf sahnesi, şarkı sayfası).
 
 **Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
 
