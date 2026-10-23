@@ -12,6 +12,8 @@ import { SCENE_H, SCENE_W, mapGrid, prepositionScene, type Shape } from "@/lib/d
 import { inlineRubric, isChecklistBlock, itemColumns, resolvePageTemplate } from "@/lib/design/layouts";
 import { CALLOUT_STYLES, DESIGN_THEMES, speakerColorMap } from "@/lib/design/themes";
 import { TemplatedPage, lookFonts, type WebLook } from "./TemplatedPage";
+import { resolveTextStyle } from "@/lib/text-style";
+import { ArtefactView } from "./Artefact";
 
 export type { WebLook } from "./TemplatedPage";
 
@@ -540,6 +542,9 @@ export function BlockView({
   const numbered = dense ? /^(\d{1,2})[.)]?\s+(.*)$/.exec(block.heading ?? "") : null;
   const columns = dense && !block.activity ? itemColumns(block.items) : 1;
   const checklist = isChecklistBlock(block);
+  // A note, email, invitation... (src/lib/text-style.ts), as the PDF prints it.
+  const styled = resolveTextStyle(block);
+  const artefact = styled && (styled === "quiz" ? !!block.items?.length : !!block.body) ? styled : null;
   const themed = look
     ? callout
       ? { background: callout.bg, border: `1px solid ${callout.border}`, borderRadius: Math.max(6, look.theme.radius) }
@@ -601,7 +606,8 @@ export function BlockView({
           {block.heading}
         </h3>
       )}
-      {!inline && block.body.split(/\n+/).filter(Boolean).map((p, i) => (
+      {artefact && <ArtefactView style={artefact} block={block} palette={look?.palette ?? { primary, primaryDark: color.text, primaryLight: light }} />}
+      {!inline && !artefact && block.body.split(/\n+/).filter(Boolean).map((p, i) => (
         <p key={i} className={look ? "mt-1 leading-relaxed" : "font-reading mt-1 text-sm leading-relaxed text-foreground/80"}>
           {p}
         </p>
@@ -609,7 +615,7 @@ export function BlockView({
       {!!block.dialogue?.length && <DialogueBubbles lines={block.dialogue} />}
       {block.table && <BlockTable table={block.table} primary={primary} light={light} />}
       {block.diagram?.type === "map" && <TownMap block={block} primary={primary} />}
-      {checklist ? (
+      {artefact === "quiz" ? null : checklist ? (
         <ul className="mt-2 flex flex-col gap-1.5 text-sm">
           {block.items!.map((item, i) => (
             <li key={i} className="flex items-start gap-2">
