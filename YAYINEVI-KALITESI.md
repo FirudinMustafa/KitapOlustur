@@ -185,10 +185,24 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
 - **İsimler sayfası (kaynak s.2, mixed):** küçük resimler, büyük boşluk.
 - **Kart ızgarası:** "Find and color" gibi resim kartları yeni üretimde hâlâ tam kullanılmıyor.
 
+**Elle hazırlanmış referans (2026-10-23, `683ec6b`):**
+- Super Minds karşılama ünitesi (s.1–6) sistemsiz, elle dizildi: `scripts/reference/handcraft-superminds-welcome.tsx`, çıktı `.spike/handcraft/handcraft.pdf`.
+- KIYAS-14'ün kendi resimleri kullanıldı, maliyet 0 $.
+- **Sonuç:** görünüm %75 (kaynağın kendi referansı %71), resim alanı %63, kelime %94. Fark tasarımdaymış, resimde değil.
+- **Kararları sisteme kural olarak taşındı:**
+  - Karta üretilmiş resim düz karodan önce gelir (numaralı uçurtmalar).
+  - Küçük öğrenci kitabında resim kartlarının altında yazı, video hikâyenin karelerinde altyazı yok; hikâye sayfası pembe zeminde.
+  - Kaynağı yansıtan sayfada kutu ve kelime listesi yok; kaynakta üst bant varsa üstte başlık satırı da yok.
+  - Açılış sekmesinde sayfanın kendi başlığı ("Say Hello!").
+  - Resmin üstündeki "Listen and point" alıştırmasında kelime listesi basılmıyor.
+- **KIYAS-14 yeniden dizimi:** yapı %61 → **%68**, görünüm %66 → **%71**, kelime %33 → **%77**, resim alanı %29 → **%55**. i5 %87 / %56.
+
 **Sıradaki:**
-1. Çalışma kitabına sayfa tipleri (kart/sahne) ve taşma kuyruğu dengelemesi.
-2. ~~Kelime bütçesini yazar sonrası uygulamak~~ (`wordtrim` dalı). Sırada fidelity'nin bant ve harf aralığı ölçümü, sonra resim alanı.
-3. Ünite 1 ile ikinci doğrulama (sınıf sahnesi, şarkı sayfası).
+1. Kalan farklar:
+   - Renkler sayfasının alt sahnesi basılmıyor.
+   - Kapanış sayfasının ana resmi yok.
+   - "I can…" ve "Ask and answer" madde listeleri.
+2. Ünite 1 ile ikinci doğrulama (sınıf sahnesi, şarkı sayfası), ~2–2,5 $.
 
 **Çalışma kitabı sayfa tasarımı (2026-10-23, `wbtypes` dalı):**
 - Kaynaksız çalışma kitabı sayfası artık etkinlik kitabı gibi diziliyor (`worksheet-layout.ts`, `pdf/worksheet.tsx`): her alıştırma çerçevede; 4+ resimli "look and write" büyük resim karoları ve altlarında yazma çizgisi; bulmaca büyük ızgara ve yanında ipuçları; sayma satırlarındaki emoji büyük. Boş kalan yer sırayla karolara, sayfa resmine, yazı boyuna (en çok 1,2×) ve çerçeve aralarına gidiyor.
