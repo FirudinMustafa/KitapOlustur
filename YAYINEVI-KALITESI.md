@@ -115,16 +115,30 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
 - **Not:** gizli alıştırmaların yükseklik tahmininden çıkarılması denendi; görünüm 64 → 62, resim alanı 28 → 22 düştü. Eski fazla tahmin büyütmede pay işi görüyor, değişiklik geri alındı.
 - **Elle karşılaştırma:** ~35 → ~55/100. Basıma hazır değil.
 
-**Sıradaki** (plan: `~/.claude/plans/6-dolarr-kalmis-simdi-virtual-canyon.md`):
-1. Çalışma kitabına kaynak teması (iç sayfalar hâlâ zeytin yeşili, eski alt bilgi).
-2. "Picture N" atfı olan ama o resmi olmayan sayfa.
-3. Çalışma kitabı s.5 kenar boşluklu resim, s.10 kesik kafalar.
-4. Tek başına "My words" sayfası.
-5. Pre-A1 çalışma kitabında cevap anahtarı yok.
-6. "Unit 0" → "Welcome".
-7. vitest worktree'leri hariç tutmalı.
-8. Canlı doğrulama run'ı, ~3–4 $ (onayla).
-9. Baskı: 220×280 mm, bleed, CMYK (onayla).
+**Plan A adımları (2026-10-23, `66e1c50`):**
+- **Çalışma kitabı teması:** üretimde zaten veriliyormuş. Zeytin yeşili yalnızca yeniden dizmede `--zones-from` verilmeyince çıkıyordu; çalışma kitabı da bu bayrakla temalı diziliyor.
+- **Küçük öğrenci kuralları:** Pre-A1 / Starters çalışma kitabında cevap anahtarı ve tekrar eden kelime listesi basılmıyor. Yetişkin A1 kitabında ikisi de kalıyor (`isYoungLearnerLevel`).
+- **"Picture N" atfı:** sayfada olmayan resme atıf yazara geri dönüyor. Yazar düzeltmezse ya da resim üretilemediyse atıf düşürülüyor.
+- **0 numaralı ünite:** "WELCOME" olarak basılıyor; alt etiketten "Workbook:" / "Unit 0:" önekleri atılıyor.
+- **Resim yerleşimi:** "contain" ile yerleşen resmin yanında renkli bant kalmıyor; kırpılan resim üstten tutuluyor.
+- **Test çalıştırıcısı:** vitest `.claude/` klasörünü dışlıyor.
+- **Ölçüm:**
+  - Çalışma kitabı 16 → 14 sayfa.
+  - Görünüm %64, resim alanı %28.
+  - Yapı %49 → %47. Sebebi ölçüm: "0" dairesi eskiden alıştırma numarası sayılıyordu.
+  - i5: %87 / %56.
+  - 482 test geçiyor.
+
+**Hâlâ açık:**
+- Hikâye sonu sayfası (kaynak s.6) kaynağın düzenine sığmıyor. Yedek şablon yalnızca ana resmi basıyor, 4 resim basılmıyor.
+- Şarkı ve uçurtma sayfalarının resmi yok; içerik eski analizle yazılmıştı. Yeni run ya da tek tek resim üretimi gerekiyor.
+- Resim alanı %28, kaynakta %70–90. Bunun asıl sebebi metin fazlası; kelime bütçesi yeni bir run'da sınanacak.
+
+**Sıradaki:**
+1. Canlı doğrulama run'ı, 1 ünite, ~3–4 $ (onayla).
+2. Hikâye sonu sayfasının yerleşimi.
+3. Baskı: 220×280 mm, bleed, CMYK (onayla).
+4. Ajan worktree'lerinin temizliği (onayla).
 
 **Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
 
