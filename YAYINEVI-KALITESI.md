@@ -212,6 +212,15 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
 - **Ölçüm:** KIYAS-14 WB 11 → 7 sayfa, KIYAS-13 WB 14 → 11 sayfa. KIYAS-14 SB ve i5 piksel piksel aynı (%66/%29, %87/%56).
 - **Açık:** KIYAS-13 renkler sayfasının resmi sığmadığı için basılmıyor. İkiye bölünen sayfaların altında ~%15–20 boşluk kalıyor. Yükseklik tahmini çerçeveli alıştırmalarda ±%20 sapıyor (`EST_SCALE`).
 
+**Konuşma balonları (2026-10-23, `bubbles` dalı):**
+- Kaynak i5 s.14 ("It's party time!") gibi, sahnedeki diyalog resmin üstünde balonlarla basılıyor. Her balon konuşanın başını gösteren kuyruklu, beyaz, koyu çerçeveli; konuşanın adı kitap renginde ve küçük.
+- `locateSpeakers` (`book-pipeline.tsx`, ucuz görme modeli, `recordUsage(..., "bubbles")`): her konuşanın baş kutusunu buluyor. Tekrarlanan karakter karakter kartındaki görünümüyle, "Mum" ya da "the cat" adıyla aranıyor. Sayfaya `bubbles: {speaker, line, x, y, r}` yazılıyor.
+- Koşullar: ana resim büyük olmalı (sahne, ya da yansıtılan sayfada payı ≥ %18); diyalog 2–8 satır ve satır ≤ 14 kelime.
+- Her satır balon aldıysa diyalog bloğunun satırları resmin altında tekrar basılmıyor; başlık ve yönerge kalıyor. Yarım kalan ya da tasarım incelemesinde değişen diyalog eskisi gibi liste olarak basılıyor.
+- `bubble-overlay.tsx` (`placeBubbles`): baloncuk başın üstüne ya da yanına konuyor, yüzü ve gövdeyi kapatmıyor, çerçevenin ve sahnedeki yönerge/alıştırma alanının içinde kalıyor, balonlar çakışmıyor. Önce tek tek, sonra ikişer ikişer yer değiştirerek en düşük maliyetli dizilim seçiliyor. Kırpılıp dışarıda kalan başa kuyruk çizilmiyor.
+- **Canlı deneme:** `.spike/handcraft2/img/1b-scene.png` üzerinde 6 konuşan için 1 flash-lite çağrısı yapıldı (0,0013 $). Altı baş da doğru bulundu. Görüntüye çevrilip bakıldı: balonlar doğru kişiyi gösteriyor ve çakışmıyor.
+- KIYAS-14 yeniden dizimi değişmedi: %68 / %71.
+
 **Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
 
 **Yapılmadı:**
