@@ -322,13 +322,18 @@ function TopicFooter({ topic, look, bleed = 0 }: { topic?: string; look: Look; b
 
 // A topic short enough for the footer pill: the page's section label (or
 // the unit title), cut at a word.
+// An exercise done by pointing at the page's picture ("Listen and point",
+// "Point and say", "Look and find") - see the young learners' page filter.
+const POINT_AT_PICTURE = /\b(listen and point|point and say|look and find|listen and find)\b/i;
+
 export function footerTopic(label: string | undefined | null): string | undefined {
   // The writer's section labels carry book and unit prefixes ("Workbook:
   // Commands, numbers...", "Unit 0: Hello, Friends!") - the pill is the topic.
   const t = label
     ?.trim()
     .replace(/^(student book|workbook|teacher'?s book|test booklet)\s*[:·-]\s*/i, "")
-    .replace(/^unit\s+\d+\s*[:·-]\s*/i, "");
+    .replace(/^unit\s+\d+\s*[:·-]\s*/i, "")
+    .replace(/^[^:]*\bunit\b[^:]*:\s*/i, ""); // "Starter Unit: Say Hello!"
   if (!t) return undefined;
   if (t.length <= 32) return t;
   const cut = t.slice(0, 32);
@@ -698,8 +703,10 @@ export function BookDocument({
     // Young learners only ("CEFR Pre-A1", "Starters"); adult A1 keeps definitions.
     wordList: variant !== "teacher_book" && isYoungLearnerLevel(level),
     // The word list prints once, in the Student Book; repeated at the end of
-    // each workbook unit it ran onto a page of its own.
-    noGlossary: variant === "workbook" && isYoungLearnerLevel(level),
+    // each workbook unit it ran onto a page of its own. A book mirroring a
+    // source prints none at all - the source's pupil pages carry no word
+    // list (hand-set reference, 2026-10-23).
+    noGlossary: isYoungLearnerLevel(level) && variant !== "teacher_book" && (variant === "workbook" || !!sourceStyle?.type),
     furniture: sourceStyle?.type?.furniture ?? null,
   };
   // A book mirroring a source prints its page furniture: the topic footer
@@ -786,7 +793,20 @@ export function BookDocument({
           // A young learners' pupil book prints no teacher notes (KIYAS-14: the
           // writer kept adding "Teacher: sing every day" tip boxes, and the
           // source prints none); the Teacher's Book keeps them.
-          const page = look.wordList ? { ...referenced, blocks: referenced.blocks.filter((b) => b.callout !== "tip") } : referenced;
+          // On a page mirroring a source no box prints at all ("Remember",
+          // "Grammar"): the source's pupil pages have none, and the hand-set
+          // reference left them out.
+          const unboxed = look.wordList
+            ? { ...referenced, blocks: referenced.blocks.filter((b) => b.callout !== "tip" && !(referenced.zonePlan && b.callout)) }
+            : referenced;
+          // "Listen and point. Say the names." over a picture prints no list
+          // of the names in the source (p.2) or the hand-set reference: the
+          // learners point at the picture. Cards and panels pages keep their
+          // items - they are the cards' words and the panels' lines.
+          const page =
+            look.wordList && unboxed.zonePlan && imageSrcs.length && pageLayoutType(unboxed) === "mixed"
+              ? { ...unboxed, blocks: unboxed.blocks.map((b) => (POINT_AT_PICTURE.test(b.heading ?? "") && b.items?.every((i) => itemText(i).split(/\s+/).length <= 3) ? { ...b, items: [] } : b)) }
+              : unboxed;
           const isCompact = !!compact?.has(`${unit.unitNumber}:${idx}`);
           const zoneSlack = slack?.get(`${unit.unitNumber}:${idx}`);
           const pageLook = isCompact || zoneSlack ? { ...look, compact: isCompact, zoneSlack } : look;
@@ -851,7 +871,13 @@ export function BookDocument({
             </View>
           );
           return (
-            <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={sheetSize} style={pageStyle} wrap>
+            <Page
+              key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`}
+              size={sheetSize}
+              // a story page on a tinted sheet, as the source sets it (p.5)
+              style={typed?.type === "panels" && mirrorsSource ? [...pageStyle, { backgroundColor: palette.primaryLight }] : pageStyle}
+              wrap
+            >
               <PageMarker id={pageKey} onPageStart={onPageStart} />
               {scene && imageSrc ? (
                 <ScenePicture
@@ -865,7 +891,8 @@ export function BookDocument({
                 />
               ) : null}
               {topBand ? <TopEdgeBand band={topBand} bleed={bleed} pageSize={pageSize} /> : null}
-              {!edgeToEdge && runningHeader}
+              {/* Under the source's top band there is no running header line (Super Minds) - the band and footer pill carry the page. */}
+              {!edgeToEdge && !(mirrorsSource && look.furniture?.topBand) && runningHeader}
 
               {worksheet ? (
                 <WorksheetPageBody
@@ -897,6 +924,7 @@ export function BookDocument({
                   mainSrc={imageSrc}
                   topInset={topBandHeight(topBand, pageSize.height)}
                   labels={page.labels}
+                  title={footerTopic(page.sectionLabel)}
                 />
               ) : template === "standard" ? (
                 <StandardPageBody

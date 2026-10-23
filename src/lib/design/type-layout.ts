@@ -153,9 +153,15 @@ function typedLayoutOnce(
     );
     if (leadAt < 0) return null;
     const lead = page.blocks[leadAt];
+    // Prompts written one per card name their card, most of them literally;
+    // an older run's scene prompts do not.
+    const cardWords = lead.items!.map((raw) => itemText(raw).trim().replace(/[.!]$/, "").toLowerCase());
+    const perCard =
+      pictures.prompts.length >= cardWords.length &&
+      cardWords.filter((w, k) => pictures.prompts[k] && mentions(pictures.prompts[k], w)).length * 2 > cardWords.length;
     const cards = lead.items!.map((raw, k): Card => {
       const word = itemText(raw).trim().replace(/[.!]$/, "");
-      return { word, face: cardFace(word, pictures.extras[k], pictures.prompts[k], emojiSrc) };
+      return { word, face: cardFace(word, pictures.extras[k], pictures.prompts[k], emojiSrc, perCard) };
     });
     if (cards.filter((c) => c.face.kind !== "word").length < cards.length * MIN_FACES) return null;
     const before = page.blocks.slice(0, leadAt);
@@ -225,10 +231,17 @@ export function cardColumns(n: number): number {
 // stored pages of older runs have extra pictures that are not one object
 // per card (a strip of three flashcards), and a card under the wrong
 // picture is worse than a number tile.
-export function cardFace(word: string, src: string | undefined, prompt: string | undefined, emojiSrc?: Record<string, string>): CardFace {
+// perCard: the page has one picture prompt per card (a run written for card
+// pages) - then a slot's picture is its card's even when the prompt words it
+// differently. Older runs' extra pictures are not per card and must name it.
+export function cardFace(word: string, src: string | undefined, prompt: string | undefined, emojiSrc?: Record<string, string>, perCard = false): CardFace {
   const w = word.toLowerCase();
+  // A picture made for the card wins over a drawn tile (KIYAS-14: ten
+  // numbered kites were generated and the page printed plain number tiles;
+  // the hand-set reference used the kites, as the source does).
+  // ("a kitten" for the card "cat" printed a bare word in KIYAS-14).
+  if (src && (perCard || !prompt || mentions(prompt, w))) return { kind: "picture", src };
   if (/^\d{1,2}$/.test(w)) return { kind: "number", n: w };
-  if (src && (!prompt || mentions(prompt, w))) return { kind: "picture", src };
   if (w in COLOR_HEX) return { kind: "color", hex: COLOR_HEX[w] };
   if (isEmoji(word)) {
     const emoji = splitEmoji(word).find((p) => p.emoji)?.emoji;

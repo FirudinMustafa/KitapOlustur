@@ -71,7 +71,9 @@ function RubricPill({ block, look, maxWidth }: { block: ContentBlock; look: Look
 
 // The unit's title on a tab from the page's outer edge, as a coursebook's
 // unit opener prints it over its scene (Super Minds p.1 "Say Hello!").
-function TitleTab({ unit, look, top, bleed }: { unit: { unitNumber: number; title: string }; look: Look; top: number; bleed: number }) {
+// The page's own short title when it has one ("Say Hello!", not the unit's
+// long name) - the hand-set reference and the source print that.
+function TitleTab({ unit, title, look, top, bleed }: { unit: { unitNumber: number; title: string }; title?: string; look: Look; top: number; bleed: number }) {
   return (
     <View
       style={{
@@ -91,7 +93,7 @@ function TitleTab({ unit, look, top, bleed }: { unit: { unitNumber: number; titl
       <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center", marginRight: 8 }}>
         <Text style={[{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 12, color: look.palette.primary }, centredFigure(12)]}>{unitBadgeText(unit.unitNumber)}</Text>
       </View>
-      <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: 19, color: "#ffffff" }}>{unit.title}</Text>
+      <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: 24, color: "#ffffff" }}>{title || unit.title}</Text>
     </View>
   );
 }
@@ -151,7 +153,9 @@ function CardTile({ card, index, width, faceHeight, look }: { card: Card; index:
         )}
       </View>
       <View style={{ height: CARD_WORD_H, justifyContent: "center" }}>
-        {face.kind === "number" || face.kind === "word" ? null : (
+        {/* Young learners name the picture themselves (source pp.3 and 6
+            print numbered pictures with no words); older books keep the word. */}
+        {face.kind === "number" || face.kind === "word" || (look.wordList && face.kind !== "emoji") ? null : (
           <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: look.theme.bodySize * 1.1, textAlign: "center", color: "#1f2937" }}>{card.word}</Text>
         )}
       </View>
@@ -174,9 +178,11 @@ export type TypedPageProps = {
   topInset?: number;
   /** A scene's placed labels (plan step 4) - while set, the items are not repeated as chips. */
   labels?: SceneLabel[];
+  /** The page's short title for the opener tab (its section label). */
+  title?: string;
 };
 
-export function TypedPageBody({ layout, unit, isUnitFirstPage, look, showAnswerKey, pageSize, unitKicker, bleed = 0, mainSrc, topInset = 0, labels }: TypedPageProps) {
+export function TypedPageBody({ layout, unit, isUnitFirstPage, look, showAnswerKey, pageSize, unitKicker, bleed = 0, mainSrc, topInset = 0, labels, title }: TypedPageProps) {
   const contentWidth = pageSize.width - 88;
   const lineHeight = `${(look.theme.bodySize * DENSE_LINE).toFixed(2)}pt`;
 
@@ -187,7 +193,7 @@ export function TypedPageBody({ layout, unit, isUnitFirstPage, look, showAnswerK
     const chips = labels?.length ? [] : layout.chips;
     return (
       <>
-        {isUnitFirstPage ? <TitleTab unit={unit} look={look} top={tabTop} bleed={bleed} /> : null}
+        {isUnitFirstPage ? <TitleTab unit={unit} title={title} look={look} top={tabTop} bleed={bleed} /> : null}
         <View style={{ position: "absolute", top: pillTop, left: 32 + bleed, right: 32 + bleed }}>
           <RubricPill block={layout.lead} look={look} maxWidth={contentWidth + 24} />
         </View>
@@ -262,7 +268,9 @@ export function TypedPageBody({ layout, unit, isUnitFirstPage, look, showAnswerK
                 <Text style={[{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9.5, color: "#1f2937" }, centredFigure(9.5)]}>{k + 1}</Text>
               </View>
             </View>
-            {layout.lines.length ? (
+            {/* A video story's panels carry no captions in a young learners'
+                book (source p.5) - the story is heard, not read. */}
+            {layout.lines.length && !(look.wordList && /\bwatch\b/i.test(layout.lead.heading ?? "")) ? (
               <View style={{ height: PANEL_LINE_H, justifyContent: "center" }}>
                 <Text style={{ fontSize: look.theme.bodySize * 1.05, textAlign: "center", lineHeight: 1.15 }}>{layout.lines[k] ?? ""}</Text>
               </View>
