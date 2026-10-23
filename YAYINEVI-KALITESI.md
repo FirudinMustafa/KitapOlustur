@@ -157,15 +157,37 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
   - Panel şablonu sığmayınca kutusuz bir kez daha deneniyor. Taşan tipli sayfa şablonunu kaybetmiyor, daha sıkı diziliyor. Hikâye sayfası artık numaralı 6 kare ve altlarında konuşma satırı.
 - **Yeniden dizilmiş KIYAS-14:** görünüm %66, resim alanı %29. i5 %87 / %56, gerileme yok.
 
+**Kelime bütçesi yazardan sonra da (`wordtrim` dalı, AI maliyeti 0 $):**
+- Sayım basılana göre: küçük öğrenci kitabında basılmayan "tip" kutusu sayılmıyor; kelime bankası ve tablo hücreleri sayılıyor (`pageWordCount`).
+- `src/lib/word-trim.ts`: ünite son hâlini alınca (ek alıştırmalar ve doldurmalar dahil) bütçeyi aşan sayfa sırayla kırpılıyor:
+  1. Başlığı tekrarlayan yönerge.
+  2. İlk kutudan sonraki tip / did-you-know / remember kutuları.
+  3. Yönergenin ilk cümlesi kalıyor.
+  4. Başlığı zaten yönerge olan alıştırmanın ek yönergesi.
+  - Maddeler, cevaplar, diyalog, tablo, okuma metni, dilbilgisi kutusu, örnek ve dinleme metni korunuyor.
+  - Uygulandığı yerler: ünite sonu, editöryel geri bildirim yeniden üretimi, tasarım incelemesinin "shorten" yeniden yazımı ve `relayout.mts`.
+- Tasarım incelemesi: bütçesinin %80'ini dolduran sayfa "enrich"e hiç gönderilmiyor; bütçeyi aşan "enrich" sonucu atılıyor.
+- Yazar: küçük öğrenci sayfalarında `wordLimit: "at most N words on this page"`.
+- **Ölçüm:**
+  - KIYAS-14 değişmedi: sayfaların hepsi zaten bütçe içinde. Yapı %61, görünüm %66, kelime %33, resim alanı %29.
+  - KIYAS-13'te 3 sayfa kırpıldı (s.11: 136 → 119 basılı kelime). Kelime %31 → %32, resim alanı %34 aynı. i5'te kırpılan sayfa yok.
+- **Asıl bulgu, "2–4 kat" büyük ölçüde ölçüm hatası:**
+  - KIYAS-14 s.5'teki 74 "kelime"nin 42'si üst bant. Harf aralıklı başlık ("W E LCO M E …") parça parça sayılıyor.
+  - Bant, fidelity'de sayfa unsuru olarak ayıklanmıyor: 9 sayfanın 5'inde aynı, %60 eşiğinin altında (açılış sayfasının bandı farklı).
+  - Kalanın 7–18'i madde numarası, 4–6'sı alt bilgi, s.9'da 21'i "My words".
+  - İçerik metni 9–35 kelime; kaynak 11–38.
+  - Resim alanındaki açık metinden değil, yerleşimden geliyor.
+
 **Hâlâ açık:**
 - **Çalışma kitabı:** kaynağı yok, tamamlayıcı olarak kuruluyor. Tip şablonları uygulanmıyor; taşan alıştırma kuyrukları sayfayı neredeyse boş bırakıyor, resim az.
-- **Kelime ve resim alanı:** metin hâlâ kaynağın 2–4 katı; resim alanı %29, kaynakta %70+.
+- **Resim alanı:** %29, kaynakta %70+. İçerik metni artık kaynak kadar; sebep yerleşim (resimler küçük, sayfada boşluk var).
+- **Fidelity kelime ölçümü:** üretilen kitabın bandı ayıklanmıyor ve harf aralıklı yazı fazla sayılıyor. Kelime alt puanı (%33) bu yüzden yanıltıcı.
 - **İsimler sayfası (kaynak s.2, mixed):** küçük resimler, büyük boşluk.
 - **Kart ızgarası:** "Find and color" gibi resim kartları yeni üretimde hâlâ tam kullanılmıyor.
 
 **Sıradaki:**
 1. Çalışma kitabına sayfa tipleri (kart/sahne) ve taşma kuyruğu dengelemesi.
-2. Kelime bütçesini öğrenci kitabı sayfalarında yazar sonrası kesin uygulamak.
+2. ~~Kelime bütçesini yazar sonrası uygulamak~~ (`wordtrim` dalı). Sırada fidelity'nin bant ve harf aralığı ölçümü, sonra resim alanı.
 3. Ünite 1 ile ikinci doğrulama (sınıf sahnesi, şarkı sayfası).
 
 **Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
