@@ -35,7 +35,7 @@ import {
   type RunStatus,
 } from "@/db/schema";
 import { ngramJaccardSimilarity } from "@/lib/originality";
-import { describeVocabularyCoverage, estimateVocabularyCoverage, levelIssue, levelProfile, targetBand } from "@/lib/cefr-vocabulary";
+import { describeVocabularyCoverage, estimateVocabularyCoverage, isYoungLearnerLevel, levelIssue, levelProfile, targetBand } from "@/lib/cefr-vocabulary";
 import { grammarInventory } from "@/lib/cefr-grammar";
 import {
   pageMapSchema,
@@ -128,7 +128,8 @@ import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
 import { numberExercises } from "@/lib/exercise-numbers";
 import { titleCopiesSource } from "@/lib/title-guard";
-import { fillZonePictures, shapeIssues } from "@/lib/source-shape";
+import { fillZonePictures, pageWordBudget, pageWordCount, shapeIssues } from "@/lib/source-shape";
+import { trimPageToBudget, trimUnitToBudget, unitTrimOptions } from "@/lib/word-trim";
 import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
 import { placeholderItemIssue } from "@/lib/placeholder-items";
 import { dropWriterLayouts } from "@/lib/writer-layout";
@@ -940,7 +941,7 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
         "You are an expert instructional materials writer and editor for the given subject. You write complete, publication-quality content for a single unit, mirroring a source book's page-by-page structure while writing entirely original content - you draw inspiration from the source's topics and structure, but never copy it verbatim.",
       prompt: [
         ...unitGenerationPromptHeader(input),
-        `The uploaded source book was the "${input.sourceBookType}". Here is the page-by-page blueprint of THIS unit's pages from that source:\n${JSON.stringify(writerBlueprint(input.unitSourcePages))}`,
+        `The uploaded source book was the "${input.sourceBookType}". Here is the page-by-page blueprint of THIS unit's pages from that source:\n${JSON.stringify(writerBlueprint(input.unitSourcePages, { youngLearners: isYoungLearnerLevel(input.level) }))}`,
         BLUEPRINT_INSTRUCTIONS,
         `Produce "pages" with exactly one generated page per source page listed above, in the same order, using the same sourcePageNumber and the same pageType. Write entirely new, original content for each page, inspired by (never copied from) its summary and topic.`,
         "For any page that should carry a photo or illustration (mirroring one that had an image in the source, or wherever it naturally helps), set imagePrompt to a vivid description of a NEW, original image reimagining that scene - never a copy of the source image. Pages whose blueprint has no \"measured\" may still get one where it naturally helps.",
@@ -2816,12 +2817,14 @@ const UNIT_PAGE_ARRAY_FIELDS: { label: string; field: keyof Pick<GeneratedUnit, 
   { label: "Test Booklet", field: "testBookletPages" },
 ];
 
-export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics = A4_METRICS): string[] {
+export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics = A4_METRICS, level = ""): string[] {
   const issues: string[] = [];
   for (const { label, field } of UNIT_PAGE_ARRAY_FIELDS) {
+    // Tips don't print in young learners' pupil books - nor count there.
+    const wordOptions = { hideTips: field !== "teacherBookPages" && isYoungLearnerLevel(level) };
     for (const [pageIndex, page] of (unit[field] ?? []).entries()) {
       // Faz B: as many exercises and pictures as the measured source page.
-      issues.push(...shapeIssues(page, label));
+      issues.push(...shapeIssues(page, label, wordOptions));
       const pictureRef = missingPictureRefIssue(page, label);
       if (pictureRef) issues.push(pictureRef);
       for (const block of page.blocks) {
@@ -2963,6 +2966,9 @@ export function normalizeLayoutTemplates(unit: GeneratedUnit): GeneratedUnit {
 // still weak is shown to the human at final approval.
 
 const MAX_DESIGN_ROUNDS = 2;
+// An "enrich" design fix only goes to a page with at least a fifth of its
+// word budget still free (a page without a budget always qualifies).
+const ENRICH_MIN_ROOM = 0.8;
 const DESIGN_BATCH_SIZE = 4;
 const MAX_REFERENCE_PAGES = 3;
 
@@ -4155,7 +4161,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           isPictureBook ? notApplicable : reviewSkillBalance(runId, n, generated),
         ]);
 
-        const structuralIssues = validateUnitStructure(generated, layoutMetrics);
+        const structuralIssues = validateUnitStructure(generated, layoutMetrics, outline.level);
         const issues = [
           ...structureReview.issues,
           ...languageReview.issues,
@@ -4185,7 +4191,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // accepting "still broken after one retry" the way the AI-review
         // path does.
         for (let attempt = 0; attempt < 2; attempt++) {
-          const remainingIssues = validateUnitStructure(generated, layoutMetrics);
+          const remainingIssues = validateUnitStructure(generated, layoutMetrics, outline.level);
           if (!remainingIssues.length) break;
           await setRunStatus(
             runId,
@@ -4219,7 +4225,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
             // deterministic answerKey/imagePrompt check, not just whichever
             // one gets picked.
             for (let attempt = 0; attempt < 2; attempt++) {
-              const remainingIssues = validateUnitStructure(unit, layoutMetrics);
+              const remainingIssues = validateUnitStructure(unit, layoutMetrics, outline.level);
               if (!remainingIssues.length) break;
               unit = await buildUnit(remainingIssues);
             }
@@ -4234,7 +4240,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               reviewContentSafety(runId, n, unit),
               reviewSkillBalance(runId, n, unit),
             ]);
-            const structuralIssues = validateUnitStructure(unit, layoutMetrics);
+            const structuralIssues = validateUnitStructure(unit, layoutMetrics, outline.level);
             return {
               index: i,
               unit,
@@ -4269,6 +4275,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
 
         await archiveVariants(runId, n, variants, selection.selectedIndex);
       }
+
+      // The unit's text is final (top-ups and fill-ins included): a mirrored
+      // page still over its source's word budget loses its spare text
+      // (src/lib/word-trim.ts). Deterministic, so replay-safe here.
+      if (!isPictureBook) generated = trimUnitToBudget(generated, outline.level);
 
       if (!resumedUnit && variantCount === 1) {
         await checkpointUnit(runId, n, generated);
@@ -4327,7 +4338,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           "generating",
           `Ünite ${change.unitNumber}: editöryel geri bildirimle yeniden üretiliyor`,
         );
-        const regenerated = await builder([change.comment]);
+        const rebuilt = await builder([change.comment]);
+        const regenerated = isPictureBook ? rebuilt : trimUnitToBudget(rebuilt, outline.level);
         const idx = units.findIndex((u) => u.unitNumber === change.unitNumber);
         if (idx !== -1) {
           previousUnitVersions[change.unitNumber] = units[idx];
@@ -4578,6 +4590,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           const pages = unitIdx >= 0 ? units[unitIdx][field] : undefined;
           const target = pages?.[proofPage.pageIndex];
           if (!pages || !target) continue;
+          const wordOptions = unitTrimOptions(units[unitIdx], outline.level, field !== "teacherBookPages");
           let next: GeneratedPage = target;
           const hasImage = !!pageImages[target.imageOverrideSourcePageNumber ?? target.sourcePageNumber];
           let action = fix;
@@ -4598,12 +4611,19 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           if (action === "switch_template" && grade.suggestedTemplate) {
             next = { ...target, layoutTemplate: grade.suggestedTemplate };
           } else if (action === "enrich_content") {
+            // KIYAS-14: "enrich" asks for 120-240 words - on a mirrored page
+            // that is several times its source's. A page with no room left
+            // in its word budget isn't sent at all.
+            const budget = pageWordBudget(target);
+            if (budget !== null && pageWordCount(target, wordOptions) >= budget * ENRICH_MIN_ROOM) continue;
             try {
               next = await rewritePageToFit(runId, target, grade.issues.map((i) => i.description), outline.contentLanguage, "enrich");
               // Live E2E 2026-10-09: enriched pages with pictures ran onto a
-              // second page. Only keep a rewrite that still fits.
+              // second page. Only keep a rewrite that still fits - on the
+              // page and within its word budget.
               const fit = estimateTemplateFit(next, resolvePageTemplate(next, hasImage, fitOptions), hasImage, proofPage.pageIndex === 0, layoutMetrics, fitOptions.pictureCount);
               if (fit.needed > fit.available) continue;
+              if (budget !== null && pageWordCount(next, wordOptions) > budget) continue;
             } catch {
               continue;
             }
@@ -4613,7 +4633,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               ...grade.issues.map((i) => i.description),
             ];
             try {
-              next = await rewritePageToFit(runId, target, problems, outline.contentLanguage);
+              next = trimPageToBudget(await rewritePageToFit(runId, target, problems, outline.contentLanguage), wordOptions);
             } catch {
               continue; // keep the page as it was
             }

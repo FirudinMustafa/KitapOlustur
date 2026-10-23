@@ -25,6 +25,14 @@ describe("writerBlueprint", () => {
     expect(bp).toMatchObject({ sourcePageNumber: 5, measured: { pictures: 1, numberedExercises: 4, itemsPerExercise: 5, textColumns: 2 } });
     expect(JSON.stringify(bp)).not.toContain("verbatim text");
   });
+
+  it("gives young learners' pages their word limit as a number", () => {
+    const pages = [page(1, layout({ wordCount: 11 })), page(2, layout({ wordCount: 4 }))];
+    const [young, scanned] = writerBlueprint(pages, { youngLearners: true });
+    expect(young).toMatchObject({ measured: { words: 11, wordLimit: "at most 31 words on this page" } });
+    expect(scanned).toMatchObject({ measured: { words: undefined, wordLimit: undefined } });
+    expect(writerBlueprint(pages)[0]).toMatchObject({ measured: { words: 11, wordLimit: undefined } });
+  });
 });
 
 describe("applyZonePlans", () => {

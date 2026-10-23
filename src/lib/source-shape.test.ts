@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillZonePictures, shapeIssues } from "./source-shape";
+import { fillZonePictures, pageWordCount, shapeIssues } from "./source-shape";
 import type { ZonePlan } from "@/lib/design/zones";
 
 const twoPictures: ZonePlan = {
@@ -50,6 +50,16 @@ describe("word budget", () => {
 
   it("accepts a page within its budget", () => {
     expect(shapeIssues(page(["chair", "book", "pencil"], 11), "Student Book")).toEqual([]);
+  });
+
+  it("counts word banks and tables, and leaves out tips the book hides", () => {
+    const tip = { kind: "reference", heading: "Teacher", body: "Sing the song every day with the class and then at home with family.", callout: "tip" };
+    const base = page(["chair", "book", "pencil"], 4); // budget 24: 10 words + a 15-word tip
+    const p = { ...base, blocks: [...base.blocks, tip] };
+    expect(shapeIssues(p, "Student Book")).toHaveLength(1);
+    expect(shapeIssues(p, "Student Book", { hideTips: true })).toEqual([]);
+    const bank = { kind: "practice", heading: "2 Choose", body: "", activity: { type: "word_bank", words: ["a", "b"] }, table: { headers: ["x"], rows: [["y"], ["z"]] } };
+    expect(pageWordCount({ blocks: [bank] })).toBe(2 + 2 + 3);
   });
 
   it("does not check pages without a measured word count", () => {

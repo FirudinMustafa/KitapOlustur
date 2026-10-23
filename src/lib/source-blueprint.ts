@@ -1,4 +1,6 @@
 import type { GeneratedPage, SourcePage } from "@/lib/ai/schemas";
+import type { SourcePageLayout } from "@/lib/source-layout";
+import { wordBudget } from "@/lib/source-shape";
 import { buildZonePlan, zonePictureCount } from "@/lib/design/zones";
 import { classifyPageType, typedPictureCount } from "@/lib/design/page-types";
 
@@ -11,10 +13,19 @@ import { classifyPageType, typedPictureCount } from "@/lib/design/page-types";
 // (a scan, or text outlined to shapes) - no word budget is set for it.
 const MIN_MEASURED_WORDS = 8;
 
-export function writerBlueprint(pages: SourcePage[]) {
+// The word count a page's budget is set from, or undefined where none is.
+export function measuredWords(layout: Pick<SourcePageLayout, "wordCount">): number | undefined {
+  return layout.wordCount >= MIN_MEASURED_WORDS ? layout.wordCount : undefined;
+}
+
+// youngLearners: KIYAS-14 (2026-10-23) - told "words: 11" and the rule for
+// working out the limit, the writer still wrote 2-4 times the source's words
+// on Pre-A1 pages. Each page now also carries its limit as a number.
+export function writerBlueprint(pages: SourcePage[], options: { youngLearners?: boolean } = {}) {
   return pages.map((p) => {
     const plan = p.layout ? buildZonePlan(p.layout) : null;
     const design = p.layout ? classifyPageType(p.layout) : "mixed";
+    const words = p.layout ? measuredWords(p.layout) : undefined;
     return {
       sourcePageNumber: p.pageNumber,
       pageType: p.pageType,
@@ -29,7 +40,8 @@ export function writerBlueprint(pages: SourcePage[]) {
               numberedExercises: p.layout.exerciseCount,
               itemsPerExercise: p.layout.exerciseCount ? Math.round(p.layout.itemCount / p.layout.exerciseCount) : undefined,
               textColumns: p.layout.textColumns,
-              words: p.layout.wordCount >= MIN_MEASURED_WORDS ? p.layout.wordCount : undefined,
+              words,
+              wordLimit: options.youngLearners && words !== undefined ? `at most ${wordBudget(words)} words on this page` : undefined,
               exerciseFormats: p.layout.exerciseRubrics.length ? p.layout.exerciseRubrics : undefined,
               listeningExercises: p.layout.listeningCount || undefined,
             },
@@ -47,6 +59,7 @@ export const BLUEPRINT_INSTRUCTIONS = [
   "- exerciseFormats: the source's exercise instructions, in order. Reproduce each exercise's FORMAT (circle, match, complete, listen and number, write, ask and answer...) with entirely new content and your own wording - never copy the instruction text.",
   "- listeningExercises: that many of the page's exercises are done with a recording (listen and point / number / tick, listen and sing / chant, watch and listen to the story). Write each as a listening exercise and add a listeningAudio entry for every one: blockRef = that exercise block's exact heading, script = exactly what the recording says (the words or sentences to point at in item order, the full song or chant lyrics, the story's dialogue with dialogueLines per speaker).",
   "- words: the printed page's whole text (headings, instructions, items, speech). A hard limit: at most 1.5 times this (or this + 20, whichever is more) - a page over it is sent back. For young learners' pages the pictures carry the exercise: one short instruction, items of a word or two.",
+  "- wordLimit: that page's word limit, worked out for you - count the page's words (headings, instructions, items, speech, word banks, callout boxes except \"tip\") and stay under it. Leave out explanations and extra boxes; a teacher's note goes in a \"tip\" callout, which the pupil's book doesn't print.",
   "- textColumns: 2 means short, parallel blocks rather than one long block.",
   "- design: the page is built from its pictures, not from text. Follow it exactly - it overrides \"pictures\" above where they differ:",
   "  - \"scene\": one full-page picture. imagePrompt is the whole scene (a place full of things and people to talk about). The first exercise's items are 4-8 single words naming things clearly visible in that scene (they are printed as labels on the picture), e.g. \"window\", \"door\", \"chair\" - every word must be something drawn in the imagePrompt. Keep any other text to one short line.",
@@ -73,7 +86,7 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
       // A hard budget only where the page has a real text layer: a scanned
       // page (or one with outlined text) measures ~0 words, and a budget of
       // 20 would send every unit back to be rewritten and crush its text.
-      ...(layout.wordCount >= MIN_MEASURED_WORDS ? { words: layout.wordCount } : {}),
+      ...(measuredWords(layout) !== undefined ? { words: layout.wordCount } : {}),
       pageType,
     };
     if (!plan) return { ...page, sourceShape };
