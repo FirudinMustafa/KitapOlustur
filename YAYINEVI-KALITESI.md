@@ -168,6 +168,14 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
 2. Kelime bütçesini öğrenci kitabı sayfalarında yazar sonrası kesin uygulamak.
 3. Ünite 1 ile ikinci doğrulama (sınıf sahnesi, şarkı sayfası).
 
+**Çalışma kitabı sayfa tasarımı (2026-10-23, `wbtypes` dalı):**
+- Kaynaksız çalışma kitabı sayfası artık etkinlik kitabı gibi diziliyor (`worksheet-layout.ts`, `pdf/worksheet.tsx`): her alıştırma çerçevede; 4+ resimli "look and write" büyük resim karoları ve altlarında yazma çizgisi; bulmaca büyük ızgara ve yanında ipuçları; sayma satırlarındaki emoji büyük. Boş kalan yer sırayla karolara, sayfa resmine, yazı boyuna (en çok 1,2×) ve çerçeve aralarına gidiyor.
+- Sayfa resmi üste sığmazsa kısa satırlı bir alıştırmanın yanına konuyor.
+- Sıkı dizimde de taşan sayfa düz akışa düşmüyor; alıştırmalar arasından bölünüp her biri dolu iki sayfaya diziliyor (`"<ünite>:<sayfa>/<k>"` işaretleri).
+- `renderBookFitted`: düz akıştaki bir sayfa artık bütün sayfaların boşluk büyütmesini iptal etmiyor. Arkada basılan cevap anahtarı kartın bölünme sınırında sayılmıyor.
+- **Ölçüm:** KIYAS-14 WB 11 → 7 sayfa, KIYAS-13 WB 14 → 11 sayfa. KIYAS-14 SB ve i5 piksel piksel aynı (%66/%29, %87/%56).
+- **Açık:** KIYAS-13 renkler sayfasının resmi sığmadığı için basılmıyor. İkiye bölünen sayfaların altında ~%15–20 boşluk kalıyor. Yükseklik tahmini çerçeveli alıştırmalarda ±%20 sapıyor (`EST_SCALE`).
+
 **Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
 
 **Yapılmadı:**

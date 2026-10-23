@@ -31,6 +31,8 @@ export type Look = {
   zoneSlack?: number;
   /** KIYAS-13: how far a zoned page's text grew into its leftover room - number cards grow with it. */
   grow?: number;
+  /** Size (pt) of the emoji pictures in an item's text - a workbook's counting rows (worksheet-layout.ts); unset = EMOJI_PT. */
+  itemEmoji?: number;
   /** Glossary as a compact word list (terms only) - young learners' books, see GlossaryGrid. */
   wordList?: boolean;
   /** No glossary at all - a young learners' workbook (the Student Book prints the word list). */
@@ -201,7 +203,7 @@ function ChecklistItems({ items, look }: { items: string[]; look: Look }) {
 
 // ---- Workbook activity formats (src/lib/activities.ts) ----
 
-function WordBank({ words, look }: { words: string[]; look: Look }) {
+export function WordBank({ words, look }: { words: string[]; look: Look }) {
   return (
     <View
       style={{
@@ -294,10 +296,10 @@ function Dot({ color }: { color: string }) {
 
 // Words on the left, lettered pictures on the right (already in mixed
 // order), a dot on each side to draw the line between.
-function PictureMatch({ block, look }: { block: ContentBlock; look: Look }) {
+export function PictureMatch({ block, look, row: rowHeight }: { block: ContentBlock; look: Look; row?: number }) {
   const items = block.items ?? [];
   const pictures = block.activity?.pictures ?? [];
-  const row = sized(look, MATCH_ROW);
+  const row = rowHeight ?? sized(look, MATCH_ROW);
   const frame = row - 8;
   return (
     <View>
@@ -340,7 +342,7 @@ function ItemLine({ n, item, look, style }: { n: number; item: string; look: Loo
         if (part.text) return <Text key={i}>{part.text}</Text>;
         const src = look.pictureSrc?.[part.emoji!];
         // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop
-        return src ? <Image key={i} src={src} style={{ width: EMOJI_PT, height: EMOJI_PT, marginRight: 1 }} /> : null;
+        return src ? <Image key={i} src={src} style={{ width: look.itemEmoji ?? EMOJI_PT, height: look.itemEmoji ?? EMOJI_PT, marginRight: 1 }} /> : null;
       })}
     </View>
   );
@@ -730,13 +732,14 @@ function BlockInner({ block, showAnswerKey, look, plain, dense }: { block: Conte
 // a near-empty page holding only the tail of a box (its bottom padding and
 // border). Longer cards still flow across pages.
 const UNSPLIT_MAX_LINES = 16;
-export function blockLines(block: ContentBlock): number {
+export function blockLines(block: ContentBlock, showAnswerKey = true): number {
   const text = (v: unknown) => Math.ceil(String(v ?? '').length / 85);
   return (
     1 +
     text(block.body) +
     (block.items?.length ?? 0) +
-    (block.answerKey?.length ? block.answerKey.length + 1 : 0) +
+    // a key printed only at the back of the book (Workbook) takes no lines here
+    (showAnswerKey && block.answerKey?.length ? block.answerKey.length + 1 : 0) +
     (block.dialogue?.length ?? 0) * 2 +
     (block.table ? block.table.rows.length + 1 : 0) +
     (block.activity ? 6 : 0) +
@@ -902,7 +905,7 @@ export function BlockCard({
     const badge = !!numbered && !!measured?.filled;
     const numberColor = measured && !measured.filled ? measured.color : look.palette.primary;
     const pieces = panel ? tintPieces(look.palette.primaryLight, Math.max(4, look.theme.radius), PANEL_PAD, 8) : null;
-    const wraps = blockLines(block) > UNSPLIT_MAX_LINES;
+    const wraps = blockLines(block, showAnswerKey) > UNSPLIT_MAX_LINES;
     return (
       <View style={[pieces?.outer ?? { marginBottom: 8 }, layoutStyle]} wrap={wraps}>
         {wraps ? <KeepAnchor /> : null}
@@ -946,7 +949,7 @@ export function BlockCard({
   }
 
   const pieces = frameless ? null : cardFrame(look);
-  const wraps = blockLines(block) > UNSPLIT_MAX_LINES;
+  const wraps = blockLines(block, showAnswerKey) > UNSPLIT_MAX_LINES;
   const headingColor = look.theme.cardStyle === "accent-bar" ? "#1f2937" : look.palette.primaryDark;
   return (
     <View style={[pieces?.outer ?? { marginBottom: 12 }, layoutStyle]} wrap={wraps}>

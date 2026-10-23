@@ -33,10 +33,12 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
     const pdf = await renderToBuffer(
       <BookDocument {...props} forcePlain={forcePlain} compact={compact} slack={slack} onPageStart={(key, n) => (starts[key] = Math.min(starts[key] ?? n, n))} />,
     );
+    // A page printed on several sheets (a workbook page, sheetKey) spills
+    // when any of its sheets does.
     const spills = buildPageSpans(starts, await countPdfPages(new Uint8Array(pdf)))
-      .filter((s) => /^\d+:\d+$/.test(s.key) && s.pageCount > 1)
-      .map((s) => s.key);
-    return { pdf, spills, starts };
+      .filter((s) => SHEET_KEY.test(s.key) && s.pageCount > 1)
+      .map((s) => pageOf(s.key));
+    return { pdf, spills: [...new Set(spills)], starts };
   }
 
   const result = await (async () => {
@@ -56,16 +58,22 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
   // bigger pictures, up to the source's size and past it (KIYAS-13), more
   // text and space spread between blocks (planZones); a page that then runs over
   // goes back to its earlier layout.
+  // A page left in plain flow runs onto more sheets by design: it gets no
+  // slack, and only a page that newly runs over counts as grown too far
+  // (it used to throw away every page's slack). A workbook page split over
+  // sheets (sheetKey) is measured sheet by sheet.
   const plain = new Set(result.flattened);
   const tight = new Set(result.compacted);
-  let slack = await measureSlack(result.pdf, result.starts, plain, props.bleed ?? 0);
+  const flowing = new Set(result.spills);
+  const overrun = (spills: string[]) => spills.filter((k) => !flowing.has(k));
+  let slack = await measureSlack(result.pdf, result.starts, flowing, props.bleed ?? 0);
   let final: { pdf: Buffer; starts: Record<string, number>; spills: string[] } = result;
   if (slack.size) {
     const grown = await render(plain, tight, slack);
-    if (grown.spills.length) {
-      for (const key of grown.spills) slack.delete(key);
+    if (overrun(grown.spills).length) {
+      for (const key of [...slack.keys()]) if (grown.spills.includes(pageOf(key))) slack.delete(key);
       final = slack.size ? await render(plain, tight, slack) : result;
-      if (final.spills.length) {
+      if (overrun(final.spills).length) {
         slack = new Map();
         final = result;
       }
@@ -85,13 +93,17 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
 }
 
 // Empty height at the foot of every one-sheet content page, worth growing
-// into (more than a line or two after a margin for card padding). Pages in
-// plain flow are left alone.
+// into (more than a line or two after a margin for card padding). Pages
+// still running over (plain flow) are left alone.
 const SLACK_MARGIN = 14;
 const MIN_SLACK = 30;
 
-async function measureSlack(pdf: Buffer, starts: Record<string, number>, plain: Set<string>, bleed: number): Promise<Map<string, number>> {
-  const keys = Object.keys(starts).filter((k) => /^\d+:\d+$/.test(k) && !plain.has(k));
+// "<unit>:<page>" or a later sheet of it, "<unit>:<page>/<k>" (BookDocument sheetKey).
+const SHEET_KEY = /^\d+:\d+(\/\d+)?$/;
+export const pageOf = (key: string) => key.replace(/\/\d+$/, "");
+
+async function measureSlack(pdf: Buffer, starts: Record<string, number>, flowing: Set<string>, bleed: number): Promise<Map<string, number>> {
+  const keys = Object.keys(starts).filter((k) => SHEET_KEY.test(k) && !flowing.has(pageOf(k)));
   const sheets = new Map(keys.map((k) => [k, starts[k]]));
   const mupdf = await import("mupdf");
   const doc = mupdf.Document.openDocument(new Uint8Array(pdf), "application/pdf");

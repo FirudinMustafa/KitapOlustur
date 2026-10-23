@@ -125,8 +125,7 @@ function typedLayoutOnce(
   if (type === "mixed" || !page.blocks.length || page.glossary?.length) return null;
   const contentWidth = m.width - 2 * PAD_X;
   const est = (bs: ContentBlock[], width = contentWidth) => bs.reduce((n, b) => n + estimateBlockHeight(b, width, m.bodySize, true), 0);
-  // `slack`: empty height a render of this page left at its foot (renderBookFitted) - the estimate was that much too high.
-  const room = m.height - PAD_TOP - PAD_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0) + slack - (compact ? m.height * COMPACT_TRIM : 0);
+  const room = typedRoom(m, isUnitFirstPage, slack, compact);
 
   if (type === "scene") {
     if (!pictures.main) return null;
@@ -199,6 +198,14 @@ function typedLayoutOnce(
   const panelHeight = Math.floor(Math.min(perRow, panelWidth / PANEL_MIN_ASPECT));
   if (panelHeight < panelWidth / PANEL_MAX_ASPECT) return null;
   return { type: "panels", before, lead, pictures: pics, lines, columns, panelWidth, panelHeight, rest };
+}
+
+// The height a typed page's content has: the page inside its margins,
+// running header and unit heading. `slack`: empty height a render of this
+// page left at its foot (renderBookFitted) - the estimate was that much too
+// high. `compact`: the page ran over, a share of the page is held back.
+export function typedRoom(m: TypedMetrics, isUnitFirstPage: boolean, slack = 0, compact = false): number {
+  return m.height - PAD_TOP - PAD_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0) + slack - (compact ? m.height * COMPACT_TRIM : 0);
 }
 
 // Card grids as the source sets them: 3 across for 5-6 cards, 4 for 7-8,

@@ -11,6 +11,8 @@ import { extraImageKey, resolvePageImageUrl, resolvePageImageUrls } from "@/lib/
 import { pageLayoutType } from "@/lib/design/page-types";
 import { typedLayout } from "@/lib/design/type-layout";
 import { ScenePicture, TypedPageBody } from "./type-templates";
+import { worksheetLayout } from "@/lib/design/worksheet-layout";
+import { WorksheetPageBody } from "./worksheet";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF, withSymbols } from "./fonts";
 import { derivePaletteFromColors } from "./derive-palette";
 import { withUnitGlossary } from "@/lib/unit-glossary";
@@ -210,6 +212,12 @@ export function bleedPadding(bleed: number) {
 // to (unit, page) - and a page that spilled onto extra PDF pages is
 // detected exactly. react-pdf evaluates render props during layout.
 export type PageStartListener = (key: string, pageNumber: number) => void;
+
+// Sheet k > 0 of a page that prints on several (a workbook page split
+// between whole exercises, worksheet-layout.ts): "<unit>:<page>/<k>".
+export function sheetKey(pageKey: string, k: number): string {
+  return k ? `${pageKey}/${k}` : pageKey;
+}
 
 function PageMarker({ id, onPageStart }: { id: string; onPageStart?: PageStartListener }) {
   if (!onPageStart) return null;
@@ -809,14 +817,42 @@ export function BookDocument({
                   // A page that ran over keeps its type template, set tighter.
                   { isUnitFirstPage: idx === 0, emojiSrc: pictureSrc, slack: zoneSlack, compact: isCompact },
                 );
+          // A workbook page (no source page to mirror) set like an activity
+          // book's - framed exercises, big picture tiles (worksheet-layout.ts).
+          // One that ran over even set compact is split between whole
+          // exercises over sheets that each fill, instead of plain flow
+          // leaving an exercise's last lines alone on a page (KIYAS-14).
+          const pageKey = `${unit.unitNumber}:${idx}`;
+          const split = !!forcePlain?.has(pageKey);
+          const worksheet =
+            !typed && variant === "workbook" && !page.zonePlan && !inlineAnswers && !isPictureBook && !page.imageLayout
+              ? worksheetLayout(
+                  { blocks: page.blocks, glossary: look.noGlossary ? undefined : page.glossary },
+                  { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
+                  {
+                    isUnitFirstPage: idx === 0,
+                    hasMain: !!imageSrc,
+                    slack: (k) => slack?.get(sheetKey(pageKey, k)),
+                    compact: isCompact && !split,
+                    split,
+                  },
+                )
+              : null;
           const scene = typed?.type === "scene";
           const edgeToEdge = scene || (template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template));
           // In a mirrored book the section label moves to the footer pill.
           const sectionKicker = page.sectionLabel && !mirrorsSource ? upperFor(page.sectionLabel, contentLanguage) : undefined;
           const topBand = mirrorsSource && (scene || !edgeToEdge) ? look.furniture?.topBand : undefined;
+          const runningHeader = (
+            <View style={styles.runningHeader}>
+              <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
+                {isPictureBook ? upperFor(unit.title, contentLanguage) : `${unitKicker(unit.unitNumber)} · ${upperFor(unit.title, contentLanguage)}`}
+              </Text>
+            </View>
+          );
           return (
             <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={sheetSize} style={pageStyle} wrap>
-              <PageMarker id={`${unit.unitNumber}:${idx}`} onPageStart={onPageStart} />
+              <PageMarker id={pageKey} onPageStart={onPageStart} />
               {scene && imageSrc ? (
                 <ScenePicture
                   src={imageSrc}
@@ -829,15 +865,26 @@ export function BookDocument({
                 />
               ) : null}
               {topBand ? <TopEdgeBand band={topBand} bleed={bleed} pageSize={pageSize} /> : null}
-              {!edgeToEdge && (
-                <View style={styles.runningHeader}>
-                  <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
-                    {isPictureBook ? upperFor(unit.title, contentLanguage) : `${unitKicker(unit.unitNumber)} · ${upperFor(unit.title, contentLanguage)}`}
-                  </Text>
-                </View>
-              )}
+              {!edgeToEdge && runningHeader}
 
-              {typed ? (
+              {worksheet ? (
+                <WorksheetPageBody
+                  layout={worksheet}
+                  unit={unit}
+                  isUnitFirstPage={idx === 0}
+                  // split over sheets, it has room again
+                  look={split ? { ...pageLook, compact: false } : pageLook}
+                  showAnswerKey={inlineAnswers}
+                  unitKicker={unitKicker(unit.unitNumber)}
+                  mainSrc={imageSrc}
+                  sheetStart={(k) => (
+                    <>
+                      <PageMarker id={sheetKey(pageKey, k)} onPageStart={onPageStart} />
+                      {runningHeader}
+                    </>
+                  )}
+                />
+              ) : typed ? (
                 <TypedPageBody
                   layout={typed}
                   unit={unit}

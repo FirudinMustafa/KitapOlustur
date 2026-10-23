@@ -25,21 +25,23 @@ function Dot({ color }: { color: string }) {
   );
 }
 
-export function CrosswordView({ block, look }: { block: ContentBlock; look: Look }) {
+// `cell`: a larger grid with its clues beside it - a workbook page's
+// framed crossword (worksheet-layout.ts).
+export function CrosswordView({ block, look, cell: bigCell }: { block: ContentBlock; look: Look; cell?: number }) {
   const cw = buildCrossword(block.answerKey ?? []);
   const cells = crosswordCells(cw);
-  const cell = gridCell(cw.cols, PUZZLE_WIDTH);
+  const cell = bigCell ?? gridCell(cw.cols, PUZZLE_WIDTH);
   const clues = (dir: "across" | "down") => cw.words.filter((w) => w.dir === dir);
   return (
-    <View>
-      <View style={{ alignSelf: "center", marginBottom: 8 }} wrap={false}>
+    <View style={bigCell ? { flexDirection: "row", alignItems: "flex-start" } : undefined}>
+      <View style={bigCell ? { marginRight: 12 } : { alignSelf: "center", marginBottom: 8 }} wrap={false}>
         {cells.map((row, r) => (
           <View key={r} style={{ flexDirection: "row" }}>
             {row.map((c, k) =>
               c ? (
                 <View key={k} style={{ width: cell, height: cell, borderWidth: 0.6, borderColor: "#374151", backgroundColor: "#ffffff" }}>
                   {c.starts.length ? (
-                    <Text style={{ position: "absolute", top: 0.5, left: 1, fontFamily: NOTO_SANS, fontSize: 5, color: "#374151" }}>{c.starts.join("/")}</Text>
+                    <Text style={{ position: "absolute", top: 0.5, left: 1, fontFamily: NOTO_SANS, fontSize: bigCell ? Math.min(8, cell * 0.3) : 5, color: "#374151" }}>{c.starts.join("/")}</Text>
                   ) : null}
                 </View>
               ) : (
@@ -49,19 +51,21 @@ export function CrosswordView({ block, look }: { block: ContentBlock; look: Look
           </View>
         ))}
       </View>
-      {(["across", "down"] as const).map((dir) =>
-        clues(dir).length ? (
-          <View key={dir} style={{ marginBottom: 4 }}>
-            <Text style={{ ...number(look), marginBottom: 2 }}>{dir === "across" ? "Across" : "Down"}</Text>
-            {clues(dir).map((w) => (
-              <Text key={w.item} style={{ marginBottom: 2 }}>
-                <Text style={number(look)}>{`${w.item + 1}  `}</Text>
-                {itemText(block.items?.[w.item] ?? "")}
-              </Text>
-            ))}
-          </View>
-        ) : null,
-      )}
+      <View style={bigCell ? { flex: 1 } : undefined}>
+        {(["across", "down"] as const).map((dir) =>
+          clues(dir).length ? (
+            <View key={dir} style={{ marginBottom: 4 }}>
+              <Text style={{ ...number(look), marginBottom: 2 }}>{dir === "across" ? "Across" : "Down"}</Text>
+              {clues(dir).map((w) => (
+                <Text key={w.item} style={{ marginBottom: 2 }}>
+                  <Text style={number(look)}>{`${w.item + 1}  `}</Text>
+                  {itemText(block.items?.[w.item] ?? "")}
+                </Text>
+              ))}
+            </View>
+          ) : null,
+        )}
+      </View>
     </View>
   );
 }
