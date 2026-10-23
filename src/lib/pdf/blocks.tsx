@@ -33,6 +33,8 @@ export type Look = {
   grow?: number;
   /** Glossary as a compact word list (terms only) - young learners' books, see GlossaryGrid. */
   wordList?: boolean;
+  /** No glossary at all - a young learners' workbook (the Student Book prints the word list). */
+  noGlossary?: boolean;
   /** Listening exercise -> its audio track number (audioTrackMap). */
   tracks?: ReadonlyMap<string, string>;
   /** The source's page furniture - number badges, track pill, top band, topic footer (page-furniture.ts). */
@@ -975,7 +977,7 @@ export function GlossaryGrid({
   look: Look;
   columns?: 2 | 3;
 }) {
-  if (!glossary?.length) return null;
+  if (!glossary?.length || look.noGlossary) return null;
   // KIYAS-13 (Pre-A1): definition cards ("Move from sitting to standing.")
   // are text a five-year-old cannot read, took half a page per unit and ran
   // 2-4 cards onto a page of their own. Young learners' student books print

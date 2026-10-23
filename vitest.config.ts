@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import path from "node:path";
 
 export default defineConfig({
@@ -10,5 +10,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Agent worktrees live under .claude/worktrees with their own copy of
+    // every test - without this a run collected five copies of the suite.
+    exclude: [...configDefaults.exclude, ".claude/**"],
   },
 });

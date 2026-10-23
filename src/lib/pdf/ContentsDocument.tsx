@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, StyleSheet, Svg, Circle, Path } from "@react-pdf/renderer";
+import { unitBadgeText } from "@/lib/unit-label";
 import { PALETTE, type Variant } from "./BookDocument";
 import { TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF } from "./fonts";
@@ -134,7 +135,7 @@ export function ContentsPageContent({
         >
           <View style={styles.colUnit}>
             <View style={[styles.unitBadge, { backgroundColor: palette.primary }]}>
-              <Text style={styles.unitBadgeText}>{unit.number}</Text>
+              <Text style={styles.unitBadgeText}>{unitBadgeText(unit.number)}</Text>
             </View>
             {unit.pages ? <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 7.5, color: palette.primaryDark, marginTop: 3 }}>{pageRangeLabel(unit.pages)}</Text> : null}
           </View>

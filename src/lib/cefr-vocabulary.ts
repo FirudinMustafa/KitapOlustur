@@ -138,6 +138,14 @@ export function targetBand(level: string): CefrBand | null {
   return null;
 }
 
+// Young learners' levels (Pre-A1, Cambridge Starters/Movers): print choices
+// for children - a word list instead of definitions, no workbook answer key,
+// a rounded cover title. Plain "A1" also covers adult beginners and keeps
+// the standard book.
+export function isYoungLearnerLevel(level: string): boolean {
+  return /pre[- ]?a1|starters|movers|young learners|kids/i.test(level);
+}
+
 export type LevelProfile = {
   classifiedTokens: number;
   aboveTokens: number;

@@ -1,4 +1,6 @@
-import { targetBand } from "@/lib/cefr-vocabulary";
+import { isYoungLearnerLevel } from "@/lib/cefr-vocabulary";
+import { dropMissingPictureRefs } from "@/lib/picture-refs";
+import { unitBadgeText, unitKicker, unitName } from "@/lib/unit-label";
 import { Document, Page, Text, View, StyleSheet, Svg, Rect, Circle, Image } from "@react-pdf/renderer";
 import type { GeneratedUnit, GeneratedPage, ContentBlock } from "@/lib/ai/schemas";
 import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument";
@@ -301,7 +303,12 @@ function TopicFooter({ topic, look, bleed = 0 }: { topic?: string; look: Look; b
 // A topic short enough for the footer pill: the page's section label (or
 // the unit title), cut at a word.
 export function footerTopic(label: string | undefined | null): string | undefined {
-  const t = label?.trim();
+  // The writer's section labels carry book and unit prefixes ("Workbook:
+  // Commands, numbers...", "Unit 0: Hello, Friends!") - the pill is the topic.
+  const t = label
+    ?.trim()
+    .replace(/^(student book|workbook|teacher'?s book|test booklet)\s*[:·-]\s*/i, "")
+    .replace(/^unit\s+\d+\s*[:·-]\s*/i, "");
   if (!t) return undefined;
   if (t.length <= 32) return t;
   const cut = t.slice(0, 32);
@@ -533,10 +540,10 @@ function StandardPageBody({
             <Circle cx="30" cy="30" r="28" fill={palette.primary} opacity={0.12} />
           </Svg>
           <View style={[styles.unitBadge, { backgroundColor: palette.primary }]}>
-            <Text style={styles.unitBadgeText}>{unit.unitNumber}</Text>
+            <Text style={styles.unitBadgeText}>{unitBadgeText(unit.unitNumber)}</Text>
           </View>
           <View>
-            <Text style={[styles.unitKicker, { color: palette.primary }]}>UNIT {unit.unitNumber}</Text>
+            <Text style={[styles.unitKicker, { color: palette.primary }]}>{unitKicker(unit.unitNumber)}</Text>
             <Text style={[styles.unitTitle, { fontFamily: look.headingFont }]}>{unit.title}</Text>
           </View>
         </View>
@@ -571,11 +578,11 @@ function StandardPageBody({
                 styles.pageIllustrationWrap,
                 mirrored
                   ? { height: imageHeight, width: Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT), borderRadius: look.theme.radius }
-                  : { height: imageHeight, backgroundColor: palette.primaryLight, borderRadius: look.theme.radius },
+                  : { height: imageHeight, borderRadius: look.theme.radius },
               ]}
             >
               {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-              <Image src={imageSrc} style={mirrored ? [styles.pageIllustration, { objectFit: "cover" }] : styles.pageIllustration} />
+              <Image src={imageSrc} style={mirrored ? [styles.pageIllustration, { objectFit: "cover", objectPositionY: "30%" }] : styles.pageIllustration} />
             </View>
           </View>
         ))}
@@ -662,8 +669,11 @@ export function BookDocument({
     ...makeLook(theme, palette),
     pictureSrc,
     tracks: audioTrackMap(units),
-    // targetBand reads "Pre-A1", "CEFR A1", "Starters" alike.
-    wordList: variant !== "teacher_book" && targetBand(level) === "A1",
+    // Young learners only ("CEFR Pre-A1", "Starters"); adult A1 keeps definitions.
+    wordList: variant !== "teacher_book" && isYoungLearnerLevel(level),
+    // The word list prints once, in the Student Book; repeated at the end of
+    // each workbook unit it ran onto a page of its own.
+    noGlossary: variant === "workbook" && isYoungLearnerLevel(level),
     furniture: sourceStyle?.type?.furniture ?? null,
   };
   // A book mirroring a source prints its page furniture: the topic footer
@@ -691,7 +701,9 @@ export function BookDocument({
   // Test prints them only on the answer-key pages at the back - answers
   // right under the questions would give them away to the learner.
   const inlineAnswers = variant === "teacher_book";
-  const showAnswerKey = variant === "workbook" || variant === "test_booklet";
+  // A young learners' workbook prints no key (KIYAS-13 review): pupils
+  // cannot use one, and published Pre-A1 courses keep it in the Teacher's Book.
+  const showAnswerKey = (variant === "workbook" && !look.wordList) || variant === "test_booklet";
 
   return (
     <Document title={`${bookTitle} - ${variantLabel}`}>
@@ -740,9 +752,11 @@ export function BookDocument({
       )}
 
       {units.flatMap((unit) =>
-        withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((page, idx) => {
-          const imageSrc = resolvePageImageUrl(page, pageImages);
-          const imageSrcs = resolvePageImageUrls(page, pageImages);
+        withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((stored, idx) => {
+          const imageSrc = resolvePageImageUrl(stored, pageImages);
+          const imageSrcs = resolvePageImageUrls(stored, pageImages);
+          // "Picture 4: the door" on a page whose picture 4 failed to generate.
+          const page = dropMissingPictureRefs(stored, imageSrcs.length);
           const isCompact = !!compact?.has(`${unit.unitNumber}:${idx}`);
           const zoneSlack = slack?.get(`${unit.unitNumber}:${idx}`);
           const pageLook = isCompact || zoneSlack ? { ...look, compact: isCompact, zoneSlack } : look;
@@ -765,7 +779,7 @@ export function BookDocument({
               {!edgeToEdge && (
                 <View style={styles.runningHeader}>
                   <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
-                    {isPictureBook ? upperFor(unit.title, contentLanguage) : `UNIT ${unit.unitNumber} · ${upperFor(unit.title, contentLanguage)}`}
+                    {isPictureBook ? upperFor(unit.title, contentLanguage) : `${unitKicker(unit.unitNumber)} · ${upperFor(unit.title, contentLanguage)}`}
                   </Text>
                 </View>
               )}
@@ -794,7 +808,7 @@ export function BookDocument({
                   look={pageLook}
                   showAnswerKey={inlineAnswers}
                   pageSize={pageSize}
-                  unitKicker={`UNIT ${unit.unitNumber}`}
+                  unitKicker={unitKicker(unit.unitNumber)}
                   bleed={bleed}
                   sectionKicker={sectionKicker}
                 />
@@ -820,7 +834,7 @@ export function BookDocument({
           {units.map((unit) => (
             <View key={unit.unitNumber}>
               <Text style={[styles.answerKeyUnitHeading, { color: palette.primaryDark }]}>
-                Unit {unit.unitNumber}: {unit.title}
+                {unitName(unit.unitNumber)}: {unit.title}
               </Text>
               {pagesForVariant(unit, variant)
                 .flatMap((page) => page.blocks)
@@ -858,7 +872,7 @@ export function BookDocument({
           {scriptTracks.map((t) => (
             <View key={t.track} style={styles.answerKeyEntry} wrap={false}>
               <Text style={[styles.answerKeyLabel, { color: palette.primaryDark }]}>
-                {`TRACK ${t.track} · UNIT ${t.unitNumber} · ${t.heading}`}
+                {`TRACK ${t.track} · ${unitKicker(t.unitNumber)} · ${t.heading}`}
               </Text>
               {t.entry.dialogueLines?.length ? (
                 t.entry.dialogueLines.map((l, i) => (

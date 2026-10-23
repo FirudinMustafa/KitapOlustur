@@ -132,6 +132,7 @@ import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
 import { placeholderItemIssue } from "@/lib/placeholder-items";
 import { dropWriterLayouts } from "@/lib/writer-layout";
 import { dropRepeatedBlocks } from "@/lib/dedupe-blocks";
+import { dropMissingPictureRefs, missingPictureRefIssue } from "@/lib/picture-refs";
 import { isSafetyRejection, softenForSafety } from "@/lib/ai/image-safety";
 import { appendExercises, exercisesToAdd, extendExercises, extendPrompt, itemsToAdd, topUpPrompt } from "@/lib/exercise-topup";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
@@ -2702,6 +2703,8 @@ export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics 
     for (const [pageIndex, page] of (unit[field] ?? []).entries()) {
       // Faz B: as many exercises and pictures as the measured source page.
       issues.push(...shapeIssues(page, label));
+      const pictureRef = missingPictureRefIssue(page, label);
+      if (pictureRef) issues.push(pictureRef);
       for (const block of page.blocks) {
         for (const issue of diagramIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
         for (const issue of activityIssues(block)) issues.push(`${label}, page ${page.sourcePageNumber}, ${issue}`);
@@ -2804,14 +2807,15 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // puzzles whose words do not fit their grid (repairPuzzle), the exercises
 // on each page numbered 1, 2, 3... (numberExercises), and manual positions
 // the writer invented (dropWriterLayouts), and exercises the writer
-// repeated on the same page (dropRepeatedBlocks).
+// repeated on the same page (dropRepeatedBlocks), and "Picture N" pointers
+// at pictures the page does not have (dropMissingPictureRefs).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   const fix = (pages?: GeneratedPage[]) =>
     pages?.map((page) =>
-      fillZonePictures(
+      dropMissingPictureRefs(fillZonePictures(
         numberExercises(fixMapAnswers(dropRepeatedBlocks({ ...dropWriterLayouts(page), blocks: dropWriterLayouts(page).blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) })).page),
         (p) => fallbackImagePrompt(p, []),
-      ),
+      )),
     );
   return {
     ...unit,

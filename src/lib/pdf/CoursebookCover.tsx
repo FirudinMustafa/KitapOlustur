@@ -1,4 +1,4 @@
-import { targetBand } from "@/lib/cefr-vocabulary";
+import { isYoungLearnerLevel } from "@/lib/cefr-vocabulary";
 import { Text, View, Svg, Path, Circle, Rect, Image } from "@react-pdf/renderer";
 import type { Look } from "./blocks";
 import { BALOO, NOTO_SANS, withSymbols } from "./fonts";
@@ -32,7 +32,7 @@ export function CoursebookCover({ bookTitle, level, variantLabel, coverImageSrc,
   const { brand, second } = coverColors(brandColors, palette);
   const onBrand = readableOn(brand);
   const onSecond = readableOn(second);
-  const young = targetBand(level) === "A1";
+  const young = isYoungLearnerLevel(level);
   const titleFont = young ? withSymbols(BALOO) : look.headingFont;
   const { main, sub } = splitTitle(bookTitle);
 

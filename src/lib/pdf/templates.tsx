@@ -1,4 +1,5 @@
 import { Text, View, Image } from "@react-pdf/renderer";
+import { unitBadgeText } from "@/lib/unit-label";
 import type { ContentBlock, GeneratedPage } from "@/lib/ai/schemas";
 import {
   DENSE_LINE,
@@ -55,9 +56,12 @@ function Illustration({
   gap?: number;
 }) {
   return (
-    <View style={{ height, borderRadius: look.theme.radius, overflow: "hidden", backgroundColor: look.palette.primaryLight, marginBottom: gap }} wrap={false}>
+    // A contained picture sits on the page (a tint behind it framed it with
+    // coloured bars, KIYAS-13 Workbook p.5); a cropped one keeps its upper
+    // part, where faces are (s.10 cut heads off at the centre crop).
+    <View style={{ height, borderRadius: look.theme.radius, overflow: "hidden", backgroundColor: fit === "contain" ? undefined : look.palette.primaryLight, marginBottom: gap }} wrap={false}>
       {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-      <Image src={src} style={{ width: "100%", height: "100%", objectFit: fit }} />
+      <Image src={src} style={{ width: "100%", height: "100%", objectFit: fit, ...(fit === "cover" ? { objectPositionY: "30%" } : {}) }} />
     </View>
   );
 }
@@ -126,7 +130,7 @@ function UnitHeading({ unit, look, kicker }: { unit: TemplateProps["unit"]; look
   return (
     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16 }}>
       <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: look.palette.primary, alignItems: "center", justifyContent: "center", marginRight: 12 }}>
-        <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 14, color: "#ffffff" }}>{unit.unitNumber}</Text>
+        <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 14, color: "#ffffff" }}>{unitBadgeText(unit.unitNumber)}</Text>
       </View>
       <View>
         <Text style={{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 8.5, letterSpacing: 1.5, marginBottom: 2, color: look.palette.primary }}>{kicker}</Text>

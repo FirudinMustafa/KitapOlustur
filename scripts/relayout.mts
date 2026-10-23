@@ -26,6 +26,7 @@ import { deriveSourceTheme, type SourceTheme } from "../src/lib/design/source-th
 import { dropLeakingTable } from "../src/lib/answer-leak";
 import { dropWriterLayouts } from "../src/lib/writer-layout";
 import { dropRepeatedBlocks } from "../src/lib/dedupe-blocks";
+import { dropMissingPictureRefs } from "../src/lib/picture-refs";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -53,8 +54,8 @@ async function main() {
   // Clean-ups a fresh run now applies while writing (applyDiagramFixes).
   let units = (book.content as GeneratedUnit[]).map((u) => ({
     ...u,
-    studentBookPages: u.studentBookPages.map(dropRepeatedBlocks),
-    workbookPages: u.workbookPages?.map(dropRepeatedBlocks),
+    studentBookPages: u.studentBookPages.map((p) => dropMissingPictureRefs(dropRepeatedBlocks(p))),
+    workbookPages: u.workbookPages?.map((p) => dropMissingPictureRefs(dropRepeatedBlocks(p))),
   }));
   let measured: SourceTheme | null = null;
   if (zonesFrom) {
