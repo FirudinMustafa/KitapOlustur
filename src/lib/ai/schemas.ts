@@ -480,6 +480,11 @@ export const storedPageSchema = generatedPageSchema.extend({
       pageType: z.enum(PAGE_LAYOUT_TYPES).optional(),
     })
     .optional(),
+  // Plan step 4: words printed on a scene's main picture (source p.7's
+  // "window", "door" pills). x, y = where the label's arrow points, as
+  // fractions (0-1) of the picture; set by locateLabels after the picture
+  // is made, never by the writer.
+  labels: z.array(z.object({ word: z.string(), x: z.number(), y: z.number() })).optional(),
 });
 export type GeneratedPage = z.infer<typeof storedPageSchema>;
 

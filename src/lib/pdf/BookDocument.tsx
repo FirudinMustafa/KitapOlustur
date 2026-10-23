@@ -21,6 +21,8 @@ import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/des
 import { DENSE_LINE, MAX_PICTURE_ASPECT, panelledExercises, resolvePageTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, centredFigure, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
+import { LabelOverlay } from "./label-overlay";
+import { pictureSlotAspects, shapeAspect } from "@/lib/design/zones";
 import { CoursebookCover } from "./CoursebookCover";
 import { TWEMOJI_CREDIT } from "@/lib/activities";
 import { applySourceType, type SourceType } from "@/lib/design/source-theme";
@@ -593,6 +595,12 @@ function StandardPageBody({
             >
               {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
               <Image src={imageSrc} style={mirrored ? [styles.pageIllustration, { objectFit: "cover", objectPositionY: "30%" }] : styles.pageIllustration} />
+              {mirrored && page.labels?.length ? (
+                (() => {
+                  const width = Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT);
+                  return <LabelOverlay labels={page.labels} width={width} height={imageHeight} look={look} imageAspect={shapeAspect(width / imageHeight)} fit="cover" positionY={0.3} />;
+                })()
+              ) : null}
             </View>
           </View>
         ))}
@@ -804,8 +812,17 @@ export function BookDocument({
           return (
             <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={sheetSize} style={pageStyle} wrap>
               <PageMarker id={`${unit.unitNumber}:${idx}`} onPageStart={onPageStart} />
-              {/* LabelOverlay hook: labels={page.labels} */}
-              {scene && imageSrc ? <ScenePicture src={imageSrc} look={look} labels={undefined} /> : null}
+              {scene && imageSrc ? (
+                <ScenePicture
+                  src={imageSrc}
+                  look={look}
+                  labels={page.labels}
+                  width={sheetSize.width}
+                  height={sheetSize.height}
+                  // the shape the scene was generated in (its source slot)
+                  imageAspect={shapeAspect(page.zonePlan ? pictureSlotAspects(page.zonePlan, 1)[0] : undefined)}
+                />
+              ) : null}
               {topBand ? <TopEdgeBand band={topBand} bleed={bleed} pageSize={pageSize} /> : null}
               {!edgeToEdge && (
                 <View style={styles.runningHeader}>
@@ -827,7 +844,7 @@ export function BookDocument({
                   bleed={bleed}
                   mainSrc={imageSrc}
                   topInset={topBandHeight(topBand, pageSize.height)}
-                  labels={undefined /* LabelOverlay hook: page.labels */}
+                  labels={page.labels}
                 />
               ) : template === "standard" ? (
                 <StandardPageBody

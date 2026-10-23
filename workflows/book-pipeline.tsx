@@ -137,6 +137,8 @@ import { dropMissingPictureRefs, missingPictureRefIssue } from "@/lib/picture-re
 import { isSafetyRejection, softenForSafety } from "@/lib/ai/image-safety";
 import { appendExercises, exercisesToAdd, extendExercises, extendPrompt, itemsToAdd, topUpPrompt } from "@/lib/exercise-topup";
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
+import { cardSheetGrid, cardSheetItemsPrompt, cardSheetSize, cardSheetSlots, cardSheetStyle, sliceCardSheet } from "@/lib/ai/card-sheet";
+import { labelLocationPrompt, labelLocationSchema, labelsFromBoxes, labelWords, layoutPageType, withPageLabels, type PageLabel } from "@/lib/ai/page-labels";
 import {
   BLUEPRINT_INSTRUCTIONS,
   applyZonePlans,
@@ -2295,6 +2297,79 @@ async function generateReviewedImage(
   return lastBlobUrl as string;
 }
 
+// Plan step 4: where each label word's object sits on a scene picture, so
+// the PDF can print the word on the picture with an arrow to it. Words the
+// model can't find are left out (they stay as chips under the picture).
+async function locateLabels(runId: string, imageUrl: string, words: string[]): Promise<PageLabel[]> {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: toTextModel(resolveReviewModel()),
+      schema: labelLocationSchema,
+      experimental_repairText: repairDoubleEncodedJsonLeaves,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: labelLocationPrompt(words) },
+            { type: "image", image: new URL(imageUrl) },
+          ],
+        },
+      ],
+    }),
+  );
+  await recordUsage(runId, "labels", usage, resolveReviewModel());
+  return labelsFromBoxes(words, object);
+}
+
+// Plan step 3: a "cards" page's pictures drawn as ONE sheet (one paid call,
+// one QA review of the whole sheet) and cut into the separate cards, each
+// stored where its own picture would have gone. Throws CardSheetSliceError
+// when the sheet was made but can't be cut (the caller then makes the
+// pictures one by one); any other error means the picture itself failed.
+class CardSheetSliceError extends Error {}
+
+async function generateCardSheet(
+  runId: string,
+  unit: GeneratedUnit,
+  page: GeneratedPage,
+  slots: { slot: number; prompt: string }[],
+  qualityMode: "draft" | "final",
+  artStyle: ArtStyle,
+): Promise<Record<number, string>> {
+  const keyOf = (slot: number) => (slot === 0 ? page.sourcePageNumber : extraImageKey(page.sourcePageNumber, slot));
+  const pathOf = (slot: number) => `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}${slot === 0 ? "" : `-${slot}`}.png`;
+  const { cols, rows } = cardSheetGrid(slots.length);
+  const sheetUrl = await generateReviewedImage(
+    runId,
+    unit.unitNumber,
+    // The sheet's review is filed under its first card.
+    keyOf(slots[0].slot),
+    `${pageImageContext(unit, page)} This is a sheet of ${slots.length} separate picture cards on a white background, later cut into single cards - check that there are exactly ${slots.length} separate objects, one per grid cell, in the listed order.`,
+    cardSheetItemsPrompt(slots.map((s) => s.prompt)),
+    `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}-sheet.png`,
+    qualityMode,
+    cardSheetSize({ cols, rows }),
+    { styleSuffix: cardSheetStyle(slots.length, artStyle.prompt) },
+  );
+
+  let cards: Buffer[];
+  try {
+    const res = await fetch(sheetUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    cards = await sliceCardSheet(Buffer.from(await res.arrayBuffer()), cols, rows, slots.length);
+  } catch (err) {
+    throw new CardSheetSliceError(err instanceof Error ? err.message : String(err));
+  }
+  const images: Record<number, string> = {};
+  for (const [i, { slot }] of slots.entries()) {
+    const blob = await put(pathOf(slot), cards[i], { access: "public", contentType: "image/png", addRandomSuffix: false, allowOverwrite: true });
+    images[keyOf(slot)] = blob.url;
+  }
+  return images;
+}
+
 function fallbackImagePrompt(page: GeneratedPage, sheets: CharacterSheet[]): string {
   const text = page.blocks.map((b) => `${b.heading} ${b.body} ${(b.dialogue ?? []).map((d) => `${d.speaker}: ${d.line}`).join(" ")}`).join(" ");
   const cast = charactersForImage({ imagePrompt: text }, sheets).map((c) => c.name);
@@ -2317,7 +2392,7 @@ async function generateUnitImages(
   // Pictures a previous run already made for this exact unit (rerun of an
   // unchanged unit) - reused instead of paid for again.
   reuse: Record<number, string> = {},
-): Promise<Record<number, string>> {
+): Promise<{ images: Record<number, string>; labels: Record<number, PageLabel[]> }> {
   "use step";
 
   const allPages = [
@@ -2328,6 +2403,7 @@ async function generateUnitImages(
   ];
 
   const images: Record<number, string> = {};
+  const labels: Record<number, PageLabel[]> = {};
   // Live E2E 2026-10-09: the free writer model left imagePrompt empty on
   // whole Student Books. A coursebook page without pictures looks unfinished,
   // so a Student Book page that has none gets one derived from its content.
@@ -2347,6 +2423,34 @@ async function generateUnitImages(
       continue;
     }
 
+    // Plan step 3: a card page's pictures come from one sheet. Pictures it
+    // was meant to draw but couldn't are not tried again one by one - only
+    // a sheet that can't be cut falls back to that.
+    const failedSlots = new Set<number>();
+    const sheetSlots = cardSheetSlots(page);
+    const slotKey = (slot: number) => (slot === 0 ? page.sourcePageNumber : extraImageKey(page.sourcePageNumber, slot));
+    if (
+      sheetSlots &&
+      // Recurring characters need their reference sheets, one picture each.
+      !sheetSlots.some((s) => charactersForImage({ imagePrompt: s.prompt }, characterSheets).length) &&
+      !sheetSlots.some((s) => reuse[slotKey(s.slot)])
+    ) {
+      try {
+        Object.assign(images, await generateCardSheet(runId, unit, page, sheetSlots, qualityMode, artStyle));
+        // The main picture was counted above; the cards are counted here.
+        attempted += sheetSlots.filter((s) => s.slot > 0).length;
+      } catch (err) {
+        if (err instanceof CardSheetSliceError) {
+          console.warn(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: card sheet could not be cut (${err.message}), drawing the pictures one by one`);
+        } else {
+          console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: card sheet skipped -`, err instanceof Error ? err.message : err);
+          failures.push(errorText(err));
+          for (const s of sheetSlots) failedSlots.add(s.slot);
+          attempted += sheetSlots.filter((s) => s.slot > 0).length;
+        }
+      }
+    }
+
     // Faz G3: each picture is drawn for the shape of the frame it lands in
     // on a mirrored page (unset: the usual wide picture / square extras).
     const sizes = pictureSizes(page.zonePlan, 1 + (page.extraImagePrompts?.length ?? 0));
@@ -2354,27 +2458,41 @@ async function generateUnitImages(
 
     // One picture that can't be produced must not take the whole unit (and
     // run) down with it - the page then prints in its text-only layout.
-    try {
-      images[page.sourcePageNumber] = await generateReviewedImage(
-        runId,
-        unit.unitNumber,
-        page.sourcePageNumber,
-        pageImageContext(unit, page),
-        page.imagePrompt,
-        `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
-        qualityMode,
-        sizes?.[0] ?? BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
-        { styleSuffix: framedStyle(artStyle.prompt, framing[0]), characters: charactersForImage(page, characterSheets) },
-      );
-    } catch (err) {
-      console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: image skipped -`, err instanceof Error ? err.message : err);
-      failures.push(errorText(err));
+    if (!images[page.sourcePageNumber] && !failedSlots.has(0)) {
+      try {
+        images[page.sourcePageNumber] = await generateReviewedImage(
+          runId,
+          unit.unitNumber,
+          page.sourcePageNumber,
+          pageImageContext(unit, page),
+          page.imagePrompt,
+          `generated/${runId}/unit-${unit.unitNumber}-page-${page.sourcePageNumber}.png`,
+          qualityMode,
+          sizes?.[0] ?? BOOK_PIPELINE_INTERIOR_IMAGE_SIZE,
+          { styleSuffix: framedStyle(artStyle.prompt, framing[0]), characters: charactersForImage(page, characterSheets) },
+        );
+      } catch (err) {
+        console.error(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: image skipped -`, err instanceof Error ? err.message : err);
+        failures.push(errorText(err));
+      }
+    }
+
+    // Plan step 4: a scene's label words, placed on its picture. Optional -
+    // without positions the words print as chips under the picture.
+    const words = layoutPageType(page) === "scene" && images[page.sourcePageNumber] ? labelWords(page) : [];
+    if (words.length) {
+      try {
+        const found = await locateLabels(runId, images[page.sourcePageNumber], words);
+        if (found.length) labels[page.sourcePageNumber] = found;
+      } catch (err) {
+        console.warn(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: labels not placed -`, err instanceof Error ? err.message : err);
+      }
     }
 
     // Faz B3: the page's further pictures - square, they fill small frames.
     for (const [i, prompt] of (page.extraImagePrompts ?? []).entries()) {
       const key = extraImageKey(page.sourcePageNumber, i + 1);
-      if (!prompt.trim() || images[key]) continue;
+      if (!prompt.trim() || images[key] || failedSlots.has(i + 1)) continue;
       attempted++;
       if (reuse[key]) {
         images[key] = reuse[key];
@@ -2409,7 +2527,7 @@ async function generateUnitImages(
     });
   }
 
-  return images;
+  return { images, labels };
 }
 
 // Faz "İnsan-onaylı üretim hattı": after all units' images have been
@@ -4341,7 +4459,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     }
 
     await setRunStatus(runId, "generating_images", "Ünite görselleri üretiliyor");
-    for (const generated of units) {
+    for (const [unitIdx, generated] of units.entries()) {
       // Reuse the previous run's pictures for a unit carried over unchanged.
       const carriedOver = resumeFromRunId && resumedUnits[generated.unitNumber] && JSON.stringify(resumedUnits[generated.unitNumber]) === JSON.stringify(generated);
       const unitImages = await generateUnitImages(
@@ -4352,7 +4470,14 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         characterSheets,
         carriedOver && resumeFromRunId ? await loadRunPageImages(resumeFromRunId) : {},
       );
-      Object.assign(pageImages, unitImages);
+      Object.assign(pageImages, unitImages.images);
+      // Scene labels found on the pictures go onto their pages, persisted so
+      // a rerun or relayout keeps them.
+      const labelled = withPageLabels(generated, unitImages.labels);
+      if (labelled !== generated) {
+        units[unitIdx] = labelled;
+        if (labelled.unitNumber < MIDTERM_UNIT_NUMBER) await replaceCheckpoint(runId, labelled.unitNumber, labelled);
+      }
     }
 
     // Faz "İnsan-onaylı üretim hattı": route only the images still flagged

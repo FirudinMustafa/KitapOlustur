@@ -1,4 +1,5 @@
 import { Text, View, Image, Svg, Rect, Polygon } from "@react-pdf/renderer";
+import { LabelOverlay } from "./label-overlay";
 import type { ContentBlock } from "@/lib/ai/schemas";
 import { CARD_WORD_H, PANEL_LINE_H, TYPE_GAP, rubricOnly, type Card, type TypedLayout } from "@/lib/design/type-layout";
 import { DENSE_LINE } from "@/lib/design/layouts";
@@ -20,18 +21,29 @@ export type SceneLabel = { word: string; x: number; y: number };
 // A scene's picture over the whole sheet, bleed included - BookDocument
 // draws it first, so the top band and the footer print over it.
 //
-// LabelOverlay hook (plan step 4): `labels` are the scene's words placed on
-// the picture (fractions of it). Rendered as nothing for now; the overlay
-// goes in here, e.g. `{labels?.length ? <LabelOverlay labels={labels} look={look} /> : null}`
-// (src/lib/pdf/label-overlay.tsx). While a page has labels its items are
-// not repeated as chips (TypedPageBody `labels`).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- `labels` and `look` are the LabelOverlay hook above
-export function ScenePicture({ src, labels, look }: { src: string; labels?: SceneLabel[]; look: Look }) {
+// Its labels (plan step 4) are the scene's words placed on the picture with
+// arrows (src/lib/pdf/label-overlay.tsx); while a page has labels its items
+// are not repeated as chips (TypedPageBody `labels`).
+export function ScenePicture({
+  src,
+  labels,
+  look,
+  width,
+  height,
+  imageAspect,
+}: {
+  src: string;
+  labels?: SceneLabel[];
+  look: Look;
+  width: number;
+  height: number;
+  imageAspect: number;
+}) {
   return (
     <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
       {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
       <Image src={src} style={{ width: "100%", height: "100%", objectFit: "cover", objectPositionY: "40%" }} />
-      {/* LabelOverlay goes here, drawn from `labels` */}
+      {labels?.length ? <LabelOverlay labels={labels} width={width} height={height} look={look} imageAspect={imageAspect} fit="cover" positionY={0.4} /> : null}
     </View>
   );
 }
