@@ -774,7 +774,11 @@ export function BookDocument({
           const imageSrc = resolvePageImageUrl(stored, pageImages);
           const imageSrcs = resolvePageImageUrls(stored, pageImages);
           // "Picture 4: the door" on a page whose picture 4 failed to generate.
-          const page = dropMissingPictureRefs(stored, imageSrcs.length);
+          const referenced = dropMissingPictureRefs(stored, imageSrcs.length);
+          // A young learners' pupil book prints no teacher notes (KIYAS-14: the
+          // writer kept adding "Teacher: sing every day" tip boxes, and the
+          // source prints none); the Teacher's Book keeps them.
+          const page = look.wordList ? { ...referenced, blocks: referenced.blocks.filter((b) => b.callout !== "tip") } : referenced;
           const isCompact = !!compact?.has(`${unit.unitNumber}:${idx}`);
           const zoneSlack = slack?.get(`${unit.unitNumber}:${idx}`);
           const pageLook = isCompact || zoneSlack ? { ...look, compact: isCompact, zoneSlack } : look;
@@ -791,7 +795,7 @@ export function BookDocument({
           // measured running over (it goes back to the zone layout, set
           // tighter), nor with answers printed inline (Teacher's Book).
           const typed =
-            forcePlain?.has(`${unit.unitNumber}:${idx}`) || isCompact || inlineAnswers || isPictureBook || page.imageLayout || page.blocks.some((b) => b.layout)
+            forcePlain?.has(`${unit.unitNumber}:${idx}`) || inlineAnswers || isPictureBook || page.imageLayout || page.blocks.some((b) => b.layout)
               ? null
               : typedLayout(
                   pageLayoutType(page),
@@ -802,7 +806,8 @@ export function BookDocument({
                     prompts: page.extraImagePrompts ?? [],
                   },
                   { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
-                  { isUnitFirstPage: idx === 0, emojiSrc: pictureSrc, slack: zoneSlack },
+                  // A page that ran over keeps its type template, set tighter.
+                  { isUnitFirstPage: idx === 0, emojiSrc: pictureSrc, slack: zoneSlack, compact: isCompact },
                 );
           const scene = typed?.type === "scene";
           const edgeToEdge = scene || (template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template));

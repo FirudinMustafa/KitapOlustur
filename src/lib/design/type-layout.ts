@@ -94,23 +94,39 @@ const SCENE_MAX_CHIPS = 10;
 const LISTENING_HEADING = /\b(listen|sing|chant|watch)\b/i;
 // Panels: at least this many panel pictures, and a speech line's room.
 const MIN_PANELS = 4;
+// A typed page that ran over is set again with this share of the page
+// height held back (KIYAS-14: six story panels ran a few lines over, and
+// the page lost its panel grid for a list of small pictures).
+const COMPACT_TRIM = 0.1;
 const MAX_PANELS = 9;
 export const PANEL_LINE_H = 22;
 const PANEL_MAX_ASPECT = 1.8;
 const PANEL_MIN_ASPECT = 0.9;
 
-export function typedLayout(
+// KIYAS-14: a story page's "Friends are kind" box took the height its six
+// panels needed, the panel grid did not fit, and the page fell back to a
+// list with small pictures that then ran over. A type template that does
+// not fit is tried once more without the page's callout boxes - the source
+// prints its value line in the footer, not as a box on the page.
+export function typedLayout(...args: Parameters<typeof typedLayoutOnce>): TypedLayout | null {
+  const [type, page, ...rest] = args;
+  const first = typedLayoutOnce(type, page, ...rest);
+  if (first || !page.blocks.some((b) => b.callout)) return first;
+  return typedLayoutOnce(type, { ...page, blocks: page.blocks.filter((b) => !b.callout) }, ...rest);
+}
+
+function typedLayoutOnce(
   type: PageLayoutType,
   page: { blocks: ContentBlock[]; glossary?: unknown[] },
   pictures: TypedPictures,
   m: TypedMetrics,
-  { isUnitFirstPage = false, emojiSrc, slack = 0 }: { isUnitFirstPage?: boolean; emojiSrc?: Record<string, string>; slack?: number } = {},
+  { isUnitFirstPage = false, emojiSrc, slack = 0, compact = false }: { isUnitFirstPage?: boolean; emojiSrc?: Record<string, string>; slack?: number; compact?: boolean } = {},
 ): TypedLayout | null {
   if (type === "mixed" || !page.blocks.length || page.glossary?.length) return null;
   const contentWidth = m.width - 2 * PAD_X;
   const est = (bs: ContentBlock[], width = contentWidth) => bs.reduce((n, b) => n + estimateBlockHeight(b, width, m.bodySize, true), 0);
   // `slack`: empty height a render of this page left at its foot (renderBookFitted) - the estimate was that much too high.
-  const room = m.height - PAD_TOP - PAD_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0) + slack;
+  const room = m.height - PAD_TOP - PAD_BOTTOM - RUNNING_HEADER - (isUnitFirstPage ? UNIT_HEADING : 0) + slack - (compact ? m.height * COMPACT_TRIM : 0);
 
   if (type === "scene") {
     if (!pictures.main) return null;

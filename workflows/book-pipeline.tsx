@@ -3146,7 +3146,10 @@ async function rewritePageToFit(
 
   // The exercises themselves come from the reviewed page, whatever the
   // rewrite did to them (see mergePageRewrite).
-  return mergePageRewrite(page, {
+  // KIYAS-14: a rewritten page lost its source shape (page type) and
+  // labels - it fell out of its type template - and the model repeated an
+  // exercise; both are carried over / dropped here.
+  return dropRepeatedBlocks(mergePageRewrite(page, {
     ...object,
     sourcePageNumber: page.sourcePageNumber,
     pageType: page.pageType,
@@ -3159,9 +3162,11 @@ async function rewritePageToFit(
     // Pictures already exist for these; the plan comes from the source page.
     extraImagePrompts: page.extraImagePrompts,
     zonePlan: page.zonePlan,
+    sourceShape: page.sourceShape,
+    labels: page.labels,
     // Strip any coordinates the model invents (same rule as unit generation).
     blocks: object.blocks.map((b) => ({ ...b, layout: undefined })),
-  });
+  }));
 }
 
 // Reference pages for the design review: the user's uploaded sample pages
