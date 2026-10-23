@@ -1,5 +1,6 @@
 import { isExerciseBlock } from "@/lib/design/layouts";
 import { zonePictureCount, type ZonePlan } from "@/lib/design/zones";
+import type { PageLayoutType } from "@/lib/design/page-types";
 
 // Live test 2026-10-12 (free Gemini writer): told "this source page has 5
 // numbered exercises and 2 pictures", it wrote 1-2 exercises and no picture
@@ -9,7 +10,7 @@ import { zonePictureCount, type ZonePlan } from "@/lib/design/zones";
 // its layout has frames for, is sent back to the writer; pictures still
 // missing after that are filled in from the page's own content.
 
-export type SourceShape = { exercises: number; pictures: number; items?: number; words?: number };
+export type SourceShape = { exercises: number; pictures: number; items?: number; words?: number; pageType?: PageLayoutType };
 
 type TextBlock = { heading?: string; body?: string; items?: string[]; dialogue?: { line: string }[] };
 
@@ -40,7 +41,7 @@ export function shapeIssues(page: ShapedPage, label: string): string[] {
       );
     }
   }
-  const frames = page.zonePlan ? zonePictureCount(page.zonePlan) : 0;
+  const frames = pictureFrames(page);
   const prompts = (page.imagePrompt ? 1 : 0) + (page.extraImagePrompts?.filter((p) => p.trim()).length ?? 0);
   if (frames > 0 && prompts < frames) {
     issues.push(
@@ -85,11 +86,14 @@ export function wordBudgetIssue(page: ShapedPage, label: string): string | null 
 // layout. The main scene comes from the page text; extra frames picture the
 // page's own vocabulary (glossary terms, then exercise headings).
 export function fillZonePictures<P extends ShapedPage>(page: P, mainScene: (page: P) => string): P {
-  const frames = page.zonePlan ? zonePictureCount(page.zonePlan) : 0;
+  const frames = pictureFrames(page);
   if (!frames) return page;
   const imagePrompt = page.imagePrompt?.trim() ? page.imagePrompt : mainScene(page);
   const extras = (page.extraImagePrompts ?? []).filter((p) => p.trim());
+  // A card page's cards picture its first exercise's items, in order.
+  const cardItems = page.sourceShape?.pageType === "cards" ? (page.blocks.find(isExerciseBlock)?.items ?? []).slice(extras.length) : [];
   const subjects = [
+    ...cardItems,
     ...(page.glossary ?? []).map((g) => g.term),
     ...page.blocks.filter(isExerciseBlock).map((b) => b.heading.replace(/^\d+\s*/, "")),
   ].filter((s) => s && !extras.some((e) => e.includes(s)));
@@ -97,4 +101,14 @@ export function fillZonePictures<P extends ShapedPage>(page: P, mainScene: (page
     extras.push(`A simple, clear picture of ${subjects.shift()}, on a plain background, for a coursebook page.`);
   }
   return { ...page, imagePrompt, extraImagePrompts: extras.slice(0, Math.max(0, frames - 1)) };
+}
+
+// The pictures a page must carry: its zone plan's frames, and on a card or
+// panel page one per card / panel (sourceShape.pictures, page-types.ts) -
+// a card strip the analyzer measured as one picture still needs a picture
+// per card.
+export function pictureFrames(page: Pick<ShapedPage, "zonePlan" | "sourceShape">): number {
+  const zone = page.zonePlan ? zonePictureCount(page.zonePlan) : 0;
+  const type = page.sourceShape?.pageType;
+  return zone && (type === "cards" || type === "panels") ? Math.max(zone, page.sourceShape?.pictures ?? 0) : zone;
 }

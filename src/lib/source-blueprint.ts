@@ -1,5 +1,6 @@
 import type { GeneratedPage, SourcePage } from "@/lib/ai/schemas";
 import { buildZonePlan, zonePictureCount } from "@/lib/design/zones";
+import { classifyPageType, typedPictureCount } from "@/lib/design/page-types";
 
 // Faz B2: what the writer is told about each source page it mirrors. The
 // measured shape (pictures, exercises, columns, density, exercise formats)
@@ -13,6 +14,7 @@ const MIN_MEASURED_WORDS = 8;
 export function writerBlueprint(pages: SourcePage[]) {
   return pages.map((p) => {
     const plan = p.layout ? buildZonePlan(p.layout) : null;
+    const design = p.layout ? classifyPageType(p.layout) : "mixed";
     return {
       sourcePageNumber: p.pageNumber,
       pageType: p.pageType,
@@ -21,7 +23,9 @@ export function writerBlueprint(pages: SourcePage[]) {
       ...(p.layout
         ? {
             measured: {
-              pictures: plan ? zonePictureCount(plan) : 0,
+              // "Önce sayfa tasarımı": a picture page's design (page-types.ts).
+              ...(design !== "mixed" ? { design } : {}),
+              pictures: typedPictureCount(design, p.layout, plan ? zonePictureCount(plan) : 0),
               numberedExercises: p.layout.exerciseCount,
               itemsPerExercise: p.layout.exerciseCount ? Math.round(p.layout.itemCount / p.layout.exerciseCount) : undefined,
               textColumns: p.layout.textColumns,
@@ -44,6 +48,10 @@ export const BLUEPRINT_INSTRUCTIONS = [
   "- listeningExercises: that many of the page's exercises are done with a recording (listen and point / number / tick, listen and sing / chant, watch and listen to the story). Write each as a listening exercise and add a listeningAudio entry for every one: blockRef = that exercise block's exact heading, script = exactly what the recording says (the words or sentences to point at in item order, the full song or chant lyrics, the story's dialogue with dialogueLines per speaker).",
   "- words: the printed page's whole text (headings, instructions, items, speech). A hard limit: at most 1.5 times this (or this + 20, whichever is more) - a page over it is sent back. For young learners' pages the pictures carry the exercise: one short instruction, items of a word or two.",
   "- textColumns: 2 means short, parallel blocks rather than one long block.",
+  "- design: the page is built from its pictures, not from text. Follow it exactly - it overrides \"pictures\" above where they differ:",
+  "  - \"scene\": one full-page picture. imagePrompt is the whole scene (a place full of things and people to talk about). The first exercise's items are 4-8 single words naming things clearly visible in that scene (they are printed as labels on the picture), e.g. \"window\", \"door\", \"chair\" - every word must be something drawn in the imagePrompt. Keep any other text to one short line.",
+  "  - \"cards\": a grid of numbered picture cards. The first exercise has one item per card - a single word or number each (e.g. \"red\", \"3\", \"pencil\"). extraImagePrompts: one simple object per card in the same order as the items (one object, centred, plain white background, no text), as many as there are cards (at most 5). imagePrompt is the page's other picture (the scene of a later exercise), or a picture of the cards' topic.",
+  "  - \"panels\": a numbered story-panel grid. One picture per panel in story order - imagePrompt is panel 1, extraImagePrompts panels 2, 3... (the same characters and place in every panel). The story exercise has one item per panel: that panel's short speech line (a few words, e.g. \"Hello, I'm Leo!\").",
 ].join("\n");
 
 // Deterministic follow-up to the writer: each mirrored page gets its source
@@ -54,17 +62,22 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
     const layout = sourcePages.find((s) => s.pageNumber === page.sourcePageNumber)?.layout;
     if (!layout) return page;
     const plan = buildZonePlan(layout);
+    const pageType = classifyPageType(layout);
+    // A card or panel page carries a picture per card / panel, more than
+    // its zone plan may have frames for (typedPictureCount).
+    const pictures = typedPictureCount(pageType, layout, plan ? zonePictureCount(plan) : 0);
     const sourceShape = {
       exercises: layout.exerciseCount,
-      pictures: plan ? zonePictureCount(plan) : 0,
+      pictures,
       items: layout.exerciseCount ? Math.round(layout.itemCount / layout.exerciseCount) : 0,
       // A hard budget only where the page has a real text layer: a scanned
       // page (or one with outlined text) measures ~0 words, and a budget of
       // 20 would send every unit back to be rewritten and crush its text.
       ...(layout.wordCount >= MIN_MEASURED_WORDS ? { words: layout.wordCount } : {}),
+      pageType,
     };
     if (!plan) return { ...page, sourceShape };
-    const extraSlots = Math.max(0, zonePictureCount(plan) - 1);
+    const extraSlots = Math.max(0, pictures - 1);
     // The source page has no picture - neither does the mirrored page (a
     // prompt here would be paid for and never printed).
     if (!zonePictureCount(plan)) return { ...page, sourceShape, zonePlan: plan, imagePrompt: undefined, extraImagePrompts: undefined };

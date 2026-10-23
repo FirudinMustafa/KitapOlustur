@@ -36,6 +36,20 @@ describe("applyZonePlans", () => {
     );
     expect(out.zonePlan?.bands.length).toBeGreaterThan(0);
     expect(out.extraImagePrompts).toEqual(["b"]);
+    expect(out.sourceShape?.pageType).toBe("mixed");
+  });
+
+  it("types a card page and keeps a picture prompt per card, more than the zone plan's frames", () => {
+    // A vector card strip the analyzer measures as one band (Super Minds p.4).
+    const strip = layout({ images: [{ x: 0.09, y: 0.11, w: 0.85, h: 0.53 }], textColumns: 1, wordCount: 38, exerciseCount: 2, itemCount: 19 });
+    const [out] = applyZonePlans(
+      [{ sourcePageNumber: 5, pageType: "content", unitNumber: 1, blocks: [], imagePrompt: "a", extraImagePrompts: ["1", "2", "3", "4", "5"] }],
+      [page(5, strip)],
+    );
+    expect(out.sourceShape).toMatchObject({ pageType: "cards", pictures: 6 });
+    expect(out.extraImagePrompts).toHaveLength(5);
+    const [bp] = writerBlueprint([page(5, strip)]);
+    expect(bp).toMatchObject({ measured: { design: "cards", pictures: 6 } });
   });
 });
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ACTIVITY_TYPES } from "@/lib/activities";
 import { MAP_MAX_COLS, MAP_MAX_ROWS, PREPOSITIONS } from "@/lib/diagrams";
 import { LAYOUT_TEMPLATE_IDS } from "@/lib/design/layouts";
+import { PAGE_LAYOUT_TYPES } from "@/lib/design/page-types";
 
 // ---- Source page map ----
 // A page-by-page blueprint of the uploaded source PDF. This is what lets the
@@ -462,7 +463,20 @@ export const storedPageSchema = generatedPageSchema.extend({
   // validateUnitStructure (src/lib/source-shape.ts); items = items per
   // exercise, the length topUpExercises brings short exercises up to;
   // words = the printed page's word count, a hard budget (wordBudgetIssue).
-  sourceShape: z.object({ exercises: z.number(), pictures: z.number(), items: z.number().optional(), words: z.number().optional() }).optional(),
+  // pageType = the source page's picture layout - scene, cards, panels or
+  // mixed (src/lib/design/page-types.ts), set by applyZonePlans; the PDF
+  // sets the three picture types with their own templates. It sits in
+  // sourceShape because the page's top-level `pageType` is already its
+  // cover/content/exercise role.
+  sourceShape: z
+    .object({
+      exercises: z.number(),
+      pictures: z.number(),
+      items: z.number().optional(),
+      words: z.number().optional(),
+      pageType: z.enum(PAGE_LAYOUT_TYPES).optional(),
+    })
+    .optional(),
 });
 export type GeneratedPage = z.infer<typeof storedPageSchema>;
 
