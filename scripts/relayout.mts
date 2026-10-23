@@ -16,12 +16,13 @@ import fs from "node:fs";
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { extractedOutlines, generatedBooks, generationRuns, projects } from "../src/db/schema";
-import type { BookOutline, GeneratedUnit } from "../src/lib/ai/schemas";
+import type { BookOutline, GeneratedPage, GeneratedUnit } from "../src/lib/ai/schemas";
 import { renderBookFitted } from "../src/lib/pdf/render-fitted";
 import { resolveTrimSize } from "../src/lib/pdf/page-geometry";
 import type { Variant } from "../src/lib/pdf/BookDocument";
 import { analyzeSourceLayout } from "../src/lib/source-layout-pdf";
-import { buildZonePlan } from "../src/lib/design/zones";
+import { buildZonePlan, zonePictureCount } from "../src/lib/design/zones";
+import { classifyPageType } from "../src/lib/design/page-types";
 import { deriveSourceTheme, type SourceTheme } from "../src/lib/design/source-theme";
 import { dropLeakingTable } from "../src/lib/answer-leak";
 import { dropWriterLayouts } from "../src/lib/writer-layout";
@@ -61,10 +62,15 @@ async function main() {
   if (zonesFrom) {
     const layouts = await analyzeSourceLayout(new Uint8Array(fs.readFileSync(zonesFrom)));
     if (!noStyle) measured = deriveSourceTheme(layouts);
-    const rezone = <P extends { sourcePageNumber: number; zonePlan?: unknown; blocks: GeneratedUnit["studentBookPages"][number]["blocks"] }>(p: P): P => {
+    const rezone = <P extends GeneratedPage>(p: P): P => {
       const layout = layouts[p.sourcePageNumber - 1];
       const clean = dropWriterLayouts(p);
-      return layout ? { ...clean, zonePlan: buildZonePlan(layout), blocks: clean.blocks.map(dropLeakingTable) } : p;
+      if (!layout) return p;
+      const zonePlan = buildZonePlan(layout);
+      // The page type as a fresh run stores it (applyZonePlans).
+      const pageType = classifyPageType(layout);
+      const shape = clean.sourceShape ?? { exercises: layout.exerciseCount, pictures: zonePlan ? zonePictureCount(zonePlan) : 0 };
+      return { ...clean, zonePlan, sourceShape: { ...shape, pageType }, blocks: clean.blocks.map(dropLeakingTable) };
     };
     units = units.map((u) => ({ ...u, studentBookPages: u.studentBookPages.map(rezone) }));
   }

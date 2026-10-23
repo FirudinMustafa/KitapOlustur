@@ -122,6 +122,16 @@ describe("rasterPictureBoxes (artwork flattened into the page background)", () =
     expect(rasterPictureBoxes(render([{ x: 60, y: 400, w: 480, h: 12 }]), page)).toEqual([]);
   });
 
+  it("finds a softly shaded full-page scene that has no busy cell", () => {
+    const page = { width: W, height: H, blocks: [background] };
+    // A smooth two-way gradient: flat within any cell, changing between cells.
+    const data = new Uint8Array(W * H * 3);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) data.set([(x * 2) % 200, (y * 2) % 200, 120], (y * W + x) * 3);
+    const boxes = rasterPictureBoxes({ width: W, height: H, channels: 3, data }, page);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].w * boxes[0].h).toBeGreaterThan(0.8);
+  });
+
   it("keeps an edge-to-edge illustration as one big picture, drops badges", () => {
     const page = { width: W, height: H, blocks: [background] };
     const full = rasterPictureBoxes(render([{ x: 20, y: 20, w: 560, h: 760 }]), page);

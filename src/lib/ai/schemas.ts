@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ACTIVITY_TYPES } from "@/lib/activities";
 import { MAP_MAX_COLS, MAP_MAX_ROWS, PREPOSITIONS } from "@/lib/diagrams";
 import { LAYOUT_TEMPLATE_IDS } from "@/lib/design/layouts";
-import { PAGE_LAYOUT_TYPES } from "@/lib/design/page-types";
+import { MAX_TYPE_PICTURES, PAGE_LAYOUT_TYPES } from "@/lib/design/page-types";
 
 // ---- Source page map ----
 // A page-by-page blueprint of the uploaded source PDF. This is what lets the
@@ -401,9 +401,12 @@ export const generatedPageSchema = z.object({
     ),
   // Faz B3: a source page often carries several pictures (a vocabulary row,
   // a scene beside a dialogue). imagePrompt is the first; these are the rest.
+  // Up to MAX_TYPE_PICTURES: a card page has one per card (page-types.ts);
+  // zone-plan pages are trimmed to their frames by applyZonePlans. Never
+  // more than 10 - extraImageKey(n, 11) is page n+1's extra picture 1.
   extraImagePrompts: z
     .array(z.string())
-    .max(5)
+    .max(MAX_TYPE_PICTURES)
     .optional()
     .describe(
       "Only when this page's plan calls for more than one picture: prompts for the additional pictures, in reading order (imagePrompt is the first picture). Each a separate, simple subject that fits a small frame.",

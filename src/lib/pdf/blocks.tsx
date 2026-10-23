@@ -346,7 +346,7 @@ function ItemLine({ n, item, look, style }: { n: number; item: string; look: Loo
   );
 }
 
-const TILE_COLORS = ["#f39c12", "#29a9e1", "#8cc63f", "#3c8d7a", "#ec6fa8", "#43a047", "#e53935", "#1e5aa8", "#fdd835", "#00a99d"];
+export const TILE_COLORS = ["#f39c12", "#29a9e1", "#8cc63f", "#3c8d7a", "#ec6fa8", "#43a047", "#e53935", "#1e5aa8", "#fdd835", "#00a99d"];
 
 // Number cards and coloured pencils for a bare number / colour-word list
 // (tileKind), the way the source prints them.
@@ -751,7 +751,7 @@ export function blockLines(block: ContentBlock): number {
 // rubric as coursebooks do: a headphones mark and the track number on a
 // pill in the book's accent colour. Sized to the heading line, so it adds
 // no height (estimateBlockHeight needs no change).
-function TrackBadge({ track, look, size }: { track: string; look: Look; size: number }) {
+export function TrackBadge({ track, look, size }: { track: string; look: Look; size: number }) {
   const h = Math.round(size * 1.15);
   // The source's own pill colour when it was measured (page furniture) -
   // often a light green, so the figure goes dark on it to stay legible.

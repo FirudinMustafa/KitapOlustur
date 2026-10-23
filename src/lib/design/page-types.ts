@@ -103,8 +103,9 @@ export function classifyPageType(layout: SourcePageLayout): PageLayoutType {
 }
 
 // A card or panel picture is one of the page's extra pictures
-// (extraImagePrompts, at most 5 - schemas.ts), in order.
-export const MAX_TYPE_PICTURES = 5;
+// (extraImagePrompts, schemas.ts), in order: at most 10, since
+// extraImageKey(n, 11) would be page n+1's extra picture 1 (page-image.ts).
+export const MAX_TYPE_PICTURES = 10;
 
 // How many cards (or panels) the source page shows: its grid of similar
 // pictures, or for a card strip measured as one band, its items per

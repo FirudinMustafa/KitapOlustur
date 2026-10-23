@@ -373,6 +373,8 @@ export type Raster = { width: number; height: number; channels: number; data: Ar
 
 const CELL = 0.0125; // grid cell, as a fraction of the page width
 const BUSY_STD = 22; // colour spread (0-255) above which a cell is picture, not flat fill
+const SHADE_STEP = 8; // colour step (0-255) between neighbouring cells of painted shading
+const PAPER = 235; // a cell lighter than this in every channel is paper
 const MIN_FILL = 0.4; // share of a region's box its busy cells must cover (an outline is not a picture)
 // Rendered regions smaller than this are badges, title lettering and
 // ornaments, not pictures a page is built around.
@@ -398,6 +400,7 @@ export function rasterPictureBoxes(raster: Raster, page: Pick<StextPage, "width"
   const inText = (x: number, y: number) => text.some((t) => x >= t.x0 && x < t.x1 && y >= t.y0 && y < t.y1);
 
   const busy: boolean[] = new Array(cols * rows).fill(false);
+  const means: (number[] | undefined)[] = new Array(cols * rows);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       let n = 0;
@@ -418,21 +421,37 @@ export function rasterPictureBoxes(raster: Raster, page: Pick<StextPage, "width"
       if (n < (cellPx * cellPx) / 3) continue;
       const std = Math.sqrt([0, 1, 2].reduce((s, k) => s + (sq[k] / n - (sum[k] / n) ** 2), 0) / 3);
       busy[r * cols + c] = std >= BUSY_STD;
+      means[r * cols + c] = sum.map((v) => v / n);
     }
   }
-
-  const boxes: Box[] = [];
   const toBox = (r0: number, r1: number, c0: number, c1: number): Box => {
     const x = (c0 * cellPx) / RW;
     const y = (r0 * cellPx) / RH;
     return { x, y, w: Math.min(1 - x, ((c1 - c0 + 1) * cellPx) / RW), h: Math.min(1 - y, ((r1 - r0 + 1) * cellPx) / RH) };
   };
-  xyCut(busy, cols, 0, rows - 1, 0, cols - 1, (r0, r1, c0, c1, filled) => {
-    if (filled < MIN_FILL * (r1 - r0 + 1) * (c1 - c0 + 1)) return;
-    const box = toBox(r0, r1, c0, c1);
-    if (box.w * box.h >= RASTER_MIN_AREA && box.w >= RASTER_MIN_SIDE && box.h >= RASTER_MIN_SIDE) boxes.push(box);
-  });
-  return boxes;
+  const regions = () => {
+    const boxes: Box[] = [];
+    xyCut(busy, cols, 0, rows - 1, 0, cols - 1, (r0, r1, c0, c1, filled) => {
+      if (filled < MIN_FILL * (r1 - r0 + 1) * (c1 - c0 + 1)) return;
+      const box = toBox(r0, r1, c0, c1);
+      if (box.w * box.h >= RASTER_MIN_AREA && box.w >= RASTER_MIN_SIDE && box.h >= RASTER_MIN_SIDE) boxes.push(box);
+    });
+    return boxes;
+  };
+  const found = regions();
+  if (found.length) return found;
+  // Nothing busy: soft painted shading (a generated full-page scene, 2026-10-23)
+  // is flat within a cell but changes from cell to cell, where a background
+  // tint stays the same. Only as a fallback, so pages measured before keep
+  // their pictures.
+  const shaded = (a: number[] | undefined, b: number[] | undefined) => !!a && !!b && Math.max(...[0, 1, 2].map((k) => Math.abs(a[k] - b[k]))) >= SHADE_STEP;
+  for (let r = 0; r + 1 < rows; r++) {
+    for (let c = 0; c + 1 < cols; c++) {
+      const m = means[r * cols + c];
+      if (m && Math.min(...m) < PAPER && shaded(m, means[r * cols + c + 1]) && shaded(m, means[(r + 1) * cols + c])) busy[r * cols + c] = true;
+    }
+  }
+  return regions();
 }
 
 const GUTTER = 0.12; // a row/column with less than this share busy separates two regions

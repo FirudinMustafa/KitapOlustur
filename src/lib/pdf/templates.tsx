@@ -42,7 +42,7 @@ export type TemplateProps = {
 // Templates that paint to the page edge and draw their own header area.
 export const EDGE_TO_EDGE_TEMPLATES: DesignedTemplate[] = ["unit-opener-hero", "full-bleed-illustration"];
 
-function Illustration({
+export function Illustration({
   src,
   height,
   look,
@@ -126,7 +126,7 @@ export function splitColumns(blocks: ContentBlock[]): [ContentBlock[], ContentBl
   return [left, right];
 }
 
-function UnitHeading({ unit, look, kicker }: { unit: TemplateProps["unit"]; look: Look; kicker: string }) {
+export function UnitHeading({ unit, look, kicker }: { unit: TemplateProps["unit"]; look: Look; kicker: string }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16 }}>
       <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: look.palette.primary, alignItems: "center", justifyContent: "center", marginRight: 12 }}>

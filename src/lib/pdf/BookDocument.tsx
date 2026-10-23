@@ -7,7 +7,10 @@ import { ContentsPageContent, type CourseUnitSummary } from "./ContentsDocument"
 import { encodeEan13 } from "@/lib/barcode/ean13";
 import { formatIsbn13 } from "@/lib/isbn";
 import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
-import { resolvePageImageUrl, resolvePageImageUrls } from "@/lib/page-image";
+import { extraImageKey, resolvePageImageUrl, resolvePageImageUrls } from "@/lib/page-image";
+import { pageLayoutType } from "@/lib/design/page-types";
+import { typedLayout } from "@/lib/design/type-layout";
+import { ScenePicture, TypedPageBody } from "./type-templates";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF, withSymbols } from "./fonts";
 import { derivePaletteFromColors } from "./derive-palette";
 import { withUnitGlossary } from "@/lib/unit-glossary";
@@ -264,6 +267,13 @@ function TopEdgeBand({ band, bleed = 0, pageSize }: { band: TopBand; bleed?: num
       }}
     />
   );
+}
+
+// How far the top band (and its tab) reaches down the page, as TopEdgeBand draws it.
+function topBandHeight(band: TopBand | undefined, pageHeight: number): number {
+  if (!band) return 0;
+  const h = Math.max(3, band.heightRatio * pageHeight);
+  return band.tab ? Math.max(h + 2, band.tab.heightRatio * pageHeight) : h;
 }
 
 // The footer of a book mirroring a source: the page's topic on a pill and
@@ -768,13 +778,34 @@ export function BookDocument({
                 tight: isCompact,
                 metrics: { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
               });
-          const edgeToEdge = template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template);
+          // "Önce sayfa tasarımı": a scene, card or panel page (page-types.ts)
+          // in its type's template when its content suits it. Not on a page
+          // measured running over (it goes back to the zone layout, set
+          // tighter), nor with answers printed inline (Teacher's Book).
+          const typed =
+            forcePlain?.has(`${unit.unitNumber}:${idx}`) || isCompact || inlineAnswers || isPictureBook || page.imageLayout || page.blocks.some((b) => b.layout)
+              ? null
+              : typedLayout(
+                  pageLayoutType(page),
+                  { blocks: page.blocks, glossary: look.noGlossary ? undefined : page.glossary },
+                  {
+                    main: imageSrc,
+                    extras: (page.extraImagePrompts ?? []).map((_, i) => pageImages?.[extraImageKey(page.sourcePageNumber, i + 1)]),
+                    prompts: page.extraImagePrompts ?? [],
+                  },
+                  { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
+                  { isUnitFirstPage: idx === 0, emojiSrc: pictureSrc, slack: zoneSlack },
+                );
+          const scene = typed?.type === "scene";
+          const edgeToEdge = scene || (template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template));
           // In a mirrored book the section label moves to the footer pill.
           const sectionKicker = page.sectionLabel && !mirrorsSource ? upperFor(page.sectionLabel, contentLanguage) : undefined;
-          const topBand = mirrorsSource && !edgeToEdge ? look.furniture?.topBand : undefined;
+          const topBand = mirrorsSource && (scene || !edgeToEdge) ? look.furniture?.topBand : undefined;
           return (
             <Page key={`${unit.unitNumber}-${page.sourcePageNumber}-${idx}`} size={sheetSize} style={pageStyle} wrap>
               <PageMarker id={`${unit.unitNumber}:${idx}`} onPageStart={onPageStart} />
+              {/* LabelOverlay hook: labels={page.labels} */}
+              {scene && imageSrc ? <ScenePicture src={imageSrc} look={look} labels={undefined} /> : null}
               {topBand ? <TopEdgeBand band={topBand} bleed={bleed} pageSize={pageSize} /> : null}
               {!edgeToEdge && (
                 <View style={styles.runningHeader}>
@@ -784,7 +815,21 @@ export function BookDocument({
                 </View>
               )}
 
-              {template === "standard" ? (
+              {typed ? (
+                <TypedPageBody
+                  layout={typed}
+                  unit={unit}
+                  isUnitFirstPage={idx === 0}
+                  look={pageLook}
+                  showAnswerKey={inlineAnswers}
+                  pageSize={pageSize}
+                  unitKicker={unitKicker(unit.unitNumber)}
+                  bleed={bleed}
+                  mainSrc={imageSrc}
+                  topInset={topBandHeight(topBand, pageSize.height)}
+                  labels={undefined /* LabelOverlay hook: page.labels */}
+                />
+              ) : template === "standard" ? (
                 <StandardPageBody
                   page={page}
                   unit={unit}

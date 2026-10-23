@@ -43,13 +43,13 @@ describe("applyZonePlans", () => {
     // A vector card strip the analyzer measures as one band (Super Minds p.4).
     const strip = layout({ images: [{ x: 0.09, y: 0.11, w: 0.85, h: 0.53 }], textColumns: 1, wordCount: 38, exerciseCount: 2, itemCount: 19 });
     const [out] = applyZonePlans(
-      [{ sourcePageNumber: 5, pageType: "content", unitNumber: 1, blocks: [], imagePrompt: "a", extraImagePrompts: ["1", "2", "3", "4", "5"] }],
+      [{ sourcePageNumber: 5, pageType: "content", unitNumber: 1, blocks: [], imagePrompt: "a", extraImagePrompts: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"] }],
       [page(5, strip)],
     );
-    expect(out.sourceShape).toMatchObject({ pageType: "cards", pictures: 6 });
-    expect(out.extraImagePrompts).toHaveLength(5);
+    expect(out.sourceShape).toMatchObject({ pageType: "cards", pictures: 11 });
+    expect(out.extraImagePrompts).toHaveLength(10);
     const [bp] = writerBlueprint([page(5, strip)]);
-    expect(bp).toMatchObject({ measured: { design: "cards", pictures: 6 } });
+    expect(bp).toMatchObject({ measured: { design: "cards", pictures: 11 } });
   });
 });
 
