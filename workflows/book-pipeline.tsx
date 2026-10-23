@@ -67,6 +67,7 @@ import { dropInvalidInteractive } from "@/lib/ai/drop-invalid-interactive";
 import {
   resolveTextModel,
   resolveFinalTextModel,
+  resolveReviewModel,
   toTextModel,
   resolveImageModel,
   resolveSpeechModel,
@@ -1123,7 +1124,7 @@ const ORIGINALITY_NGRAM_THRESHOLD = 0.15;
 async function assessOriginalityWithLlm(sourceText: string, generatedText: string, ngramOverlapScore: number) {
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: toTextModel(resolveFinalTextModel()),
+      model: toTextModel(resolveReviewModel()),
       schema: originalityLlmAssessmentSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1156,7 +1157,7 @@ async function checkOriginality(
     if (flagged) {
       const { object, usage } = await assessOriginalityWithLlm(source.sourceText, generatedText, ngramOverlapScore);
       llmAssessment = object;
-      await recordUsage(runId, "originalityLlmAssessment", usage);
+      await recordUsage(runId, "originalityLlmAssessment", usage, resolveReviewModel());
     }
 
     await db.insert(originalityChecks).values({
@@ -1664,7 +1665,7 @@ async function reviewLanguageAccuracy(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: toTextModel(resolveFinalTextModel()),
+      model: toTextModel(resolveReviewModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1677,7 +1678,7 @@ async function reviewLanguageAccuracy(
     }),
   );
 
-  await recordUsage(runId, "review", usage);
+  await recordUsage(runId, "review", usage, resolveReviewModel());
   await db.insert(unitReviews).values({ runId, unitNumber, reviewType: "language", passed: object.passed, issues: object.issues });
   return object;
 }
@@ -1729,7 +1730,7 @@ async function reviewReadingLevel(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: toTextModel(resolveFinalTextModel()),
+      model: toTextModel(resolveReviewModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1746,7 +1747,7 @@ async function reviewReadingLevel(
     }),
   );
 
-  await recordUsage(runId, "review", usage);
+  await recordUsage(runId, "review", usage, resolveReviewModel());
   const review = vocabularyIssue ? { ...object, passed: false, issues: [vocabularyIssue, ...object.issues] } : object;
   await db.insert(unitReviews).values({ runId, unitNumber, reviewType: "level", passed: review.passed, issues: review.issues });
   return review;
@@ -1765,7 +1766,7 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: toTextModel(resolveFinalTextModel()),
+      model: toTextModel(resolveReviewModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -1777,7 +1778,7 @@ async function reviewContentSafety(runId: string, unitNumber: number, generated:
     }),
   );
 
-  await recordUsage(runId, "review", usage);
+  await recordUsage(runId, "review", usage, resolveReviewModel());
   await db
     .insert(unitReviews)
     .values({ runId, unitNumber, reviewType: "moderation", passed: object.passed, issues: object.issues });
@@ -2000,7 +2001,7 @@ async function reviewSkillBalance(runId: string, unitNumber: number, generated: 
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: toTextModel(resolveFinalTextModel()),
+      model: toTextModel(resolveReviewModel()),
       schema: unitReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -2012,7 +2013,7 @@ async function reviewSkillBalance(runId: string, unitNumber: number, generated: 
     }),
   );
 
-  await recordUsage(runId, "review", usage);
+  await recordUsage(runId, "review", usage, resolveReviewModel());
   await db
     .insert(unitReviews)
     .values({ runId, unitNumber, reviewType: "skill_balance", passed: object.passed, issues: object.issues });
@@ -2050,7 +2051,7 @@ async function reviewBookCoherence(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: toTextModel(resolveFinalTextModel()),
+      model: toTextModel(resolveReviewModel()),
       schema: bookCoherenceReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -2070,7 +2071,7 @@ async function reviewBookCoherence(
     }),
   );
 
-  await recordUsage(runId, "bookCoherence", usage);
+  await recordUsage(runId, "bookCoherence", usage, resolveReviewModel());
   await db.insert(bookCoherenceReviews).values({
     runId,
     passed: object.passed,
@@ -2113,7 +2114,7 @@ async function reviewImage(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: toTextModel(resolveFinalTextModel()),
+      model: toTextModel(resolveReviewModel()),
       schema: imageReviewSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       system:
@@ -2144,7 +2145,7 @@ async function reviewImage(
     }),
   );
 
-  await recordUsage(runId, "imageReview", usage);
+  await recordUsage(runId, "imageReview", usage, resolveReviewModel());
   await db.insert(imageReviews).values({
     runId,
     unitNumber,
@@ -2952,13 +2953,13 @@ async function reviewProofBatch(
 
   const { object, usage } = await withObjectDiagnostics(() =>
     generateObject({
-      model: toTextModel(resolveFinalTextModel()),
+      model: toTextModel(resolveReviewModel()),
       schema: pageDesignGradeSchema,
       experimental_repairText: repairDoubleEncodedJsonLeaves,
       messages: [{ role: "user", content }],
     }),
   );
-  await recordUsage(runId, "designReview", usage);
+  await recordUsage(runId, "designReview", usage, resolveReviewModel());
 
   const results: { page: ProofPage; grade: PageDesignGrade; fix: DesignFix; rowId: string }[] = [];
   for (const page of pages) {

@@ -124,6 +124,18 @@ export function resolveFinalTextModel(): string {
   return getAiProviderMode() === "free" ? FREE_TEXT_MODEL_ID : BOOK_PIPELINE_MODEL;
 }
 
+// 2026-10-23 (KIYAS-13: $6.80 of $8.80 was text, most of it Sonnet checking
+// pictures): checks - language, level, safety, skill balance, picture QA,
+// page-design grading, originality, coherence - run on a vision-capable
+// model about seven times cheaper. The writer and the structure review that
+// drives rewrites stay on BOOK_PIPELINE_MODEL. REVIEW_MODEL overrides.
+export const BOOK_PIPELINE_REVIEW_MODEL = "google/gemini-3.5-flash-lite";
+
+export function resolveReviewModel(): string {
+  if (getAiProviderMode() === "free") return FREE_TEXT_MODEL_ID;
+  return process.env.REVIEW_MODEL || BOOK_PIPELINE_REVIEW_MODEL;
+}
+
 // Faz H6 extension (2026-09-19), CORRECTED same day: the original pick here
 // (`google/gemini-3-pro-image` for final, `google/imagen-4.0-generate-001`
 // for draft) was wrong - verified live against the Vercel AI Gateway's own
