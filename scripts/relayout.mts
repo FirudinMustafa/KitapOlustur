@@ -8,7 +8,9 @@
 // it is measured today, as a fresh run would (stored plans predate later
 // analyzer fixes), and sets the book in the source's measured colours and
 // type (Faz G1), and drops exercise tables that give the answers away
-// (dropLeakingTable - a fresh run does that while writing). --no-style keeps
+// (dropLeakingTable - a fresh run does that while writing), and takes each
+// page's word budget from the source as measured today. Pages over their
+// budget are trimmed as a fresh run trims them (trimUnitToBudget). --no-style keeps
 // the run's own palette and theme type.
 //
 // Then score it: npx tsx scripts/fidelity.mts <source.pdf> <out.pdf> ...
@@ -28,6 +30,8 @@ import { dropLeakingTable } from "../src/lib/answer-leak";
 import { dropWriterLayouts } from "../src/lib/writer-layout";
 import { dropRepeatedBlocks } from "../src/lib/dedupe-blocks";
 import { dropMissingPictureRefs } from "../src/lib/picture-refs";
+import { measuredWords } from "../src/lib/source-blueprint";
+import { trimUnitToBudget } from "../src/lib/word-trim";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -70,10 +74,19 @@ async function main() {
       // The page type as a fresh run stores it (applyZonePlans).
       const pageType = classifyPageType(layout);
       const shape = clean.sourceShape ?? { exercises: layout.exerciseCount, pictures: zonePlan ? zonePictureCount(zonePlan) : 0 };
-      return { ...clean, zonePlan, sourceShape: { ...shape, pageType }, blocks: clean.blocks.map(dropLeakingTable) };
+      // The word budget as the source measures today (older runs stored none).
+      const words = measuredWords(layout);
+      return { ...clean, zonePlan, sourceShape: { ...shape, pageType, words }, blocks: clean.blocks.map(dropLeakingTable) };
     };
     units = units.map((u) => ({ ...u, studentBookPages: u.studentBookPages.map(rezone) }));
   }
+  // A fresh run trims a page still over its word budget (trimUnitToBudget).
+  let trimmed = 0;
+  units = units.map((u) => {
+    const out = trimUnitToBudget(u, outline.level);
+    trimmed += out.studentBookPages.filter((p, i) => p !== u.studentBookPages[i]).length;
+    return out;
+  });
   const paletteColors = measured?.colors.length ? measured.colors : ((run.paletteColors as string[] | null) ?? null);
 
   const started = Date.now();
@@ -100,6 +113,6 @@ async function main() {
     bookKind: run.bookKind,
   });
   fs.writeFileSync(outPath, pdf);
-  console.log(`${outPath}: ${Math.round((Date.now() - started) / 1000)}s, plain flow: ${flattened.join(" ") || "-"}, compacted: ${compacted.join(" ") || "-"}`);
+  console.log(`${outPath}: ${Math.round((Date.now() - started) / 1000)}s, plain flow: ${flattened.join(" ") || "-"}, compacted: ${compacted.join(" ") || "-"}, word-trimmed SB pages: ${trimmed}`);
 }
 void main();

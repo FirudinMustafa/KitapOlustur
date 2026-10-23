@@ -12,7 +12,20 @@ import type { PageLayoutType } from "@/lib/design/page-types";
 
 export type SourceShape = { exercises: number; pictures: number; items?: number; words?: number; pageType?: PageLayoutType };
 
-type TextBlock = { heading?: string; body?: string; items?: string[]; dialogue?: { line: string }[] };
+type TextBlock = {
+  heading?: string;
+  body?: string;
+  items?: string[];
+  dialogue?: { line: string }[];
+  callout?: string;
+  table?: { headers: string[]; rows: string[][] };
+  activity?: { words?: string[] };
+};
+
+// How a page's words are counted. hideTips: the book hides teacher-facing
+// "tip" callouts (young learners' pupil books, BookDocument.tsx), so they
+// don't print and don't count against the page's budget.
+export type WordCountOptions = { hideTips?: boolean };
 
 type ShapedPage = {
   sourcePageNumber: number;
@@ -29,7 +42,7 @@ type ShapedPage = {
 // top-up step fills the rest).
 const MIN_EXERCISE_SHARE = 0.8;
 
-export function shapeIssues(page: ShapedPage, label: string): string[] {
+export function shapeIssues(page: ShapedPage, label: string, wordOptions: WordCountOptions = {}): string[] {
   const issues: string[] = [];
   const shape = page.sourceShape;
   if (shape && shape.exercises >= 2) {
@@ -48,20 +61,38 @@ export function shapeIssues(page: ShapedPage, label: string): string[] {
       `${label}, page ${page.sourcePageNumber}: the source page has ${frames} pictures; set imagePrompt (the main scene) and ${frames - 1} extraImagePrompts (simple single subjects from this page, e.g. its vocabulary).`,
     );
   }
-  const words = wordBudgetIssue(page, label);
+  const words = wordBudgetIssue(page, label, wordOptions);
   if (words) issues.push(words);
   return issues;
 }
 
 const words = (text: string | undefined) => (text ?? "").split(/\s+/).filter(Boolean).length;
 
-// The printed words on a generated page, counted the way the source page
-// was measured (its whole text layer: headings, instructions, items, speech).
-export function pageWordCount(page: { blocks: TextBlock[] }): number {
-  return page.blocks.reduce(
-    (n, b) => n + words(b.heading) + words(b.body) + (b.items ?? []).reduce((m, i) => m + words(i), 0) + (b.dialogue ?? []).reduce((m, d) => m + words(d.line), 0),
-    0,
+const sum = (texts: string[] | undefined) => (texts ?? []).reduce((n, t) => n + words(t), 0);
+
+// The printed words of one block: heading, instruction, items, speech, and
+// the word bank and table cells, which print as well.
+export function blockWordCount(b: TextBlock): number {
+  return (
+    words(b.heading) +
+    words(b.body) +
+    sum(b.items) +
+    sum(b.dialogue?.map((d) => d.line)) +
+    sum(b.activity?.words) +
+    (b.table ? sum(b.table.headers) + b.table.rows.reduce((n, r) => n + sum(r), 0) : 0)
   );
+}
+
+export function blockPrints(b: TextBlock, options: WordCountOptions = {}): boolean {
+  return !(options.hideTips && b.callout === "tip");
+}
+
+// The printed words on a generated page, counted the way the source page
+// was measured (its whole text layer: headings, instructions, items, speech,
+// word banks, tables). Page furniture (band, footer, folio) is left out on
+// both sides: the source measure drops lines repeated in the bands.
+export function pageWordCount(page: { blocks: TextBlock[] }, options: WordCountOptions = {}): number {
+  return page.blocks.filter((b) => blockPrints(b, options)).reduce((n, b) => n + blockWordCount(b), 0);
 }
 
 // KIYAS-13 (live, 2026-10-21): told "words: 11" for a Pre-A1 page as a soft
@@ -73,10 +104,16 @@ export function wordBudget(sourceWords: number): number {
   return Math.round(Math.max(sourceWords * 1.5, sourceWords + 20));
 }
 
-export function wordBudgetIssue(page: ShapedPage, label: string): string | null {
+// The page's word budget, or null where the source page set none.
+export function pageWordBudget(page: { sourceShape?: SourceShape }): number | null {
+  const source = page.sourceShape?.words;
+  return source === undefined ? null : wordBudget(source);
+}
+
+export function wordBudgetIssue(page: ShapedPage, label: string, options: WordCountOptions = {}): string | null {
   const source = page.sourceShape?.words;
   if (source === undefined) return null;
-  const have = pageWordCount(page);
+  const have = pageWordCount(page, options);
   const budget = wordBudget(source);
   if (have <= budget) return null;
   return `${label}, page ${page.sourcePageNumber}: the page has ${have} words, but the source page has only ${source} - at most ${budget} words. Cut it down: one short instruction line per exercise, short items (a word or a short phrase), no explanatory paragraphs or extra boxes. The pictures carry the page.`;
