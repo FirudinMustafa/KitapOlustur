@@ -15,6 +15,9 @@ import {
 import { BlockCard, GlossaryGrid, type Look } from "./blocks";
 import { stripExerciseNumber } from "@/lib/exercise-numbers";
 import { NOTO_SANS } from "./fonts";
+import { LabelOverlay } from "./label-overlay";
+import { shapeAspect } from "@/lib/design/zones";
+import type { PageLabel } from "@/lib/ai/page-labels";
 
 // Faz 1 "Tasarım sistemi": PDF renderers for each layout template in
 // src/lib/design/layouts.ts. BookDocument.tsx decides WHICH template a page
@@ -48,12 +51,17 @@ function Illustration({
   look,
   fit = "cover",
   gap = 12,
+  labels,
+  width,
 }: {
   src: string;
   height: number | string;
   look: Look;
   fit?: "cover" | "contain";
   gap?: number;
+  /** A scene's words printed on the picture (needs the frame's width). */
+  labels?: PageLabel[];
+  width?: number;
 }) {
   return (
     // A contained picture sits on the page (a tint behind it framed it with
@@ -62,6 +70,10 @@ function Illustration({
     <View style={{ height, borderRadius: look.theme.radius, overflow: "hidden", backgroundColor: fit === "contain" ? undefined : look.palette.primaryLight, marginBottom: gap }} wrap={false}>
       {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
       <Image src={src} style={{ width: "100%", height: "100%", objectFit: fit, ...(fit === "cover" ? { objectPositionY: "30%" } : {}) }} />
+      {labels?.length && width && typeof height === "number" ? (
+        // The picture was drawn at the generator size for this frame's shape.
+        <LabelOverlay labels={labels} width={width} height={height} look={look} imageAspect={shapeAspect(width / height)} fit={fit} positionY={0.3} />
+      ) : null}
     </View>
   );
 }
@@ -190,6 +202,8 @@ export function TemplatedPageBody(props: TemplateProps) {
       // Leftover room spread between bands and blocks (planZones `spread`).
       const bandGap = ZONE_GAP + spread;
       const panels = panelledExercises(page.blocks);
+      // A scene's words go on its main picture (plan step 4).
+      const labelsOn = (p: number) => (p === 0 && imageSrc && pictures[0] === imageSrc ? page.labels : undefined);
       return (
         <>
           {heading}
@@ -208,7 +222,7 @@ export function TemplatedPageBody(props: TemplateProps) {
                   {band.pictures.map((p, k) => (
                     <View key={k} style={{ width: slotWidth(k), alignItems: "center" }}>
                       <View style={{ width: row.frames[k] }}>
-                        <Illustration src={pictures[p]} height={row.height} look={look} gap={0} />
+                        <Illustration src={pictures[p]} height={row.height} look={look} gap={0} labels={labelsOn(p)} width={row.frames[k]} />
                       </View>
                     </View>
                   ))}
@@ -220,7 +234,7 @@ export function TemplatedPageBody(props: TemplateProps) {
               const imageColumn = (
                 <View style={{ width: frame.width }}>
                   {band.pictures.map((p, k) => (
-                    <Illustration key={k} src={pictures[p]} height={Math.round((frame.height - ZONE_GAP * (band.pictures.length - 1)) / band.pictures.length)} look={look} gap={k < band.pictures.length - 1 ? ZONE_GAP : 0} />
+                    <Illustration key={k} src={pictures[p]} height={Math.round((frame.height - ZONE_GAP * (band.pictures.length - 1)) / band.pictures.length)} look={look} gap={k < band.pictures.length - 1 ? ZONE_GAP : 0} labels={labelsOn(p)} width={frame.width} />
                   ))}
                 </View>
               );
@@ -245,7 +259,7 @@ export function TemplatedPageBody(props: TemplateProps) {
                           const frame = zoneColumnFrame(item.height, columnWidth, pageSize.height, pictureScale);
                           return (
                             <View key={k} style={{ width: frame.width, alignSelf: "center" }}>
-                              <Illustration src={pictures[item.picture]} height={frame.height} look={look} gap={ZONE_GAP} />
+                              <Illustration src={pictures[item.picture]} height={frame.height} look={look} gap={ZONE_GAP} labels={labelsOn(item.picture)} width={frame.width} />
                             </View>
                           );
                         }

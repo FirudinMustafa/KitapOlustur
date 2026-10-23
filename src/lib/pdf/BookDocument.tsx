@@ -18,6 +18,8 @@ import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/des
 import { DENSE_LINE, MAX_PICTURE_ASPECT, panelledExercises, resolvePageTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, centredFigure, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
+import { LabelOverlay } from "./label-overlay";
+import { shapeAspect } from "@/lib/design/zones";
 import { CoursebookCover } from "./CoursebookCover";
 import { TWEMOJI_CREDIT } from "@/lib/activities";
 import { applySourceType, type SourceType } from "@/lib/design/source-theme";
@@ -583,6 +585,12 @@ function StandardPageBody({
             >
               {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
               <Image src={imageSrc} style={mirrored ? [styles.pageIllustration, { objectFit: "cover", objectPositionY: "30%" }] : styles.pageIllustration} />
+              {mirrored && page.labels?.length ? (
+                (() => {
+                  const width = Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT);
+                  return <LabelOverlay labels={page.labels} width={width} height={imageHeight} look={look} imageAspect={shapeAspect(width / imageHeight)} fit="cover" positionY={0.3} />;
+                })()
+              ) : null}
             </View>
           </View>
         ))}
