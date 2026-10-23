@@ -58,7 +58,7 @@ async function main() {
     const prompt = job.cards ? `${cardSheetItemsPrompt(job.cards)}\n\n${cardSheetStyle(job.cards.length, STYLE)}` : `${job.prompt}\n\n${STYLE}`;
     const size = grid ? cardSheetSize(grid) : job.size;
     const res = await generateImage({ model: MODEL, prompt, size, providerOptions: { openai: { quality: "medium" } } });
-    const cost = imageCostFromUsage(MODEL, res.usage);
+    const cost = imageCostFromUsage(MODEL, res.usage) ?? 0;
     total += cost;
     const png = Buffer.from(res.image.uint8Array);
     fs.writeFileSync(path.join(OUT, `${job.name}.png`), png);
