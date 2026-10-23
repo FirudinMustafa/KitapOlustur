@@ -98,12 +98,33 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
 - Fidelity: yapı %40 → %57, görünüm %59 → %60.
 - 7, 8 ve 9 canlı üretimle henüz doğrulanmadı.
 
-**Sıradaki:**
-1. Canlı doğrulama run'ı: 1 ünite, ~3–4 $; Gateway'de 6 $ kaldı. Kullanıcı onayı gerekli.
-2. Çözümleyicinin vektör çizimleri resim olarak sayması (şarkı ve uçurtma sayfaları).
-3. Kaynağın sayfa unsurları: üst bant, daire içinde alıştırma numarası, alt konu etiketi.
-4. 220×280 mm sayfa boyutu migrasyonu (onayla) ve kapak tasarımı.
-5. Bozuk ya da eksik 7 görselin stüdyodan yeniden üretilmesi (onayla).
+**Ajanlı tur (2026-10-22): üç faz → birleştirme → inceleme → denetim, `redesign/ui` `17d8e2d`'ye kadar**
+
+| Faz | Ne | Commit |
+|---|---|---|
+| A — analiz | Vektörle çizilmiş resimler (`collectVectorPaths` + `vectorPictureBoxes`). Kenar boşluklu büyük resim artık arka plan sayılmıyor. Super Minds resim sayıları: s.3 1→7, s.4 0→1, s.9 0→1. i5 aynı kaldı. | `856ac74` |
+| B — sayfa unsurları | `page-furniture.ts`: üst bant ve sekme, daire içinde numara, ses rozeti rengi ölçülüp basılıyor. Alt bilgi: konu etiketi ve daire içinde sayfa numarası. Başlık sayfa dibinde tek kalmıyor. Bant rengi artık ana renk sayılmıyor (zeytin yeşili başlıklar bundandı). | `f005499`, `2d90ad1` |
+| C — doluluk ve kapak | Yansıtılan sayfalarda resim ve metin boş kalan yere büyüyor (`planZones` ölçek > 1). Yeni kapak `CoursebookCover.tsx`. | `db44c59`, `38192b0` |
+| Birleştirme | Sayı karoları ortalandı, 5+5 diziliyor. | `5467452` |
+| İnceleme | Çubuklu kartta 1 pt'lik kırmızı şerit giderildi (çalışma kitabı 17→16 sayfa); sayfa başına vektör sınırı. | `e87be05` |
+| Denetim | Kelime bütçesi yalnızca metin katmanı olan sayfaya (taranmış kitapta her ünite yeniden yazılıyordu). Dışa çevrilmiş metin resim sayılmıyor. Büyük iç resim de taranıyor. Gruplama hızlandı. Öğretmen kitabında eşleştirme anahtarı. Çoktan seçmeli şıklar korunuyor. `targetBand` ile seviye tespiti. İkinci güvenlik reddinde ödenmiş resim korunuyor. Aksanlı adlar. Karo yüksekliği tahminde. Tekrar ayıklama ve numara rozeti çoğunluk kuralı. | `53b3af8`, `17d8e2d` |
+
+- **KIYAS-13 yeniden dizimi (yeni analizle adil karşılaştırma):** görünüm %58 → %64 (kaynağın kendi referansı %72), resim alanı %23 → %28. Yapı %49'da değişmedi; içerik eski resim sayılarıyla yazılmıştı.
+- **i5 (KIYAS-11):** %84 / %56 → %86 / %57.
+- 476 test geçiyor.
+- **Not:** gizli alıştırmaların yükseklik tahmininden çıkarılması denendi; görünüm 64 → 62, resim alanı 28 → 22 düştü. Eski fazla tahmin büyütmede pay işi görüyor, değişiklik geri alındı.
+- **Elle karşılaştırma:** ~35 → ~55/100. Basıma hazır değil.
+
+**Sıradaki** (plan: `~/.claude/plans/6-dolarr-kalmis-simdi-virtual-canyon.md`):
+1. Çalışma kitabına kaynak teması (iç sayfalar hâlâ zeytin yeşili, eski alt bilgi).
+2. "Picture N" atfı olan ama o resmi olmayan sayfa.
+3. Çalışma kitabı s.5 kenar boşluklu resim, s.10 kesik kafalar.
+4. Tek başına "My words" sayfası.
+5. Pre-A1 çalışma kitabında cevap anahtarı yok.
+6. "Unit 0" → "Welcome".
+7. vitest worktree'leri hariç tutmalı.
+8. Canlı doğrulama run'ı, ~3–4 $ (onayla).
+9. Baskı: 220×280 mm, bleed, CMYK (onayla).
 
 **Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
 
