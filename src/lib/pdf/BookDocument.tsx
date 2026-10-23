@@ -10,7 +10,7 @@ import { PAGE_PADDING, TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 import { extraImageKey, resolvePageImageUrl, resolvePageImageUrls } from "@/lib/page-image";
 import { pageLayoutType } from "@/lib/design/page-types";
 import { typedLayout } from "@/lib/design/type-layout";
-import { ScenePicture, TypedPageBody } from "./type-templates";
+import { ScenePicture, TypedPageBody, sceneInsets } from "./type-templates";
 import { worksheetLayout } from "@/lib/design/worksheet-layout";
 import { WorksheetPageBody } from "./worksheet";
 import { registerBookFonts, NOTO_SANS, NOTO_SERIF, withSymbols } from "./fonts";
@@ -24,6 +24,8 @@ import { DENSE_LINE, MAX_PICTURE_ASPECT, panelledExercises, resolvePageTemplate 
 import { BlockCard, GlossaryGrid, centredFigure, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
 import { LabelOverlay } from "./label-overlay";
+import { BubbleOverlay } from "./bubble-overlay";
+import { pageBubbles, withoutBubbledDialogue } from "@/lib/ai/page-bubbles";
 import { pictureSlotAspects, shapeAspect } from "@/lib/design/zones";
 import { CoursebookCover } from "./CoursebookCover";
 import { TWEMOJI_CREDIT } from "@/lib/activities";
@@ -614,6 +616,12 @@ function StandardPageBody({
                   return <LabelOverlay labels={page.labels} width={width} height={imageHeight} look={look} imageAspect={shapeAspect(width / imageHeight)} fit="cover" positionY={0.3} />;
                 })()
               ) : null}
+              {mirrored && page.bubbles?.length ? (
+                (() => {
+                  const width = Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT);
+                  return <BubbleOverlay bubbles={page.bubbles} width={width} height={imageHeight} look={look} imageAspect={shapeAspect(width / imageHeight)} fit="cover" positionY={0.3} />;
+                })()
+              ) : null}
             </View>
           </View>
         ))}
@@ -803,10 +811,18 @@ export function BookDocument({
           // of the names in the source (p.2) or the hand-set reference: the
           // learners point at the picture. Cards and panels pages keep their
           // items - they are the cards' words and the panels' lines.
-          const page =
+          const listed =
             look.wordList && unboxed.zonePlan && imageSrcs.length && pageLayoutType(unboxed) === "mixed"
               ? { ...unboxed, blocks: unboxed.blocks.map((b) => (POINT_AT_PICTURE.test(b.heading ?? "") && b.items?.every((i) => itemText(i).split(/\s+/).length <= 3) ? { ...b, items: [] } : b)) }
               : unboxed;
+          // A scene's dialogue set as speech bubbles on its main picture
+          // (source i5 p.14): where the bubbles are drawn - a scene, or a
+          // mirrored page's main picture (drawsBubbles below) - the
+          // dialogue block keeps its heading and rubric but not its lines.
+          // Elsewhere the page prints as it always did.
+          const bubbles = imageSrc && !listed.imageLayout ? pageBubbles(listed) : [];
+          const page = listed.bubbles ? { ...listed, bubbles: undefined } : listed;
+          const bubbled = bubbles.length ? { ...withoutBubbledDialogue(listed), bubbles } : page;
           const isCompact = !!compact?.has(`${unit.unitNumber}:${idx}`);
           const zoneSlack = slack?.get(`${unit.unitNumber}:${idx}`);
           const pageLook = isCompact || zoneSlack ? { ...look, compact: isCompact, zoneSlack } : look;
@@ -827,7 +843,7 @@ export function BookDocument({
               ? null
               : typedLayout(
                   pageLayoutType(page),
-                  { blocks: page.blocks, glossary: look.noGlossary ? undefined : page.glossary },
+                  { blocks: (pageLayoutType(page) === "scene" ? bubbled : page).blocks, glossary: look.noGlossary ? undefined : page.glossary },
                   {
                     main: imageSrc,
                     extras: (page.extraImagePrompts ?? []).map((_, i) => pageImages?.[extraImageKey(page.sourcePageNumber, i + 1)]),
@@ -858,6 +874,9 @@ export function BookDocument({
                   },
                 )
               : null;
+          const drawsBubbles =
+            bubbles.length > 0 && !worksheet && (typed ? typed.type === "scene" : template === "source-zones" || (template === "standard" && !!page.zonePlan));
+          const shown = drawsBubbles ? bubbled : page;
           const scene = typed?.type === "scene";
           const edgeToEdge = scene || (template !== "standard" && EDGE_TO_EDGE_TEMPLATES.includes(template));
           // In a mirrored book the section label moves to the footer pill.
@@ -884,6 +903,12 @@ export function BookDocument({
                   src={imageSrc}
                   look={look}
                   labels={page.labels}
+                  bubbles={drawsBubbles ? bubbles : undefined}
+                  insets={
+                    drawsBubbles && typed?.type === "scene"
+                      ? sceneInsets(typed, pageLook, { isUnitFirstPage: idx === 0, topInset: topBandHeight(topBand, pageSize.height), bleed, contentWidth: pageSize.width - 88, hasLabels: !!page.labels?.length })
+                      : undefined
+                  }
                   width={sheetSize.width}
                   height={sheetSize.height}
                   // the shape the scene was generated in (its source slot)
@@ -928,7 +953,7 @@ export function BookDocument({
                 />
               ) : template === "standard" ? (
                 <StandardPageBody
-                  page={page}
+                  page={shown}
                   unit={unit}
                   isUnitFirstPage={idx === 0 && !isPictureBook}
                   imageSrc={imageSrc}
@@ -942,7 +967,7 @@ export function BookDocument({
               ) : (
                 <TemplatedPageBody
                   template={template}
-                  page={page}
+                  page={shown}
                   unit={unit}
                   isUnitFirstPage={idx === 0 && !isPictureBook}
                   imageSrc={imageSrc}

@@ -24,7 +24,7 @@ export type PlacedLabel = {
   fontSize: number;
 };
 
-type PlaceOptions = {
+export type PlaceOptions = {
   /** width / height of the picture itself; unset = it fills the frame exactly. */
   imageAspect?: number;
   fit?: "cover" | "contain";
@@ -32,22 +32,28 @@ type PlaceOptions = {
   positionY?: number;
 };
 
-// Where a point of the picture lands in the frame, or null if it is cropped
-// away.
-function toFrame(label: PageLabel, width: number, height: number, { imageAspect, fit = "cover", positionY = 0.3 }: PlaceOptions): { px: number; py: number } | null {
-  if (!imageAspect) return { px: label.x * width, py: label.y * height };
+// Where a point of the picture lands in the frame (possibly outside it,
+// when cropped away), and the drawn picture's height.
+export function mapToFrame(point: { x: number; y: number }, width: number, height: number, { imageAspect, fit = "cover", positionY = 0.3 }: PlaceOptions): { px: number; py: number; drawnH: number } {
+  if (!imageAspect) return { px: point.x * width, py: point.y * height, drawnH: height };
   const frameAspect = width / height;
   const scale = (fit === "cover") === (imageAspect > frameAspect) ? height : width / imageAspect;
   const drawnW = scale * imageAspect;
   const drawnH = scale;
   const offsetX = (width - drawnW) / 2;
   const offsetY = (height - drawnH) * (fit === "cover" ? positionY : 0.5);
-  const px = offsetX + label.x * drawnW;
-  const py = offsetY + label.y * drawnH;
+  return { px: offsetX + point.x * drawnW, py: offsetY + point.y * drawnH, drawnH };
+}
+
+// Where a point of the picture lands in the frame, or null if it is cropped
+// away.
+function toFrame(label: PageLabel, width: number, height: number, options: PlaceOptions): { px: number; py: number } | null {
+  const { px, py } = mapToFrame(label, width, height, options);
+  if (!options.imageAspect) return { px, py };
   return px < 2 || py < 2 || px > width - 2 || py > height - 2 ? null : { px, py };
 }
 
-const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }, pad = 3) =>
+const overlaps =(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }, pad = 3) =>
   a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
 
 // Pills placed near their points: above first, then below, the sides and

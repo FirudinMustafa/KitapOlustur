@@ -1,5 +1,7 @@
 import { Text, View, Image, Svg, Rect, Polygon } from "@react-pdf/renderer";
 import { LabelOverlay } from "./label-overlay";
+import { BubbleOverlay, type BubblePlaceOptions } from "./bubble-overlay";
+import type { PageBubble } from "@/lib/ai/page-bubbles";
 import type { ContentBlock } from "@/lib/ai/schemas";
 import { CARD_WORD_H, PANEL_LINE_H, TYPE_GAP, rubricOnly, type Card, type TypedLayout } from "@/lib/design/type-layout";
 import { DENSE_LINE } from "@/lib/design/layouts";
@@ -24,9 +26,15 @@ export type SceneLabel = { word: string; x: number; y: number };
 // Its labels (plan step 4) are the scene's words placed on the picture with
 // arrows (src/lib/pdf/label-overlay.tsx); while a page has labels its items
 // are not repeated as chips (TypedPageBody `labels`).
+//
+// Its speech bubbles (src/lib/pdf/bubble-overlay.tsx) keep clear of what
+// prints over the scene - the title tab and rubric pill at the top, the
+// exercises at the foot (sceneInsets).
 export function ScenePicture({
   src,
   labels,
+  bubbles,
+  insets,
   look,
   width,
   height,
@@ -34,6 +42,8 @@ export function ScenePicture({
 }: {
   src: string;
   labels?: SceneLabel[];
+  bubbles?: PageBubble[];
+  insets?: BubblePlaceOptions["insets"];
   look: Look;
   width: number;
   height: number;
@@ -44,8 +54,38 @@ export function ScenePicture({
       {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
       <Image src={src} style={{ width: "100%", height: "100%", objectFit: "cover", objectPositionY: "40%" }} />
       {labels?.length ? <LabelOverlay labels={labels} width={width} height={height} look={look} imageAspect={imageAspect} fit="cover" positionY={0.4} /> : null}
+      {bubbles?.length ? <BubbleOverlay bubbles={bubbles} width={width} height={height} look={look} imageAspect={imageAspect} fit="cover" positionY={0.4} insets={insets} /> : null}
     </View>
   );
+}
+
+// Where TypedPageBody's scene prints over the picture (the sheet, bleed
+// included): the opener tab and rubric pill from the top, the chips and
+// exercises from the foot - the room speech bubbles keep clear of.
+const SCENE_FOOTER_ROOM = 46;
+
+function sceneTops(topInset: number, bleed: number, isUnitFirstPage: boolean) {
+  const tabTop = topInset + 12 + bleed;
+  return { tabTop, pillTop: isUnitFirstPage ? tabTop + 36 + 10 : topInset + 16 + bleed };
+}
+
+export function sceneInsets(
+  layout: Extract<TypedLayout, { type: "scene" }>,
+  look: Look,
+  { isUnitFirstPage, topInset = 0, bleed = 0, contentWidth, hasLabels }: { isUnitFirstPage: boolean; topInset?: number; bleed?: number; contentWidth: number; hasLabels: boolean },
+): { top: number; bottom: number; left: number; right: number } {
+  const size = look.theme.bodySize * 1.2;
+  const pillText = `${layout.lead.heading ?? ""}  ${layout.lead.body && layout.lead.body.length <= 120 ? layout.lead.body : ""}`;
+  // The pill's text wraps past its width (RubricPill's maxWidth - 90).
+  const pillLines = Math.max(1, Math.ceil((pillText.length * size * 0.55) / Math.max(100, contentWidth + 24 - 90)));
+  const pillH = Math.max(Math.round(size * 2.4), pillLines * size * 1.35 + 8);
+  const chipRows = hasLabels || !layout.chips.length ? 0 : Math.ceil(layout.chips.join("   ").length / 60);
+  return {
+    top: sceneTops(topInset, bleed, isUnitFirstPage).pillTop + pillH + 6,
+    bottom: SCENE_FOOTER_ROOM + bleed + (layout.rest.length ? layout.restHeight + TYPE_GAP : 0) + chipRows * (look.theme.bodySize * 1.6 + 6),
+    left: bleed,
+    right: bleed,
+  };
 }
 
 const NUMBERED = /^(\d{1,2})[.)]?\s+(.*)$/;
@@ -187,9 +227,8 @@ export function TypedPageBody({ layout, unit, isUnitFirstPage, look, showAnswerK
   const lineHeight = `${(look.theme.bodySize * DENSE_LINE).toFixed(2)}pt`;
 
   if (layout.type === "scene") {
-    const tabTop = topInset + 12 + bleed;
-    const pillTop = isUnitFirstPage ? tabTop + 36 + 10 : topInset + 16 + bleed;
-    const footerRoom = 46;
+    const { tabTop, pillTop } = sceneTops(topInset, bleed, isUnitFirstPage);
+    const footerRoom = SCENE_FOOTER_ROOM;
     const chips = labels?.length ? [] : layout.chips;
     return (
       <>

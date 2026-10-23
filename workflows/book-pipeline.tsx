@@ -140,6 +140,7 @@ import { appendExercises, exercisesToAdd, extendExercises, extendPrompt, itemsTo
 import { extraImageKey, resolvePageImageUrls } from "@/lib/page-image";
 import { cardSheetGrid, cardSheetItemsPrompt, cardSheetSize, cardSheetSlots, cardSheetStyle, sliceCardSheet } from "@/lib/ai/card-sheet";
 import { labelLocationPrompt, labelLocationSchema, labelsFromBoxes, labelWords, layoutPageType, withPageLabels, type PageLabel } from "@/lib/ai/page-labels";
+import { bubbleDialogue, bubblesFromBoxes, hasBigMainPicture, speakerLocationPrompt, speakerLocationSchema, speakersOf, withPageBubbles, type PageBubble } from "@/lib/ai/page-bubbles";
 import {
   BLUEPRINT_INSTRUCTIONS,
   applyZonePlans,
@@ -2324,6 +2325,39 @@ async function locateLabels(runId: string, imageUrl: string, words: string[]): P
   return labelsFromBoxes(words, object);
 }
 
+// A scene's dialogue as speech bubbles: where each speaker's head is on the
+// page's main picture, so the PDF can point a bubble at them. Recurring
+// characters carry their sheet's looks, anyone else goes by name. Lines
+// whose speaker the model can't find get no bubble (the dialogue then
+// prints under the picture as before).
+async function locateSpeakers(
+  runId: string,
+  imageUrl: string,
+  speakers: { name: string; description?: string }[],
+  lines: { speaker: string; line: string }[],
+): Promise<PageBubble[]> {
+  "use step";
+
+  const { object, usage } = await withObjectDiagnostics(() =>
+    generateObject({
+      model: toTextModel(resolveReviewModel()),
+      schema: speakerLocationSchema,
+      experimental_repairText: repairDoubleEncodedJsonLeaves,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: speakerLocationPrompt(speakers) },
+            { type: "image", image: new URL(imageUrl) },
+          ],
+        },
+      ],
+    }),
+  );
+  await recordUsage(runId, "bubbles", usage, resolveReviewModel());
+  return bubblesFromBoxes(lines, object);
+}
+
 // Plan step 3: a "cards" page's pictures drawn as ONE sheet (one paid call,
 // one QA review of the whole sheet) and cut into the separate cards, each
 // stored where its own picture would have gone. Throws CardSheetSliceError
@@ -2393,7 +2427,7 @@ async function generateUnitImages(
   // Pictures a previous run already made for this exact unit (rerun of an
   // unchanged unit) - reused instead of paid for again.
   reuse: Record<number, string> = {},
-): Promise<{ images: Record<number, string>; labels: Record<number, PageLabel[]> }> {
+): Promise<{ images: Record<number, string>; labels: Record<number, PageLabel[]>; bubbles: Record<number, PageBubble[]> }> {
   "use step";
 
   const allPages = [
@@ -2405,6 +2439,7 @@ async function generateUnitImages(
 
   const images: Record<number, string> = {};
   const labels: Record<number, PageLabel[]> = {};
+  const bubbles: Record<number, PageBubble[]> = {};
   // Live E2E 2026-10-09: the free writer model left imagePrompt empty on
   // whole Student Books. A coursebook page without pictures looks unfinished,
   // so a Student Book page that has none gets one derived from its content.
@@ -2490,6 +2525,18 @@ async function generateUnitImages(
       }
     }
 
+    // A scene's short dialogue as speech bubbles on its big main picture.
+    // Optional too - without heads the lines print under the picture.
+    const dialogue = images[page.sourcePageNumber] && hasBigMainPicture(page) ? bubbleDialogue(page) : null;
+    if (dialogue) {
+      try {
+        const found = await locateSpeakers(runId, images[page.sourcePageNumber], speakersOf(dialogue, characterSheets), dialogue);
+        if (found.length) bubbles[page.sourcePageNumber] = found;
+      } catch (err) {
+        console.warn(`Unit ${unit.unitNumber} page ${page.sourcePageNumber}: speech bubbles not placed -`, err instanceof Error ? err.message : err);
+      }
+    }
+
     // Faz B3: the page's further pictures - square, they fill small frames.
     for (const [i, prompt] of (page.extraImagePrompts ?? []).entries()) {
       const key = extraImageKey(page.sourcePageNumber, i + 1);
@@ -2528,7 +2575,7 @@ async function generateUnitImages(
     });
   }
 
-  return { images, labels };
+  return { images, labels, bubbles };
 }
 
 // Faz "İnsan-onaylı üretim hattı": after all units' images have been
@@ -3170,6 +3217,7 @@ async function rewritePageToFit(
     zonePlan: page.zonePlan,
     sourceShape: page.sourceShape,
     labels: page.labels,
+    bubbles: page.bubbles,
     // Strip any coordinates the model invents (same rule as unit generation).
     blocks: object.blocks.map((b) => ({ ...b, layout: undefined })),
   }));
@@ -4488,9 +4536,10 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         carriedOver && resumeFromRunId ? await loadRunPageImages(resumeFromRunId) : {},
       );
       Object.assign(pageImages, unitImages.images);
-      // Scene labels found on the pictures go onto their pages, persisted so
-      // a rerun or relayout keeps them.
-      const labelled = withPageLabels(generated, unitImages.labels);
+      // Scene labels and speech bubbles found on the pictures go onto their
+      // pages, persisted so a rerun or relayout keeps them. (A step result
+      // from before bubbles existed has none.)
+      const labelled = withPageBubbles(withPageLabels(generated, unitImages.labels), unitImages.bubbles ?? {});
       if (labelled !== generated) {
         units[unitIdx] = labelled;
         if (labelled.unitNumber < MIDTERM_UNIT_NUMBER) await replaceCheckpoint(runId, labelled.unitNumber, labelled);

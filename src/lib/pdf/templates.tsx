@@ -18,6 +18,8 @@ import { NOTO_SANS } from "./fonts";
 import { LabelOverlay } from "./label-overlay";
 import { shapeAspect } from "@/lib/design/zones";
 import type { PageLabel } from "@/lib/ai/page-labels";
+import { BubbleOverlay } from "./bubble-overlay";
+import type { PageBubble } from "@/lib/ai/page-bubbles";
 
 // Faz 1 "Tasarım sistemi": PDF renderers for each layout template in
 // src/lib/design/layouts.ts. BookDocument.tsx decides WHICH template a page
@@ -52,6 +54,7 @@ export function Illustration({
   fit = "cover",
   gap = 12,
   labels,
+  bubbles,
   width,
 }: {
   src: string;
@@ -61,6 +64,8 @@ export function Illustration({
   gap?: number;
   /** A scene's words printed on the picture (needs the frame's width). */
   labels?: PageLabel[];
+  /** A scene's dialogue as speech bubbles on the picture (needs the frame's width). */
+  bubbles?: PageBubble[];
   width?: number;
 }) {
   return (
@@ -73,6 +78,9 @@ export function Illustration({
       {labels?.length && width && typeof height === "number" ? (
         // The picture was drawn at the generator size for this frame's shape.
         <LabelOverlay labels={labels} width={width} height={height} look={look} imageAspect={shapeAspect(width / height)} fit={fit} positionY={0.3} />
+      ) : null}
+      {bubbles?.length && width && typeof height === "number" ? (
+        <BubbleOverlay bubbles={bubbles} width={width} height={height} look={look} imageAspect={shapeAspect(width / height)} fit={fit} positionY={0.3} />
       ) : null}
     </View>
   );
@@ -204,6 +212,9 @@ export function TemplatedPageBody(props: TemplateProps) {
       const panels = panelledExercises(page.blocks);
       // A scene's words go on its main picture (plan step 4).
       const labelsOn = (p: number) => (p === 0 && imageSrc && pictures[0] === imageSrc ? page.labels : undefined);
+      // And its dialogue's speech bubbles (BookDocument passes them only
+      // with the lines taken out of the dialogue block).
+      const bubblesOn = (p: number) => (p === 0 && imageSrc && pictures[0] === imageSrc ? page.bubbles : undefined);
       return (
         <>
           {heading}
@@ -222,7 +233,7 @@ export function TemplatedPageBody(props: TemplateProps) {
                   {band.pictures.map((p, k) => (
                     <View key={k} style={{ width: slotWidth(k), alignItems: "center" }}>
                       <View style={{ width: row.frames[k] }}>
-                        <Illustration src={pictures[p]} height={row.height} look={look} gap={0} labels={labelsOn(p)} width={row.frames[k]} />
+                        <Illustration src={pictures[p]} height={row.height} look={look} gap={0} labels={labelsOn(p)} bubbles={bubblesOn(p)} width={row.frames[k]} />
                       </View>
                     </View>
                   ))}
@@ -234,7 +245,7 @@ export function TemplatedPageBody(props: TemplateProps) {
               const imageColumn = (
                 <View style={{ width: frame.width }}>
                   {band.pictures.map((p, k) => (
-                    <Illustration key={k} src={pictures[p]} height={Math.round((frame.height - ZONE_GAP * (band.pictures.length - 1)) / band.pictures.length)} look={look} gap={k < band.pictures.length - 1 ? ZONE_GAP : 0} labels={labelsOn(p)} width={frame.width} />
+                    <Illustration key={k} src={pictures[p]} height={Math.round((frame.height - ZONE_GAP * (band.pictures.length - 1)) / band.pictures.length)} look={look} gap={k < band.pictures.length - 1 ? ZONE_GAP : 0} labels={labelsOn(p)} bubbles={bubblesOn(p)} width={frame.width} />
                   ))}
                 </View>
               );
@@ -259,7 +270,7 @@ export function TemplatedPageBody(props: TemplateProps) {
                           const frame = zoneColumnFrame(item.height, columnWidth, pageSize.height, pictureScale);
                           return (
                             <View key={k} style={{ width: frame.width, alignSelf: "center" }}>
-                              <Illustration src={pictures[item.picture]} height={frame.height} look={look} gap={ZONE_GAP} labels={labelsOn(item.picture)} width={frame.width} />
+                              <Illustration src={pictures[item.picture]} height={frame.height} look={look} gap={ZONE_GAP} labels={labelsOn(item.picture)} bubbles={bubblesOn(item.picture)} width={frame.width} />
                             </View>
                           );
                         }

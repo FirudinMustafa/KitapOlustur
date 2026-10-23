@@ -358,11 +358,16 @@ export function shapeAspect(slotAspect: number | undefined): number {
 const SCENE_AREA = 0.08; // share of the page
 
 export function pictureFraming(plan: ZonePlan, pictureCount: number): ("scene" | "object")[] {
-  const out: ("scene" | "object")[] = [];
+  return pictureAreas(plan, pictureCount).map((area) => (area >= SCENE_AREA ? "scene" : "object"));
+}
+
+// The share of the page each picture's slot takes, main picture first.
+export function pictureAreas(plan: ZonePlan, pictureCount: number): number[] {
+  const out: number[] = [];
   for (const band of layoutZones(plan, [], pictureCount, () => 0)) {
-    if (band.kind === "pictures") band.pictures.forEach((p, k) => (out[p] = (band.span ?? 1) * band.widths[k] * band.height >= SCENE_AREA ? "scene" : "object"));
-    else if (band.kind === "split") for (const p of band.pictures) out[p] = (band.imageWidth * band.height) / band.pictures.length >= SCENE_AREA ? "scene" : "object";
-    else if (band.kind === "columns") for (const i of band.columns.flat()) if (i.kind === "picture") out[i.picture] = 0.48 * i.height >= SCENE_AREA ? "scene" : "object";
+    if (band.kind === "pictures") band.pictures.forEach((p, k) => (out[p] = (band.span ?? 1) * band.widths[k] * band.height));
+    else if (band.kind === "split") for (const p of band.pictures) out[p] = (band.imageWidth * band.height) / band.pictures.length;
+    else if (band.kind === "columns") for (const i of band.columns.flat()) if (i.kind === "picture") out[i.picture] = 0.48 * i.height;
   }
   return out;
 }

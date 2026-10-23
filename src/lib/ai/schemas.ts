@@ -485,6 +485,12 @@ export const storedPageSchema = generatedPageSchema.extend({
   // fractions (0-1) of the picture; set by locateLabels after the picture
   // is made, never by the writer.
   labels: z.array(z.object({ word: z.string(), x: z.number(), y: z.number() })).optional(),
+  // A scene's dialogue as speech bubbles on its main picture (source i5
+  // p.14 "It's party time!"): x, y = the speaker's head, as fractions (0-1)
+  // of the picture; r = half the head's height, as a fraction of the
+  // picture's height (the bubble keeps clear of the face). Set by
+  // locateSpeakers after the picture is made, never by the writer.
+  bubbles: z.array(z.object({ speaker: z.string(), line: z.string(), x: z.number(), y: z.number(), r: z.number().optional() })).optional(),
 });
 export type GeneratedPage = z.infer<typeof storedPageSchema>;
 
