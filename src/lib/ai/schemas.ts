@@ -4,6 +4,7 @@ import { ACTIVITY_TYPES } from "@/lib/activities";
 import { MAP_MAX_COLS, MAP_MAX_ROWS, PREPOSITIONS } from "@/lib/diagrams";
 import { LAYOUT_TEMPLATE_IDS } from "@/lib/design/layouts";
 import { MAX_TYPE_PICTURES, PAGE_LAYOUT_TYPES } from "@/lib/design/page-types";
+import { TEXT_STYLES } from "@/lib/text-style";
 
 // ---- Source page map ----
 // A page-by-page blueprint of the uploaded source PDF. This is what lets the
@@ -271,6 +272,15 @@ export const contentBlockSchema = z.object({
     .optional()
     .describe(
       'Set ONLY for a short side note that should print as a coloured callout box (a study tip, a fun fact, a "remember" rule, a compact grammar rule). Keep its body under ~300 characters. Leave unset for normal blocks.',
+    ),
+  // Artefacts: a short text a coursebook sets as a designed object, not
+  // prose (src/lib/text-style.ts; blocks without it are recognised from
+  // their text there). A plain enum, like callout.
+  textStyle: z
+    .enum(TEXT_STYLES)
+    .optional()
+    .describe(
+      "Set ONLY when this block's body IS such a text, to print it as one: an email or letter (email), a short text message (message), a handwritten note (note), a party invitation (invitation), a quiz with A/B options in its items (quiz), a poster or advert (poster). Gaps and items still print. Leave unset for instructions, exercises and normal reading texts.",
     ),
   dialogue: z
     .array(z.object({ speaker: z.string(), line: z.string() }))

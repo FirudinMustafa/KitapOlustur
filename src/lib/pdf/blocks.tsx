@@ -11,6 +11,8 @@ import { trackOf } from "@/lib/listening";
 import type { PageFurniture } from "@/lib/design/page-furniture";
 import { NOTO_SANS, NOTO_SERIF, pdfFontFamily, withSymbols } from "./fonts";
 import { CrosswordView, MarkingList, MatchLinesView, WordSearchView } from "./puzzle-blocks";
+import { resolveTextStyle } from "@/lib/text-style";
+import { ArtefactBody } from "./artefacts";
 
 // Faz 1 "Tasarım sistemi": the per-block print pieces, split out of
 // BookDocument.tsx so the page templates (./templates.tsx) and the original
@@ -717,6 +719,22 @@ function tintPieces(color: string, radius: number, pad: number, marginBottom: nu
 }
 
 function BlockInner({ block, showAnswerKey, look, plain, dense }: { block: ContentBlock; showAnswerKey: boolean; look: Look; plain?: boolean; dense?: boolean }) {
+  // A note, email, invitation... prints as that object (artefacts.tsx); a
+  // quiz box holds the items too, so only its key is left to print.
+  const artefact = resolveTextStyle(block);
+  const shown = artefact && (artefact === "quiz" ? !!block.items?.length : !!block.body) ? artefact : null;
+  if (shown) {
+    return (
+      <>
+        <ArtefactBody style={shown} block={block} look={look} />
+        {shown === "quiz" ? (
+          <AnswerKey block={block} show={showAnswerKey} />
+        ) : (
+          <ExerciseBox block={block} showAnswerKey={showAnswerKey} look={look} plain={plain} dense={dense} />
+        )}
+      </>
+    );
+  }
   return (
     <>
       {block.body ? <Text style={{ marginBottom: dense ? 3 : 6 }}>{block.body}</Text> : null}

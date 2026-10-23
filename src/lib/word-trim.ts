@@ -2,6 +2,7 @@ import type { GeneratedPage, GeneratedUnit } from "@/lib/ai/schemas";
 import { isYoungLearnerLevel } from "@/lib/cefr-vocabulary";
 import { isExerciseBlock } from "@/lib/design/layouts";
 import { blockPrints, pageWordBudget, pageWordCount, type WordCountOptions } from "@/lib/source-shape";
+import { resolveTextStyle } from "@/lib/text-style";
 
 // KIYAS-14 (2026-10-23): the writer still left Student Book pages over their
 // word budget after the rewrite loop, and the steps after it (topUpExercises,
@@ -35,10 +36,10 @@ const norm = (text: string) =>
 const wordsOf = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
 // A body that is an exercise's instruction line(s) rather than text to read:
-// short, one paragraph, no gaps to fill.
+// short, one paragraph, no gaps to fill, not an artefact (a message, a note).
 function isRubric(block: Block): boolean {
   const body = block.body.trim();
-  return !!body && isExerciseBlock(block) && !block.callout && wordsOf(body) <= MAX_RUBRIC_WORDS && !/\n/.test(body) && !/_{2,}/.test(body);
+  return !!body && isExerciseBlock(block) && !block.callout && !resolveTextStyle(block) && wordsOf(body) <= MAX_RUBRIC_WORDS && !/\n/.test(body) && !/_{2,}/.test(body);
 }
 
 export function firstSentence(text: string): string {

@@ -221,6 +221,16 @@ Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: 
 - **Canlı deneme:** `.spike/handcraft2/img/1b-scene.png` üzerinde 6 konuşan için 1 flash-lite çağrısı yapıldı (0,0013 $). Altı baş da doğru bulundu. Görüntüye çevrilip bakıldı: balonlar doğru kişiyi gösteriyor ve çakışmıyor.
 - KIYAS-14 yeniden dizimi değişmedi: %68 / %71.
 
+**Metin nesneleri (2026-10-23, `artefacts` dalı, `7f2dabc`, AI maliyeti 0 $):**
+- Kısa metinler artık düz paragraf değil, yayınevi kitaplarındaki gibi nesne olarak basılıyor: not (sarı yapışkan kâğıt, bant, Andika), e-posta (From/To başlıklı pencere), mesaj (telefon balonu), davetiye (koyu renkli kart, balonlar), quiz (renkli kutu, A/B satırları), afiş (çerçeveli kart). PDF'te hem kartlı hem yoğun (kaynağı yansıtan) dizimde; web okuyucuda aynısı CSS ile.
+- Yazar alanı: blokta `textStyle` (düz enum). Yazar talimatında "(3)" kuralına eklendi.
+- Alanı olmayan bloklar metinden tanınıyor (`src/lib/text-style.ts`): selam + imza → e-posta (kısa ve boşluksuz ise mesaj; yönerge "email/message/note" diyorsa o); "come to my … party / you're invited" + tarih → davetiye; "quiz" + maddelerin çoğu A/B → quiz; isimle açılan, "please / don't forget" ya da tireli liste ve imzalı kısa metin → not. Boşluklu e-posta (Tom'un e-postası) e-posta sayılıyor; afiş yalnız yazar işaretlerse.
+- Bilerek dar: "Geography Quiz" (açık sorular) ve "Read again and circle a or b" quiz sayılmıyor.
+- Maddeler ve boşluklar numaralı basılmaya devam ediyor; nesnenin gövdesi yönerge gibi başlığa eklenmiyor ve kelime kırpmada yönerge sayılmıyor.
+- Yükseklik tahmini (`artefactHeight`): gerçek dizimin 1,06–1,36 katı, düz metindeki pay (1,13–1,58) kadar.
+- **Ölçüm:** kayıtlı 48 kitabın 1500 bloğunda yanlış tanıma 0, ama tanınacak gerçek nesne de yok (KIYAS-11 i5 s.6–11'i kapsıyor; e-posta/davetiye/not/quiz s.13–16'da). Bu yüzden çıktılar aynı: i5 %87 / %56, KIYAS-14 SB %68 / %71. Nesneler örnek bloklarla render testinde (`BookDocument.artefacts.test.tsx`) görüldü.
+- **Açık:** canlı üretimde yazarın `textStyle` doldurup doldurmadığı; EPUB/DOCX düz metin basıyor.
+
 **Bekleyen (çözüldü):** `AI_GATEWAY_API_KEY` ve kredi eklendi, KIYAS-13 ücretli modellerle koştu.
 
 **Yapılmadı:**

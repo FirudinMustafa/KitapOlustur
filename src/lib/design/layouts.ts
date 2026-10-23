@@ -1,6 +1,7 @@
 import { diagramHeight, type Diagram } from "@/lib/diagrams";
 import { activityHeight, tileKind, type Activity } from "@/lib/activities";
 import { PAGE_ASPECT, layoutZones, shapeAspect, type ZonePlan, type ZonedBand } from "@/lib/design/zones";
+import { artefactTitle, letterParts, quizParts, resolveTextStyle, splitArtefact, type TextStyle } from "@/lib/text-style";
 // Faz 1 "Tasarım sistemi": named page-layout templates. The writer model
 // picks one per page (generatedPageSchema.layoutTemplate) and every renderer
 // (BookDocument.tsx for PDF, PageContent.tsx for the web reader/Dizilim)
@@ -102,6 +103,7 @@ type BlockLike = {
   dialogue?: { speaker: string; line: string }[];
   table?: { headers: string[]; rows: string[][] };
   callout?: string;
+  textStyle?: TextStyle;
   layout?: unknown;
   activity?: Activity;
   diagram?: Diagram;
@@ -181,8 +183,69 @@ function textHeight(text: string, width: number, size: number, line = LINE): num
 // left room for a picture a third that size.
 export const INLINE_RUBRIC_MAX = 160;
 
-export function inlineRubric(b: { body?: string; heading?: string; dialogue?: unknown[] | null }): boolean {
-  return !!b.heading && !!b.body && b.body.length <= INLINE_RUBRIC_MAX && !b.body.includes("\n") && !b.dialogue?.length;
+// An artefact (a message, an invitation...) is never run on after the heading.
+export function inlineRubric(b: { body?: string; heading?: string; dialogue?: unknown[] | null; textStyle?: TextStyle; items?: string[] }): boolean {
+  return !!b.heading && !!b.body && b.body.length <= INLINE_RUBRIC_MAX && !b.body.includes("\n") && !b.dialogue?.length && !resolveTextStyle(b);
+}
+
+// Artefact boxes (src/lib/pdf/artefacts.tsx draws them, artefactHeight
+// measures them): padding, the share of the text width a narrow one takes,
+// and their extra parts in body sizes (a title) or pt.
+export const ARTEFACT_BOX = {
+  note: { pad: 9, width: 0.72, top: 8, font: 1.08 },
+  email: { pad: 8, header: 18 },
+  message: { pad: 8, width: 0.7 },
+  invitation: { pad: 12, title: 1.8 },
+  quiz: { pad: 9, gap: 5 },
+  poster: { pad: 10, title: 1.6 },
+} as const;
+
+// Height (pt) the artefact takes in place of the block's body text (and,
+// for a quiz, its item list) - see ArtefactBody.
+function artefactHeight(style: TextStyle, b: BlockLike, inner: number, size: number, th: (text: string, w: number, s: number) => number): number {
+  const { lead, text } = splitArtefact(b.body ?? "");
+  const leadH = lead ? th(lead, inner, size) + 4 : 0;
+  const letter = (w: number, s: number) => {
+    const p = letterParts(text);
+    return th(p.greeting, w, s) + th(p.body, w, s) + (p.signOff ? th(p.signOff, w, s) + 3 : 0) + (p.greeting ? 2 : 0);
+  };
+  const margins = 8; // marginTop 2 + marginBottom 6
+  switch (style) {
+    case "note": {
+      const box = ARTEFACT_BOX.note;
+      return leadH + box.top + margins + 2 * box.pad + letter(inner * box.width - 2 * box.pad, size * box.font) + 4;
+    }
+    case "email": {
+      const box = ARTEFACT_BOX.email;
+      return leadH + margins + box.header + 2 * box.pad + 2 + letter(inner - 2 * box.pad, size);
+    }
+    case "message": {
+      const box = ARTEFACT_BOX.message;
+      return leadH + margins + 2 * box.pad + 5 + 8 + 12 + 10 + th(text, inner * box.width - 2 * box.pad - 21, size);
+    }
+    case "invitation": {
+      const box = ARTEFACT_BOX.invitation;
+      const { title, rest } = artefactTitle(text);
+      const p = letterParts(rest);
+      const w = inner - 2 * box.pad - 22; // the balloons' margin
+      const textH = th(p.greeting, w, size * 1.05) + th(p.body, w, size * 1.05) + (p.signOff ? th(p.signOff, w, size * 1.05) + 3 : 0);
+      return leadH + margins + 2 * box.pad + (title ? size * box.title * 1.25 + 4 : 0) + Math.max(40, textH);
+    }
+    case "poster": {
+      const box = ARTEFACT_BOX.poster;
+      const { title, rest } = artefactTitle(text);
+      return leadH + margins + 2 * (box.pad + 4) + (title ? th(title, inner - 2 * box.pad - 8, size * box.title) + 3 : 0) + th(rest, inner - 2 * box.pad - 8, size);
+    }
+    case "quiz": {
+      const box = ARTEFACT_BOX.quiz;
+      const w = inner - 2 * box.pad;
+      const rows = (b.items ?? []).reduce((n, item) => {
+        const { question, options } = quizParts(item);
+        return n + th(`00 ${question}`, w, size) + (options.length ? Math.max(size * 1.25, th(options.map((o) => `00 ${o.text}`).join("    "), w - 10, size)) + 1 : 0) + box.gap;
+      }, 0);
+      return leadH + margins + 2 * box.pad + (text ? th(text, w, size * 0.95) + 5 : 0) + rows;
+    }
+  }
 }
 
 // Columns for an item list on a mirrored page: short items side by side.
@@ -200,12 +263,14 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
   // Faz G4: mirrored pages are set at a tighter line (DENSE_LINE).
   const line = frameless ? DENSE_LINE : LINE;
   const th = (text: string, w: number, s: number) => textHeight(text, w, s, line);
+  const artefact = resolveTextStyle(b);
+  const bodyH = artefact ? artefactHeight(artefact, b, inner, size, th) : th(b.body, inner, size);
   let h = frameless
     ? 8 +
       (inlineRubric(b)
         ? textHeight(`${b.heading} ${b.body}`, inner, size * 1.1, HEADING_LINE / 1.1) + 3
-        : (b.heading ? textHeight(b.heading, inner, size * 1.1, HEADING_LINE / 1.1) + 3 : 0) + th(b.body, inner, size))
-    : 30 + (b.heading ? size * 1.9 : 0) + th(b.body, inner, size);
+        : (b.heading ? textHeight(b.heading, inner, size * 1.1, HEADING_LINE / 1.1) + 3 : 0) + bodyH)
+    : 30 + (b.heading ? size * 1.9 : 0) + bodyH;
   if (b.dialogue?.length) {
     // avatar row: speaker label + padding + border ≈ 33pt over the text itself
     for (const d of b.dialogue) h += Math.max(30, th(d.line, inner * 0.78 - 20, size) + 33) + 8;
@@ -218,6 +283,8 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
   if (b.diagram?.type === "map") h += diagramHeight(b).extra;
   if (isChecklistBlock(b)) {
     h += (b.items ?? []).reduce((n, i) => n + th(i, inner - 20, size) + 6, 0);
+  } else if (artefact === "quiz") {
+    // the quiz box holds the items (artefactHeight)
   } else if (b.items?.length || b.interactive || b.activity) {
     h += frameless ? 8 : 44;
     const act = safeActivityHeight(b, inner - 24, size);
