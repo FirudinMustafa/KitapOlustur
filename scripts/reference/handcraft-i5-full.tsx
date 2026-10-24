@@ -116,10 +116,17 @@ async function roundTwoArt(card: (n: string) => Buffer, emoji: Record<string, st
   };
   const [lw, lh] = [Math.round(W * 2), Math.round(H * 2)];
   const [cw, ch] = size([0.03, 0.08, 0.95, 0.63]);
+  // Three strips across the area (3.5:1). Each is cut from the 3:2 scene
+  // at exactly the strip's shape, around a character's head: cut at other
+  // shapes the composer cropped them again from the centre, and the panels
+  // showed the girl on the stepladder from the knees down and Zoe without
+  // her head (round 2).
+  const panelH = Math.round(ch / 3) + 2;
+  const strip = (x: number, y: number, w: number) => art.crop(card("1a-scene"), x, y, w, (w * 1.5 * panelH) / cw);
   const comicPanels = [
-    await art.crop(card("1a-scene"), 0, 0.05, 1, 0.6),
-    await art.crop(card("1a-scene"), 0.5, 0.33, 0.5, 0.34),
-    await art.crop(card("1a-scene"), 0.2, 0.0, 0.8, 0.48),
+    await strip(0.3, 0.06, 0.7), // Sam (under the dialogue box) and the girl on the stepladder
+    await strip(0.42, 0.37, 0.58), // Kenji at his laptop
+    await strip(0, 0.12, 0.62), // Zoe painting the wardrobe, Sam with the box
   ];
   const [hw, hh] = size([0.05, 0.04, 0.87, 0.49]);
   const hk = hw / 1500;
@@ -160,11 +167,11 @@ async function roundTwoArt(card: (n: string) => Buffer, emoji: Record<string, st
        <rect x="40" y="${size([0, 0, 0, 0.45])[1] - 70}" width="${size([0, 0, 0.53, 0])[0] - 80}" height="26" rx="13" fill="#B39DDB"/>`,
     ),
     comic1a: await art.compose(
-      "comic-1a-2",
+      "comic-1a-3",
       cw,
       ch,
       `<rect width="${cw}" height="${ch}" fill="#263238"/>`,
-      comicPanels.map((b, i) => ({ buf: b, x: 0, y: i * Math.round(ch / 3), w: cw, h: Math.round(ch / 3) + 2, fit: "cover" as const })),
+      comicPanels.map((b, i) => ({ buf: b, x: 0, y: i * Math.round(ch / 3), w: cw, h: panelH, fit: "cover" as const })),
     ),
     vocab1a: await art.cardGrid("vocab-1a-2", Array.from({ length: 6 }, (_, i) => card(`1a-cards-${i + 1}`)), 3, { caption: 56, gap: 60 }),
     chores: await art.cardGrid("chores-1b-2", Array.from({ length: 6 }, (_, i) => card(`1b-cards-${i + 1}`)), 3, { caption: 56, gap: 60, tiles: ["#FFF3E0", "#E1F5FE", "#F3E5F5"] }),
@@ -816,7 +823,8 @@ function P7() {
       <At box={[0.07, 0.066, 0.9, 0.03]}>
         <Ex n="4" mt={0}>What is there in Lily&apos;s new room? Talk with your friend.</Ex>
       </At>
-      <Area box={[0.06, 0.09, 0.85, 0.33]} src={A.scene1a} r={10} pos="50% 60%" />
+      {/* from the top: at 60% Zoe's head on the stepladder was cut off */}
+      <Area box={[0.06, 0.09, 0.85, 0.33]} src={A.scene1a} r={10} pos="50% 15%" />
       <View style={{ marginTop: SB([0, 0.43, 0, 0]).tp }}>
         <Items cols={4} items={["boxes", "a rug", "a wardrobe", "curtains", "a beanbag", "a laptop", "a bookcase", "a paint pot"]} />
         <Text style={{ ...it(), marginLeft: 15, marginBottom: 6 }}>A: There&apos;s a beanbag in Lily&apos;s room.   B: Where is it?   A: It&apos;s next to the desk.</Text>
@@ -1439,7 +1447,8 @@ function P14() {
           />
         </View>
       </At>
-      <Area box={[0.53, 0.62, 0.44, 0.21]} src={A.quiz} r={10} pos="50% 30%" />
+      {/* a portrait picture in a wide box: from near the top, or the two boys lose their heads */}
+      <Area box={[0.53, 0.62, 0.44, 0.21]} src={A.quiz} r={10} pos="50% 10%" />
       <At box={[0.53, 0.835, 0.44, 0.1]}>
         <View style={{ flexDirection: "row", gap: 4 }}>
           {[
@@ -2679,6 +2688,8 @@ function CoverArt({ kind, band }: { kind: string; band: string }) {
 }
 const Cover = () => <CoverArt kind="Student's Book" band={RED} />;
 
+// The group picture's size (pt) behind the character circles: a face about 70 pt across.
+const FACE_SHEET = 300;
 function Imprint() {
   return (
     <Page size={[W, H]} style={{ padding: 56, backgroundColor: "#fff" }}>
@@ -2694,16 +2705,21 @@ function Imprint() {
       <Text style={{ ...t(9.6), marginBottom: 14 }}>Typefaces: Noto Sans, Baloo 2 and Andika (SIL Open Font License).</Text>
       <Text style={t(10, 700)}>Characters</Text>
       <View style={{ flexDirection: "row", gap: 10, marginTop: 6, marginBottom: 20 }}>
-        {[
-          ["Lily", "w-friends"],
-          ["Sam", "w-friends"],
-          ["Zoe", "w-friends"],
-          ["Kenji", "w-friends"],
-        ].map(([n], i) => (
+        {/* Each face cut from w-friends.png (1024 px) around its centre: an
+            even step per child had put chins, shirts and Kenji's shoulder in
+            the circles instead of the faces. */}
+        {(
+          [
+            ["Lily", 165, 330],
+            ["Sam", 425, 370],
+            ["Zoe", 625, 430],
+            ["Kenji", 880, 345],
+          ] as const
+        ).map(([n, fx, fy], i) => (
           <View key={n} style={{ alignItems: "center" }}>
             <View style={{ width: 90, height: 90, borderRadius: 45, overflow: "hidden", borderWidth: 3, borderColor: [GREEN, ORANGE, PURPLE, BLUE][i] }}>
               {/* eslint-disable-next-line jsx-a11y/alt-text */}
-              <Image src={png(A.friends)} style={{ width: 360, height: 360, marginLeft: -i * 88 - 6, marginTop: -40 }} />
+              <Image src={png(A.friends)} style={{ position: "absolute", width: FACE_SHEET, height: FACE_SHEET, left: 42 - (fx / 1024) * FACE_SHEET, top: 42 - (fy / 1024) * FACE_SHEET }} />
             </View>
             <Text style={t(10, 700)}>{n}</Text>
           </View>
@@ -2801,8 +2817,9 @@ function BackCover() {
   return (
     <Page size={[W, H]} style={{ backgroundColor: "#29B6F6", padding: 46 }}>
       <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 0.42 * H }}>
+        {/* the children from their raised fists down (at 80% their heads were cut off) */}
         {/* eslint-disable-next-line jsx-a11y/alt-text */}
-        <Image src={png(A.cover)} style={{ width: W, height: 0.42 * H, objectFit: "cover", objectPosition: "50% 80%" }} />
+        <Image src={png(A.cover)} style={{ width: W, height: 0.42 * H, objectFit: "cover", objectPosition: "50% 57%" }} />
       </View>
       <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 44, color: "#fff" }}>{SERIES} 2</Text>
       <Text style={{ ...t(13, 700, "#0D47A1"), marginBottom: 16 }}>A2 · Student&apos;s Book</Text>
@@ -2835,7 +2852,7 @@ function WbBack() {
       </Text>
       <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 0.45 * H }}>
         {/* eslint-disable-next-line jsx-a11y/alt-text */}
-        <Image src={png(A.cover)} style={{ width: W, height: 0.45 * H, objectFit: "cover", objectPosition: "50% 75%" }} />
+        <Image src={png(A.cover)} style={{ width: W, height: 0.45 * H, objectFit: "cover", objectPosition: "50% 60%" }} />
       </View>
     </Page>
   );

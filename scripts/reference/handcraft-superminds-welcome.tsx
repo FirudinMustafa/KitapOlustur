@@ -182,7 +182,8 @@ function P3() {
         ))}
       </View>
       <Rubric n={2} text="Look and find. Say." />
-      <Pic src={IMG("unit-0-page-3")} w={CW} h={232} r={10} posY="45%" />
+      {/* A square picture: at 232 pt (2.4:1) from 45% it cut both children's heads off; taller and from the top it keeps faces, hands and the book. */}
+      <Pic src={IMG("unit-0-page-3")} w={CW} h={340} r={10} posY="0%" />
       <Footer folio={6} topic="Colors" right={false} />
     </Page>
   );
@@ -249,7 +250,7 @@ function P6() {
     <Page size={[W, H]} style={{ backgroundColor: "#fff", paddingTop: 44, paddingHorizontal: M }}>
       <TopBand right />
       <View style={{ backgroundColor: "#FBE3DC", marginHorizontal: -M, paddingHorizontal: M, paddingTop: 10, paddingBottom: 14, marginBottom: 16 }}>
-        <Pic src={IMG("unit-0-page-6")} w={CW} h={210} r={10} posY="40%" />
+        <Pic src={IMG("unit-0-page-6")} w={CW} h={210} r={10} posY="15%" />
       </View>
       <Rubric n={2} text="Find and color. Say the colors." />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
