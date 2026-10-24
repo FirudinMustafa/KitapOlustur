@@ -33,6 +33,8 @@ import { applySourceType, type SourceType } from "@/lib/design/source-theme";
 import { legibleGround, type TopBand } from "@/lib/design/page-furniture";
 import { planLessons, withSectionHeads } from "@/lib/lesson-furniture";
 import { LessonPointers } from "./lesson-furniture";
+import { FramedImage, pictureGround, pictureRect } from "./picture-frame";
+import type { PictureInfo } from "./picture-fit";
 
 registerBookFonts();
 
@@ -619,29 +621,27 @@ function StandardPageBody({
           // instruction to the image model, not reader-facing text, and was
           // the most obvious "machine-made" tell on the page. Removed.
           <View wrap={false} style={mirrored ? { alignItems: "center" } : undefined}>
-            <View
-              style={[
-                styles.pageIllustrationWrap,
-                mirrored
-                  ? { height: imageHeight, width: Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT), borderRadius: look.theme.radius }
-                  : { height: imageHeight, borderRadius: look.theme.radius },
-              ]}
-            >
-              {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-              <Image src={imageSrc} style={mirrored ? [styles.pageIllustration, { objectFit: "cover", objectPositionY: "30%" }] : styles.pageIllustration} />
-              {mirrored && page.labels?.length ? (
-                (() => {
-                  const width = Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT);
-                  return <LabelOverlay labels={page.labels} width={width} height={imageHeight} look={look} imageAspect={shapeAspect(width / imageHeight)} fit="cover" positionY={0.3} />;
-                })()
-              ) : null}
-              {mirrored && page.bubbles?.length ? (
-                (() => {
-                  const width = Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT);
-                  return <BubbleOverlay bubbles={page.bubbles} width={width} height={imageHeight} look={look} imageAspect={shapeAspect(width / imageHeight)} fit="cover" positionY={0.3} />;
-                })()
-              ) : null}
-            </View>
+            {mirrored ? (
+              (() => {
+                // The same rectangle for the picture and what points at it (picture-fit.ts).
+                const width = Math.min(contentWidth, imageHeight * MAX_PICTURE_ASPECT);
+                const rect = pictureRect(look, imageSrc, width, imageHeight, { anchorY: 0.3 });
+                const placement = rect ? { crop: rect } : { imageAspect: shapeAspect(width / imageHeight), fit: "cover" as const, positionY: 0.3 };
+                const ground = pictureGround(look, imageSrc, rect, width, imageHeight);
+                return (
+                  <View style={[styles.pageIllustrationWrap, { height: imageHeight, width, borderRadius: look.theme.radius }, ground ? { backgroundColor: ground } : {}]}>
+                    <FramedImage src={imageSrc} rect={rect} width={width} height={imageHeight} anchorY={0.3} />
+                    {page.labels?.length ? <LabelOverlay labels={page.labels} width={width} height={imageHeight} look={look} {...placement} /> : null}
+                    {page.bubbles?.length ? <BubbleOverlay bubbles={page.bubbles} width={width} height={imageHeight} look={look} {...placement} /> : null}
+                  </View>
+                );
+              })()
+            ) : (
+              <View style={[styles.pageIllustrationWrap, { height: imageHeight, borderRadius: look.theme.radius }]}>
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
+                <Image src={imageSrc} style={styles.pageIllustration} />
+              </View>
+            )}
           </View>
         ))}
 
@@ -684,7 +684,10 @@ export function BookDocument({
   compact,
   slack,
   pictureSrc,
+  pictures,
 }: {
+  /** Page picture src -> its measured shape and object (measurePictures); unset = pictures are drawn by their frames' shapes. */
+  pictures?: Record<string, PictureInfo>;
   /** "<unitNumber>:<pageIndex>" keys of pages printed with tighter activity sizes - renderBookFitted's last resort. */
   compact?: ReadonlySet<string>;
   /** Faz G3: "<unitNumber>:<pageIndex>" -> empty height a previous render left at the page's foot. */
@@ -726,6 +729,7 @@ export function BookDocument({
   const look = {
     ...makeLook(theme, palette),
     pictureSrc,
+    pictures,
     tracks: audioTrackMap(units),
     // Young learners only ("CEFR Pre-A1", "Starters"); adult A1 keeps definitions.
     wordList: variant !== "teacher_book" && isYoungLearnerLevel(level),
@@ -945,7 +949,7 @@ export function BookDocument({
                   }
                   width={sheetSize.width}
                   height={sheetSize.height}
-                  // the shape the scene was generated in (its source slot)
+                  // unmeasured, the shape the scene was generated in (its source slot)
                   imageAspect={shapeAspect(page.zonePlan ? pictureSlotAspects(page.zonePlan, 1)[0] : undefined)}
                 />
               ) : null}
@@ -963,6 +967,7 @@ export function BookDocument({
                   showAnswerKey={inlineAnswers}
                   unitKicker={unitKicker(unit.unitNumber)}
                   mainSrc={imageSrc}
+                  contentWidth={pageSize.width - 88}
                   sheetStart={(k) => (
                     <>
                       <PageMarker id={sheetKey(pageKey, k)} onPageStart={onPageStart} />

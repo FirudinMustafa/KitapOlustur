@@ -317,13 +317,14 @@ export function BubbleOverlay({
   fit,
   positionY,
   insets,
+  crop,
 }: {
   bubbles: PageBubble[];
   width: number;
   height: number;
   look: Look;
 } & BubblePlaceOptions) {
-  const placed = placeBubbles(bubbles, width, height, { imageAspect, fit, positionY, insets });
+  const placed = placeBubbles(bubbles, width, height, { imageAspect, fit, positionY, insets, crop });
   if (!placed.length) return null;
   const stroke = 1.1;
   return (

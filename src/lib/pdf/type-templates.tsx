@@ -10,6 +10,7 @@ import { BlockCard, NumberBadge, TILE_COLORS, TrackBadge, centredFigure, type Lo
 import { UnitHeading } from "./templates";
 import { trackOf } from "@/lib/listening";
 import { NOTO_SANS } from "./fonts";
+import { BandPicture, FramedImage, FramedPicture, pictureGround, pictureRect } from "./picture-frame";
 
 // "Önce sayfa tasarımı": the PDF templates of the three picture page types
 // (src/lib/design/page-types.ts), laid out by typedLayout
@@ -49,12 +50,17 @@ export function ScenePicture({
   height: number;
   imageAspect: number;
 }) {
+  // The labels and bubbles map through the rectangle the picture is drawn
+  // in (picture-fit.ts); `imageAspect` is only the fallback for a picture
+  // that was not measured.
+  const rect = pictureRect(look, src, width, height, { anchorY: 0.4 });
+  const placement = rect ? { crop: rect } : { imageAspect, fit: "cover" as const, positionY: 0.4 };
+  const ground = pictureGround(look, src, rect, width, height);
   return (
-    <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
-      {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-      <Image src={src} style={{ width: "100%", height: "100%", objectFit: "cover", objectPositionY: "40%" }} />
-      {labels?.length ? <LabelOverlay labels={labels} width={width} height={height} look={look} imageAspect={imageAspect} fit="cover" positionY={0.4} /> : null}
-      {bubbles?.length ? <BubbleOverlay bubbles={bubbles} width={width} height={height} look={look} imageAspect={imageAspect} fit="cover" positionY={0.4} insets={insets} /> : null}
+    <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, ...(ground ? { backgroundColor: ground } : {}) }}>
+      <FramedImage src={src} rect={rect} width={width} height={height} anchorY={0.4} />
+      {labels?.length ? <LabelOverlay labels={labels} width={width} height={height} look={look} {...placement} /> : null}
+      {bubbles?.length ? <BubbleOverlay bubbles={bubbles} width={width} height={height} look={look} {...placement} insets={insets} /> : null}
     </View>
   );
 }
@@ -282,12 +288,8 @@ export function TypedPageBody({ layout, unit, isUnitFirstPage, look, showAnswerK
           ))}
         </View>
         <Blocks blocks={layout.rest} look={look} showAnswerKey={showAnswerKey} />
-        {layout.mainHeight && mainSrc ? (
-          <View style={{ height: layout.mainHeight, borderRadius: look.theme.radius, overflow: "hidden" }} wrap={false}>
-            {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-            <Image src={mainSrc} style={{ width: "100%", height: "100%", objectFit: "cover", objectPositionY: "30%" }} />
-          </View>
-        ) : null}
+        {/* a strip under the cards: anchored high, where the faces are */}
+        {layout.mainHeight && mainSrc ? <BandPicture src={mainSrc} height={layout.mainHeight} maxWidth={contentWidth} look={look} radius={look.theme.radius} anchorY={0.15} /> : null}
       </View>
     );
   }
@@ -300,9 +302,8 @@ export function TypedPageBody({ layout, unit, isUnitFirstPage, look, showAnswerK
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: TYPE_GAP, marginBottom: TYPE_GAP }}>
         {layout.pictures.map((src, k) => (
           <View key={k} style={{ width: layout.panelWidth }} wrap={false}>
-            <View style={{ height: layout.panelHeight, borderRadius: Math.max(6, look.theme.radius), overflow: "hidden" }}>
-              {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-              <Image src={src} style={{ width: "100%", height: "100%", objectFit: "cover", objectPositionY: "30%" }} />
+            <View>
+              <FramedPicture src={src} width={layout.panelWidth} height={layout.panelHeight} look={look} radius={Math.max(6, look.theme.radius)} />
               <View style={{ position: "absolute", top: 6, left: 6, width: 17, height: 17, borderRadius: 3, backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center" }}>
                 <Text style={[{ fontFamily: NOTO_SANS, fontWeight: 700, fontSize: 9.5, color: "#1f2937" }, centredFigure(9.5)]}>{k + 1}</Text>
               </View>

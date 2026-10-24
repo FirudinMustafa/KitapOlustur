@@ -1,6 +1,7 @@
 import { Text, View, Svg, Line, Circle, Polygon } from "@react-pdf/renderer";
 import type { PageLabel } from "@/lib/ai/page-labels";
 import type { Look } from "./blocks";
+import { fitPicture, pointInFrame, type PictureRect } from "./picture-fit";
 
 // Plan step 4 (2026-10-23): a scene picture's vocabulary words printed on
 // the picture - a small white rounded pill per word, joined to its object by
@@ -25,6 +26,8 @@ export type PlacedLabel = {
 };
 
 export type PlaceOptions = {
+  /** Where the picture is drawn in the frame (picture-fit.ts) - the same rectangle the frame drew it in. Wins over the three below. */
+  crop?: PictureRect;
   /** width / height of the picture itself; unset = it fills the frame exactly. */
   imageAspect?: number;
   fit?: "cover" | "contain";
@@ -33,23 +36,19 @@ export type PlaceOptions = {
 };
 
 // Where a point of the picture lands in the frame (possibly outside it,
-// when cropped away), and the drawn picture's height.
-export function mapToFrame(point: { x: number; y: number }, width: number, height: number, { imageAspect, fit = "cover", positionY = 0.3 }: PlaceOptions): { px: number; py: number; drawnH: number } {
-  if (!imageAspect) return { px: point.x * width, py: point.y * height, drawnH: height };
-  const frameAspect = width / height;
-  const scale = (fit === "cover") === (imageAspect > frameAspect) ? height : width / imageAspect;
-  const drawnW = scale * imageAspect;
-  const drawnH = scale;
-  const offsetX = (width - drawnW) / 2;
-  const offsetY = (height - drawnH) * (fit === "cover" ? positionY : 0.5);
-  return { px: offsetX + point.x * drawnW, py: offsetY + point.y * drawnH, drawnH };
+// when cropped away), and the drawn picture's height - through the same
+// fitPicture the frame draws its picture with.
+export function mapToFrame(point: { x: number; y: number }, width: number, height: number, { crop, imageAspect, fit = "cover", positionY = 0.3 }: PlaceOptions): { px: number; py: number; drawnH: number } {
+  const rect = crop ?? (imageAspect ? fitPicture(width, height, { aspect: imageAspect }, { fit, anchorY: positionY }) : null);
+  if (!rect) return { px: point.x * width, py: point.y * height, drawnH: height };
+  return { ...pointInFrame(rect, point), drawnH: rect.height };
 }
 
 // Where a point of the picture lands in the frame, or null if it is cropped
 // away.
 function toFrame(label: PageLabel, width: number, height: number, options: PlaceOptions): { px: number; py: number } | null {
   const { px, py } = mapToFrame(label, width, height, options);
-  if (!options.imageAspect) return { px, py };
+  if (!options.imageAspect && !options.crop) return { px, py };
   return px < 2 || py < 2 || px > width - 2 || py > height - 2 ? null : { px, py };
 }
 
@@ -132,13 +131,14 @@ export function LabelOverlay({
   imageAspect,
   fit,
   positionY,
+  crop,
 }: {
   labels: PageLabel[];
   width: number;
   height: number;
   look: Look;
 } & PlaceOptions) {
-  const placed = placeLabels(labels, width, height, { imageAspect, fit, positionY });
+  const placed = placeLabels(labels, width, height, { imageAspect, fit, positionY, crop });
   if (!placed.length) return null;
   return (
     <View style={{ position: "absolute", left: 0, top: 0, width, height }}>
