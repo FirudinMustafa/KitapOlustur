@@ -59,12 +59,27 @@ export function writerBlueprint(pages: SourcePage[], options: { youngLearners?: 
   });
 }
 
+// Jury finding (2026-10-24): hand-made copies that followed the source this
+// closely - the same rubrics, the items in the same order with the nouns
+// swapped, the story's plot beat by beat, the series' feature names - read
+// as a derivative work. The writer mirrors the FORMAT only (checked by
+// src/lib/mirroring.ts and src/lib/source-names.ts).
+export const ORIGINALITY_RULES = [
+  "ORIGINAL, NOT A COPY - mirror each source page's FORMAT (its shape, exercise types and level), never its content:",
+  "- Items: never follow the source's items one by one. Choose your own items, in a different order, built on different sentence frames - if the source asks \"Where's the Park Hotel?\", do not write \"Where's the bus station?\"; ask something else in another way (\"How do I get to...?\", \"Is there a ... near here?\").",
+  "- Instructions: word every instruction your own way; only the shortest generic ones (\"Listen and repeat.\", \"Read and match.\") may coincide.",
+  "- Stories and dialogues: your own plot - your own characters, problem, events and ending - never the source's plot with the names swapped.",
+  "- Names: your own characters and your own feature names (song, story, project, review, talk boxes) - never the source series' people or its feature headings.",
+  "- The summaries describe the source page only so you know its topic and exercise types; do not retell them.",
+].join("\n");
+
 export const BLUEPRINT_INSTRUCTIONS = [
+  ORIGINALITY_RULES,
   "Where a source page has \"measured\", match that page's shape - it was measured from the printed page, so it is how the page really looks:",
   "- pictures: give the generated page exactly that many pictures - imagePrompt for the first, extraImagePrompts for the rest (each a simple, separate subject that reads in a small frame, e.g. one vocabulary item each). 0 means no imagePrompt.",
   "- numberedExercises: write the same number of exercise blocks (each with items and a matching answerKey), with about itemsPerExercise items each.",
   "- itemsPerExercise 0: the source's exercises have no written items - learners point at, colour, stick or count things in the pictures. Keep each item to the single word or number the picture shows (e.g. \"chair\", \"3\", \"blue\"), never a sentence describing a picture; a list of numbers or colour words prints as coloured cards.",
-  "- exerciseFormats: the source's exercise instructions, in order. Reproduce each exercise's FORMAT (circle, match, complete, listen and number, write, ask and answer...) with entirely new content and your own wording - never copy the instruction text. An exercise's heading IS its instruction, as a coursebook prints it (e.g. \"Read again and circle a or b.\", \"Listen and repeat. Which of these do you do?\") - never a title or label in front of it (not \"Geography Quiz\", \"Peer-Interview\", \"Quick-Check: Family Members\"). A second instruction sentence may go in body.",
+  "- exerciseFormats: the source's exercise instructions, in order. Reproduce each exercise's FORMAT (circle, match, complete, listen and number, write, ask and answer...) with entirely new content and your own wording - never copy the instruction text, and never keep its specific words (\"Look at Kate's family tree\", \"What's the subject?\") with only a name swapped. An exercise's heading IS its instruction, as a coursebook prints it (e.g. \"Read again and circle a or b.\", \"Listen and repeat. Which of these do you do?\") - never a title or label in front of it (not \"Geography Quiz\", \"Peer-Interview\", \"Quick-Check: Family Members\"). A second instruction sentence may go in body.",
   "- listeningExercises: that many of the page's exercises are done with a recording (listen and point / number / tick, listen and sing / chant, watch and listen to the story). Write each as a listening exercise and add a listeningAudio entry for every one: blockRef = that exercise block's exact heading, script = exactly what the recording says (the words or sentences to point at in item order, the full song or chant lyrics, the story's dialogue with dialogueLines per speaker).",
   "- words: the printed page's whole text (headings, instructions, items, speech). A hard limit: at most 1.5 times this (or this + 20, whichever is more) - a page over it is sent back. For young learners' pages the pictures carry the exercise: one short instruction, items of a word or two.",
   "- wordLimit: that page's word limit, worked out for you - count the page's words (headings, instructions, items, speech, word banks, callout boxes except \"tip\") and stay under it. Leave out explanations and extra boxes; a teacher's note goes in a \"tip\" callout, which the pupil's book doesn't print.",
@@ -75,7 +90,7 @@ export const BLUEPRINT_INSTRUCTIONS = [
   "- design: the page is built from its pictures, not from text. Follow it exactly - it overrides \"pictures\" above where they differ:",
   "  - \"scene\": one full-page picture. imagePrompt is the whole scene (a place full of things and people to talk about). The first exercise's items are 4-8 single words naming things clearly visible in that scene (they are printed as labels on the picture), e.g. \"window\", \"door\", \"chair\" - every word must be something drawn in the imagePrompt. Keep any other text to one short line.",
   "  - \"cards\": a grid of numbered picture cards. The first exercise has one item per card - a single word or number each (e.g. \"red\", \"3\", \"pencil\"). extraImagePrompts: one simple object per card in the same order as the items (one object, centred, plain white background, no text), as many as there are cards (at most 10). imagePrompt is the page's other picture (the scene of a later exercise), or a picture of the cards' topic.",
-  "  - \"panels\": a numbered story-panel grid. One picture per panel in story order - imagePrompt is panel 1, extraImagePrompts panels 2, 3... (the same characters and place in every panel). The story exercise has one item per panel: that panel's short speech line (a few words, e.g. \"Hello, I'm Leo!\").",
+  "  - \"panels\": a numbered story-panel grid of your own story (not the source story retold). One picture per panel in story order - imagePrompt is panel 1, extraImagePrompts panels 2, 3... (the same characters and place in every panel). The story exercise has one item per panel: that panel's short speech line (a few words, e.g. \"Hello, I'm Leo!\").",
 ].join("\n");
 
 // The source page's first exercise number when it goes on with the lesson

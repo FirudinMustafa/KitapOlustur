@@ -71,6 +71,13 @@ export function lemmaCandidates(word: string): string[] {
   return out;
 }
 
+// The word itself is a headword - no lemmatizing, so a name like "Peter"
+// does not pass as "pet" + -er (src/lib/source-names.ts).
+export function isHeadword(word: string): boolean {
+  const w = word.toLowerCase();
+  return WORD_TO_BAND.has(w) || w in IRREGULAR;
+}
+
 export function bandOf(word: string): CefrBand | undefined {
   for (const candidate of lemmaCandidates(word)) {
     const band = WORD_TO_BAND.get(candidate);

@@ -128,6 +128,9 @@ import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
 import { numberExercises, numberUnitExercises } from "@/lib/exercise-numbers";
 import { titleCopiesSource } from "@/lib/title-guard";
+import { extractSourceNames, renameSourceNames, sourceNameIssues, sourceNameReplacements, sourceNamesPrompt, type SourceNames } from "@/lib/source-names";
+import { mirroringIssue, structuralMirroring } from "@/lib/mirroring";
+import { alignPictureWithExercise } from "@/lib/exercise-picture";
 import { fillZonePictures, pageWordBudget, pageWordCount, shapeIssues } from "@/lib/source-shape";
 import { trimPageToBudget, trimUnitToBudget, unitTrimOptions } from "@/lib/word-trim";
 import { answerLeakIssue, dropLeakingTable } from "@/lib/answer-leak";
@@ -862,6 +865,8 @@ async function buildStyleBible(
   runId: string,
   outline: BookOutline,
   styleProfileGuidance?: string,
+  // The source's own names (src/lib/source-names.ts) - the cast is new.
+  sourceNames?: SourceNames,
 ): Promise<StyleBible> {
   "use step";
 
@@ -876,6 +881,7 @@ async function buildStyleBible(
         `Book outline (JSON):\n${JSON.stringify(outline)}`,
         "Define: (1) a short paragraph describing shared characters/setting/narrative context to reuse across units (names, ages, relationships, world) where relevant to the subject, (2) a glossary of key recurring terms/formulas and their definitions to keep terminology consistent across units, (3) \"characters\": the 2-6 recurring characters who appear in the book's dialogues and illustrations, each with an exact, drawable visualDescription and a fixed outfit with specific colours - an illustrator will draw a reference sheet from this and every picture in the book will be matched against it, so be concrete (hair colour and style, skin tone, eye colour, height/build, glasses, etc.). Make the cast diverse and age-appropriate for the target audience. Leave characters empty only if the subject genuinely has no recurring people.",
         styleProfileGuidance ? `House style to follow (Faz H5 style profile): ${styleProfileGuidance}` : "",
+        sourceNames ? sourceNamesPrompt(sourceNames) : "",
       ]
         .filter(Boolean)
         .join("\n\n"),
@@ -902,6 +908,8 @@ type UnitGenerationContext = {
   variantHint?: string;
   // Faz H6: which model writes this unit's content - see resolveTextModel.
   textModel: string;
+  // The source's people and feature names, never to be used.
+  sourceNames?: SourceNames;
 };
 
 // 2026-10-21: an English course's level as a grammar checklist (CEFR-J based,
@@ -922,6 +930,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
     `Target audience: ${input.targetAudience}`,
     `Shared style bible for this book - reuse these characters/setting and this terminology consistently (this unit is one of several written independently, so consistency matters):\n${JSON.stringify(input.styleBible)}`,
     `Unit outline (JSON):\n${JSON.stringify(input.outlineUnit)}`,
+    input.sourceNames ? sourceNamesPrompt(input.sourceNames) : "",
     `Improvements to apply to this unit:\n${input.improvements.map((i) => `- ${i}`).join("\n") || "- (no specific notes, use general best practice)"}`,
     input.variantHint ?? "",
     input.feedback?.length
@@ -936,6 +945,7 @@ function unitGenerationPromptHeader(input: UnitGenerationContext): string[] {
     `PAGE DESIGN - this book is typeset like a professionally published coursebook, not a document. For EVERY page set "layoutTemplate" to one of:\n${layoutTemplatePromptCatalog()}\nDesign rules: (1) The first Student Book page of the unit uses "unit-opener-hero" with an imagePrompt. (2) Vary the templates - never use the same one on more than two pages in a row. (3) Write conversations into a block's "dialogue" field (one entry per turn) instead of prose, grammar patterns into a block's "table" field, and short tips/facts/rules as separate small blocks with "callout" set - real coursebooks use these boxes constantly. Set a block's "textStyle" when its body IS a note, an email, a text message, an invitation, a quiz (questions with A/B options as its items) or a poster - it prints as that object (a sticky note, a mail window, a party card...); write the text itself in body (greeting, text, sign-off on their own lines), with any gaps, and the instruction in heading. (4) EVERY page must fit on ONE printed page. A page with a measured source shape in the blueprint follows that shape instead of a word budget - its exercise count, items per exercise and word count; it is set densely like the source (heading and short instruction on one line, short items side by side), so write the source's amount - as numbered exercises with items, without tables, callout boxes or extra explanation blocks unless the source page itself has them (they take the room the source gives its pictures). Any other page: roughly 220-320 words of running text without a picture, about 150-220 with one, and at most 8 dialogue turns. If a page's content would be longer, tighten the wording - do not drop required exercises.`,
     `CHARACTERS IN PICTURES - when an imagePrompt shows any of the style bible's characters, list their ids in that page's "imageCharacters" and refer to them by name in the imagePrompt. Describe the scene, action, expressions and setting - do not re-describe their appearance (the illustrator works from fixed character reference sheets).`,
     `If any block's body or items text refers to an image the learner should look at (e.g. "Resim:", "Picture:", "look at the image", a counting/matching exercise with objects), you MUST set that page's imagePrompt describing exactly that image - never write an exercise that depends on an image without providing one.`,
+    `THE PICTURE IS THE EXERCISE - when an exercise works from the page's picture ("Look at the picture", "Listen and point", "Find", "Count", "What's in the room?", "What is Maya doing?", a family tree, clocks), its imagePrompt shows exactly that exercise's items: every object it lists (and how many, for counting), every person it names, each action or time it asks about - large, separate and easy to find - and nothing that distracts from them. Never a decorative scene beside the exercise (not a boy pointing at a blank board next to a family tree, not an empty room for "What's in the room?").`,
   ];
 }
 
@@ -2888,7 +2898,12 @@ const UNIT_PAGE_ARRAY_FIELDS: { label: string; field: keyof Pick<GeneratedUnit, 
   { label: "Test Booklet", field: "testBookletPages" },
 ];
 
-export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics = A4_METRICS, level = ""): string[] {
+// The source a unit is checked against for originality: its people and
+// feature names (src/lib/source-names.ts) and its pages, which the mirrored
+// side must not follow item by item (src/lib/mirroring.ts).
+export type UnitSource = { names?: SourceNames; pages?: Pick<SourcePage, "pageNumber" | "sourceText" | "layout">[] };
+
+export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics = A4_METRICS, level = "", source: UnitSource = {}): string[] {
   const issues: string[] = [];
   for (const { label, field } of UNIT_PAGE_ARRAY_FIELDS) {
     // Tips don't print in young learners' pupil books - nor count there.
@@ -2896,6 +2911,14 @@ export function validateUnitStructure(unit: GeneratedUnit, metrics: PageMetrics 
     for (const [pageIndex, page] of (unit[field] ?? []).entries()) {
       // Faz B: as many exercises and pictures as the measured source page.
       issues.push(...shapeIssues(page, label, wordOptions));
+      if (source.names) issues.push(...sourceNameIssues(page, source.names, label));
+      // `pages` are the unit's own source pages: only the mirrored side
+      // carries their numbers (the others are renumbered - renumberSidePages).
+      const sourcePage = source.pages?.find((s) => s.pageNumber === page.sourcePageNumber);
+      if (sourcePage?.sourceText) {
+        const mirror = mirroringIssue(structuralMirroring({ text: sourcePage.sourceText, rubrics: sourcePage.layout?.exerciseRubrics }, page), label, page.sourcePageNumber);
+        if (mirror) issues.push(mirror);
+      }
       const pictureRef = missingPictureRefIssue(page, label);
       if (pictureRef) issues.push(pictureRef);
       for (const block of page.blocks) {
@@ -3001,7 +3024,9 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // on each page numbered 1, 2, 3... (numberExercises), and manual positions
 // the writer invented (dropWriterLayouts), and exercises the writer
 // repeated on the same page (dropRepeatedBlocks), and "Picture N" pointers
-// at pictures the page does not have (dropMissingPictureRefs).
+// at pictures the page does not have (dropMissingPictureRefs), and picture
+// prompts that leave out what their exercise asks about
+// (alignPictureWithExercise).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
   // Numbered per unit: a page going on with its source lesson goes on with
   // the page before's numbers (numberUnitExercises).
@@ -3009,10 +3034,10 @@ export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
     pages &&
     numberUnitExercises(
       pages.map((page) =>
-        dropMissingPictureRefs(fillZonePictures(
+        alignPictureWithExercise(dropMissingPictureRefs(fillZonePictures(
           fixMapAnswers(dropRepeatedBlocks({ ...dropWriterLayouts(page), blocks: dropWriterLayouts(page).blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) })).page,
           (p) => fallbackImagePrompt(p, []),
-        )),
+        ))),
       ),
     );
   return {
@@ -3886,6 +3911,16 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       }
     }
 
+    // KIYAS-14 jury: the source's own character ("I'm (Misty)") went from
+    // the outline into the plan, the style bible and every unit. Its people
+    // and feature names are read from the page map once; each person gets one
+    // fixed new name in the outline, plan, style bible and any page they
+    // survive on, and the writers are told not to use them
+    // (src/lib/source-names.ts). Deterministic - replay-safe here.
+    const sourceNames = extractSourceNames(pageMap.pages);
+    const sourceNameMap = sourceNameReplacements(sourceNames);
+    outline = renameSourceNames(outline, sourceNameMap);
+
     // Faz G1: the source's own colours, typefaces and body size, measured
     // over the whole book. The writer's fit estimates use the body size the
     // pages will be set in.
@@ -3900,6 +3935,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       await setRunStatus(runId, "analyzing", "Nice-to-have listesine göre iyileştirme planı hazırlanıyor");
       improvementPlan = await analyzeImprovements(runId, outline, ctx.niceToHave, ctx.run.customNotes);
     }
+    improvementPlan = renameSourceNames(improvementPlan, sourceNameMap);
 
     await setRunStatus(runId, "awaiting_outline_approval", "Dizelge onayı bekleniyor");
     const outlineApprovalHook = createHook<{ approved: boolean; unitLimit?: number | null }>({
@@ -3965,7 +4001,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
       await saveSourceStyleMeta(runId, resolvedLogoPosition, resolvedPaletteColors);
     }
 
-    const styleBible = await buildStyleBible(runId, outline, ctx.styleProfile?.promptGuidance);
+    const styleBible = renameSourceNames(await buildStyleBible(runId, outline, ctx.styleProfile?.promptGuidance, sourceNames), sourceNameMap);
     const artStyle = resolveArtStyle(ctx.run.artStyle);
 
     // Faz 2 "Karakter tutarlılığı": draw each recurring character once, let
@@ -4074,6 +4110,13 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         sourceText: unitSourcePages.map((p) => p.sourceText ?? "").join("\n"),
         taught: outlineUnit.keyTerms ?? [],
       };
+      // validateUnitStructure's originality checks: the source's names, and
+      // the source pages a page-for-page mirror must not follow item by item
+      // (a skeleton unit numbers its own pages and mirrors nothing).
+      const unitSource: UnitSource = {
+        names: sourceNames,
+        pages: ctx.run.unitSkeleton?.length || ctx.run.isFromScratch ? undefined : unitSourcePages,
+      };
 
       const complementaryType: "student_book" | "workbook" =
         ctx.upload.bookType === "student_book" ? "workbook" : "student_book";
@@ -4125,6 +4168,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           feedback,
           variantHint,
           textModel: ctx.textModel,
+          sourceNames,
         };
 
         // Faz "Sabit Ünite İskeleti" + "Sıfırdan Kitap": opt-in per run
@@ -4238,7 +4282,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
           isPictureBook ? notApplicable : reviewSkillBalance(runId, n, generated),
         ]);
 
-        const structuralIssues = validateUnitStructure(generated, layoutMetrics, outline.level);
+        const structuralIssues = validateUnitStructure(generated, layoutMetrics, outline.level, unitSource);
         const issues = [
           ...structureReview.issues,
           ...languageReview.issues,
@@ -4268,7 +4312,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // accepting "still broken after one retry" the way the AI-review
         // path does.
         for (let attempt = 0; attempt < 2; attempt++) {
-          const remainingIssues = validateUnitStructure(generated, layoutMetrics, outline.level);
+          const remainingIssues = validateUnitStructure(generated, layoutMetrics, outline.level, unitSource);
           if (!remainingIssues.length) break;
           await setRunStatus(
             runId,
@@ -4282,7 +4326,8 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
         // imagePrompt after both retry attempts above - fill any remaining
         // gap deterministically rather than shipping a page whose exercise
         // needs a picture it will never get.
-        generated = normalizeLayoutTemplates(applyDiagramFixes(applyFallbackImagePrompts(generated)));
+        // A source name the writer kept is replaced by its fixed new name.
+        generated = normalizeLayoutTemplates(applyDiagramFixes(applyFallbackImagePrompts(renameSourceNames(generated, sourceNameMap))));
         if (!isPictureBook) {
           generated = await fillMissingPictures(runId, generated);
           generated = await topUpExercises(runId, generated, outline.contentLanguage, rubricsByPage);
@@ -4302,11 +4347,11 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
             // deterministic answerKey/imagePrompt check, not just whichever
             // one gets picked.
             for (let attempt = 0; attempt < 2; attempt++) {
-              const remainingIssues = validateUnitStructure(unit, layoutMetrics, outline.level);
+              const remainingIssues = validateUnitStructure(unit, layoutMetrics, outline.level, unitSource);
               if (!remainingIssues.length) break;
               unit = await buildUnit(remainingIssues);
             }
-            unit = normalizeLayoutTemplates(applyDiagramFixes(applyFallbackImagePrompts(unit)));
+            unit = normalizeLayoutTemplates(applyDiagramFixes(applyFallbackImagePrompts(renameSourceNames(unit, sourceNameMap))));
             unit = await fillMissingPictures(runId, unit);
             unit = await topUpExercises(runId, unit, outline.contentLanguage, rubricsByPage);
             unit = await fillMissingAnswerKeys(runId, unit, outline.contentLanguage);
@@ -4317,7 +4362,7 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
               reviewContentSafety(runId, n, unit),
               reviewSkillBalance(runId, n, unit),
             ]);
-            const structuralIssues = validateUnitStructure(unit, layoutMetrics, outline.level);
+            const structuralIssues = validateUnitStructure(unit, layoutMetrics, outline.level, unitSource);
             return {
               index: i,
               unit,

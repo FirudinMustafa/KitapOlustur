@@ -1,7 +1,39 @@
 # Yayınevi Kalitesinde Çıktı — Canlı Takip
 
 > **Amaç:** İnternetten bulunan bir Workbook / Student Book PDF'ini sisteme yüklediğimizde, yayınevi kalitesinde **benzer** (birebir kopya değil, özgün) bir kitap almak.
-> Bu dosya her çalışma adımında güncellenir. Son güncelleme: **2026-10-21**. Branch: `redesign/ui`.
+> Bu dosya her çalışma adımında güncellenir. Son güncelleme: **2026-10-24**. Branch: `redesign/ui`.
+
+---
+
+## 00000. Özgünlük ve alıştırmanın resmi (2026-10-24, branch `originality`)
+
+Bağımsız jüri üç şey söyledi. (1) Sistemin Super Minds kitabı kaynağın kendi karakterini kullanmış: "Point to Misty. Point to Leo." (2) Elle yapılan kopyalar kaynağa fazla yakın: aynı yönergeler, aynı sırada maddeler (yalnız isimler değişmiş), serinin kendi bölüm adları ("SMALL TALK", "Modular Revision", "Knowledge of Language Means"). (3) Sistemin resimleri süs; alıştırmayla ilgisiz. AI çağrısı yok, 0 $.
+
+**Misty nereden sızdı:** dizelge kaynağın örnek cevabını ("I'm (Misty).") gramer listesine kopyaladı, iyileştirme planı onun üstüne maskot kurdu ("Introduce Misty the pup..."), stil rehberi ve bütün üniteler onu kullandı. `title-guard.ts` yalnızca kitap adına bakıyordu.
+
+1. **Kaynak isimleri** (`src/lib/source-names.ts`). Sayfa haritasındaki metin ve özetlerden okunuyor:
+   - Kişiler: konuşmacılar ("Sue:", "ELF:"), kendini tanıtanlar ("I'm (Misty)", "My name's Lucy"), iyelik ("Kate's family tree"), sayılanlar ("Emma, Lee and Harry"), aile ağacı etiketleri. Sözlük kelimesi olan bir ad ("Mark the sentences", "Frank") ancak iki kez konuşmacıysa ya da parantezli örnek cevapsa sayılıyor. Yerler, aylar, yazarlar, gramer terimleri hariç.
+   - Seri bölüm adları: en az iki sayfada geçen başlıklar ("Singing for Pleasure"), BÜYÜK HARFLİ başlıklar ("BIG QUESTION", "SMALL TALK"), özetin etiket diye andığı başlıklar ("Story and Value", "Modular Revision", "FunTime"). "My Classroom", "Present Continuous" gibi konu ve gramer başlıkları sayılmıyor.
+   - Kullanım: dizelge, iyileştirme planı ve stil rehberi daha yazılmadan her kaynak adına sabit bir yeni ad veriliyor (Misty → Pip). Yazarlara "bu adları kullanma" listesi gidiyor. `validateUnitStructure`, kaynak karakterini ya da bölüm adını başlıkta kullanan sayfayı geri gönderiyor. Denemelerden sonra kalan ad yine aynı yeni adla değiştiriliyor.
+2. **Yapısal kopya** (`src/lib/mirroring.ts`). Her cümle iskeletine indiriliyor: dilbilgisi kelimeleri kalıyor, diğerleri tek boşluk oluyor ("Where's the Park Hotel?" = "Where's the bus station?" = `where 's the _`). Sayfanın iskeletleri kaynak sayfanınkilerle aynı sırada gidiyorsa, ya da kaynağın kendine özgü yönergesi tekrar ediliyorsa sayfa somut bir talimatla geri gönderiliyor: "maddeleri başka sırada, başka cümle kalıplarıyla yaz".
+   - Eşik: en az 4 iskelet ve sayfanın en az %30'u; ya da kendine özgü 2 yönerge; ya da 1 yönerge ve 3 iskelet. Genel yönergeler ("Listen and repeat.", "Read and choose. Then listen and check.") sayılmıyor.
+3. **Yazar kuralları** (`ORIGINALITY_RULES`, `BLUEPRINT_INSTRUCTIONS`). Biçim aynalanır, içerik aynalanmaz: maddeler başka sırada ve başka kalıpla, yönergeler kendi sözleriyle, hikâyenin kendi kurgusu (kaynağın kurgusu isim değiştirilerek değil), kendi karakter ve bölüm adları.
+4. **Resim alıştırmanın parçası** (`src/lib/exercise-picture.ts`). Bir alıştırma resimden çalışıyorsa ("Look at the picture", "Listen and point", "Find", "Count", "What's in the room?", aile ağacı, saatler) ve resim istemi alıştırmanın istediklerinin yarısından azını anıyorsa, istem tam olarak onları gösterecek şekilde genişletiliyor: sayılan nesneler (cevap anahtarındaki sayıyla), saatler, eylemler ("Maya going into the park"), adı geçen kişiler. Kart ve panel sayfaları, kendi resmini çizen etkinlikler ve kelime bulmacaları hariç. Yazara da aynı kural verildi.
+
+**Kayıtlı çıktılarda** (`scripts/originality-audit.mts`):
+
+| | Kaynak isimleri | Yakalanan | Yapısal kopya | Resim istemi değişen |
+|---|---|---|---|---|
+| KIYAS-14 (Super Minds) | Misty; BIG QUESTION, Singing for Pleasure, Story and Value | SB s.2, 5, 6 ve WB s.300, 303 "Misty"; s.5 ve 6 bölüm etiketi kaynağın "Story and Value" / "Value: Making Friends" adı | 0/6 | 0/8 (resimler adları zaten anıyor) |
+| KIYAS-11 (i5) | 32 kişi (Mona, Emma, Lee, Harry, Frank, ELF, Sue, Lucy, Kate…); FunTime, SMALL TALK, Modular Revision, Knowledge of Language Means… | s.6 "Frank"; aile ağacının Helen, Bob, Jane, Beth, Jack adları yeniden adlandırılıyor | 1/6: s.6 aile ağacı maddeleri kaynağınkilerle aynı kalıpta ("Kate is Emma's sister" ~ "Helen is Leo's ___") | 5/8 |
+| Diğer 6 kayıtlı çalıştırma | | | 1/38: KIYAS-12 s.10 kaynağın iki yönergesini aynen kullanmış ("Choose the right prepositions of movement", "Put the words in the right category") | |
+| Elle i5 (s.4–22; s.23 karşılığı kaynak sayfada metin yok) | | s.4 Anna, Frank, Jack (kaynağın aile ağacı); "SMALL TALK", "Knowledge of Language Means/Functions", "Modular Revision" | **12/19** (jüri: fazla yakın) | |
+
+Resim örnekleri (KIYAS-11): s.9 "A bright bedroom with a bed, desk, and clock" → "...must clearly show Bed; Desk; Chair; Lamp; Computer; Poster; Rug". s.6 aile ağacı posteri → "a family tree of Helen, Leo, Bob, Jane, Beth, Jack, each face with its name". s.10 "a character moving in, up, and over objects" → "Maya going into the park; Maya running up the stairs; Maya jumping over the box".
+
+Regresyon: KIYAS-14 %71/%74, KIYAS-11 %89/%68, değişmedi.
+
+**Açık kalanlar:** canlı yazarla doğrulanmadı (ücretli çalıştırma gerekiyor). Geri gönderme bütün üniteyi yeniden yazdırıyor; kopya sayfa iki denemeden sonra da kalırsa deterministik bir düzeltmesi yok, sayfa olduğu gibi kalıyor. Kaynakta tek bir kez geçen sıradan adlar (Wendy, Paul) yakalanmıyor. Ses kaydı üretildikten sonra yeniden adlandırılan bir ad kayıtta eski haliyle kalır (ad, dizelge ve stil rehberinde baştan değiştirildiği için nadir). Seri adı listesinde birkaç gereksiz kayıt var ("Noughts and Crosses", "Super Mario").
 
 ---
 
