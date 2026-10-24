@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "pictures": [
+    { "picture": 1, "box": { "x": 0.07, "y": 0.12, "w": 0.26, "h": 0.2 }, "badge": "1", "fit": "contain", "ground": "#ffffff" },
+    { "picture": 2, "box": { "x": 0.37, "y": 0.12, "w": 0.26, "h": 0.2 }, "badge": "2", "fit": "contain", "ground": "#ffffff" },
+    { "picture": 3, "box": { "x": 0.67, "y": 0.12, "w": 0.26, "h": 0.2 }, "badge": "3", "fit": "contain", "ground": "#ffffff" },
+    { "picture": 4, "box": { "x": 0.07, "y": 0.34, "w": 0.26, "h": 0.2 }, "badge": "4", "fit": "contain", "ground": "#ffffff" },
+    { "picture": 5, "box": { "x": 0.37, "y": 0.34, "w": 0.26, "h": 0.2 }, "badge": "5", "fit": "contain", "ground": "#ffffff" },
+    { "picture": 6, "box": { "x": 0.67, "y": 0.34, "w": 0.26, "h": 0.2 }, "badge": "6", "fit": "contain", "ground": "#ffffff" },
+    { "picture": 0, "box": { "x": 0.06, "y": 0.685, "w": 0.88, "h": 0.25 }, "focus": { "x": 0.5, "y": 0.6 } }
+  ],
+  "regions": [
+    { "box": { "x": 0.06, "y": 0.055, "w": 0.88, "h": 0.05 }, "blocks": [0], "textScale": 1.15, "rubricOnly": true },
+    { "box": { "x": 0.06, "y": 0.555, "w": 0.88, "h": 0.12 }, "blocks": [1], "textScale": 1.15 }
+  ],
+  "headings": { "style": "disc" },
+  "furniture": { "topBand": true, "footer": true }
+}

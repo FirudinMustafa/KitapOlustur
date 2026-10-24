@@ -27,7 +27,9 @@ function mix(hex: string, t: number): string {
 // the title alone in the lesson colour ("Let's Start!"). The key-word box
 // sits at the right of the same row. LESSON_TAB_HEIGHT is the room the fit
 // estimate keeps for it (planZones, as for a unit heading).
-export function LessonTab({ lesson, look }: { lesson: PageLesson; look: Look }) {
+// `width` (pt): set in a box of its own (a design spec's lessonTab), the
+// title is sized down to keep to one line.
+export function LessonTab({ lesson, look, width }: { lesson: PageLesson; look: Look; width?: number }) {
   const tab = lesson.tab;
   if (!tab) return null;
   const color = lessonColor(look);
@@ -41,11 +43,20 @@ export function LessonTab({ lesson, look }: { lesson: PageLesson; look: Look }) 
             <Text style={{ fontFamily: look.headingFont, fontWeight: 700, fontSize: 19, color: "#ffffff" }}>{tab.code}</Text>
           </View>
         ) : null}
-        <Text style={{ flex: 1, fontFamily: look.headingFont, fontWeight: 700, fontSize: tab.code ? 22 : 26, color: tab.code ? INK : color }}>{tab.title}</Text>
+        <Text style={{ flex: 1, fontFamily: look.headingFont, fontWeight: 700, fontSize: titleSize(tab, lesson, width), color: tab.code ? INK : color }}>{tab.title}</Text>
       </View>
       {lesson.words?.length ? <CheckWords words={lesson.words} look={look} /> : null}
     </View>
   );
+}
+
+// A bold heading character runs up to about 0.64 of its size.
+const TITLE_CHAR = 0.64;
+function titleSize(tab: NonNullable<PageLesson["tab"]>, lesson: PageLesson, width?: number): number {
+  const size = tab.code ? 22 : 26;
+  if (!width) return size;
+  const room = width * (lesson.words?.length ? 0.56 : 1) - (tab.code ? 49 : 0);
+  return Math.max(12, Math.min(size, room / (Math.max(1, tab.title.length) * TITLE_CHAR)));
 }
 
 function CheckWords({ words, look }: { words: string[]; look: Look }) {

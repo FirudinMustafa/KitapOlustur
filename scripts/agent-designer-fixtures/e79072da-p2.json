@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "pictures": [
+    { "picture": 0, "box": { "x": 0.08, "y": 0.105, "w": 0.84, "h": 0.42 }, "focus": { "x": 0.5, "y": 0.35 } },
+    { "picture": 1, "box": { "x": 0.06, "y": 0.645, "w": 0.88, "h": 0.29 }, "focus": { "x": 0.5, "y": 0.3 } }
+  ],
+  "regions": [
+    { "box": { "x": 0.06, "y": 0.055, "w": 0.88, "h": 0.045 }, "blocks": [0], "textScale": 1.15 },
+    { "box": { "x": 0.06, "y": 0.54, "w": 0.88, "h": 0.095 }, "blocks": [1], "textScale": 1.15 }
+  ],
+  "headings": { "style": "disc" },
+  "furniture": { "topBand": true, "footer": true }
+}

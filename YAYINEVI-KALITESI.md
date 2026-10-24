@@ -5,6 +5,55 @@
 
 ---
 
+## 00000. Ajan dizgici: gör → tasarla → çiz → bak → düzelt (2026-10-24, branch `agentdesigner`)
+
+Plan `6-dolarr-kalmis-simdi-virtual-canyon.md`, adım 1. Ücretli çağrı yapılmadı, 0 $. Bayrak: `AGENT_DESIGNER=1`, varsayılan olarak kapalı.
+
+**Ne eklendi:**
+- **Yerleşim dili** (`src/lib/design/page-layout-spec.ts`). Bir sayfanın tasarımı güvenli bir JSON olarak tanımlanıyor; koordinatlar sayfa oranı.
+  - Zemin ve yan paneller.
+  - Resim kutuları: taşma, cover/contain, odak, numara rozeti, etiket ve balon.
+  - Metin bölgeleri: hangi blok nereye (blok numarasıyla), 1 ya da 2 sütun, panel, nesne stili (e-posta, not…), `rubricOnly`.
+  - Ders sekmesi, üst bant, alt bilgi, alıştırma başlığı stili.
+  - Kontroller: sayfa dışına taşma, üst üste binme, eksik ya da iki kez yerleştirilmiş blok veya resim.
+- **Çizici** (`src/lib/pdf/spec-page.tsx`). Var olan parçalarla çiziyor: picture-fit, BlockCard, nesneler, etiket ve balon, LessonTab, bant, alt bilgi.
+  - Her bölgenin metni ayrı ölçülüyor: "taşıyor mu, kaç pt gerekiyor".
+  - Kaynakla görünüm ölçüleri karşılaştırılıyor; bunlar yalnız ipucu.
+- **Döngü** (`src/lib/design/agent-designer.ts`). `generateText` ile `render` ve `finish` araçları kullanılıyor.
+  - En fazla 6 tur, sayfa başına en fazla 0,30 $. Son turda `finish` zorunlu.
+  - Taşma ya da eksik blok varsa `finish` reddediliyor. Sonuç çıkmazsa bugünkü şablon yolu kullanılıyor.
+  - Model dışarıdan veriliyor; testlerde ve betikte senaryolu sahte model kullanılıyor (`fake-designer-model.ts`).
+- **Kitap ve iş akışı.**
+  - `storedPageSchema.designSpec`: BookDocument geçerli bir tasarımı olan sayfayı ondan çiziyor. Tasarım artık sayfaya uymuyorsa (Dizilim düzenlemesi, yeniden yazım) sayfa şablonla basılıyor.
+  - `designPageWithAgent` adımı, bayrak açıkken ayna sayfalar için tasarım incelemesinden sonra çalışıyor. Harcama `recordUsage(…, "agentDesigner")` ile kaydediliyor.
+- **Betik:** `scripts/agent-designer.mts <run> <kaynak.pdf> <sayfalar> --fake | --paid`. `--fake`, `scripts/agent-designer-fixtures/` içindeki elle yazılmış tasarımları ücretsiz oynatıyor.
+- **Yeniden dizim:** `relayout.mts --specs-from <klasör>` tasarımları tüm kitaba yerleştiriyor.
+
+**Elle yazılmış tasarımlarla ölçüm (görünüm puanı):**
+
+| Sayfa | Şablon | Tasarım |
+|---|---|---|
+| Super Minds s.2 | %73 | %73 |
+| Super Minds s.3 | %77 | %84 |
+| i5 s.8 | %74 | %68 |
+
+- i5 sayfası düzgün okunuyor ama şablondan düşük. İçerik kaynağın yarısı kadar kelime ve resim düz bir grafik.
+- Kitap yolunda: KIYAS-14 %71 / %74 → %71 / %75, KIYAS-11 %89 / %68 → %86 / %67.
+
+**Bayrak kapalıyken:** KIYAS-14 %71 / %74, KIYAS-11 %89 / %68. Sayfalar piksel piksel aynı.
+
+**Tahmini maliyet (Sonnet 5.5):**
+- 6 turluk tam bir sayfa ~41k girdi / 2,8k çıktı token, **~0,11 $**.
+- 2 turda biten sayfa ~0,03 $.
+
+**İlk ücretli deneme (onay bekliyor, 3 sayfa, ~0,1–0,35 $, en fazla 0,90 $):**
+- `npx tsx --env-file=.env.local scripts/agent-designer.mts e79072da .spike/super-minds-starter-sb-cropped.pdf 2,3 --paid --out .relayout/paid-k14`
+- `npx tsx --env-file=.env.local scripts/agent-designer.mts bd0b1a3a i_5_team_2.pdf 8 --paid --out .relayout/paid-k11`
+
+Gateway anahtarı ve kredisi gerekiyor.
+
+---
+
 ## 00000. Özgünlük ve alıştırmanın resmi (2026-10-24, branch `originality`)
 
 Bağımsız jüri üç şey söyledi. (1) Sistemin Super Minds kitabı kaynağın kendi karakterini kullanmış: "Point to Misty. Point to Leo." (2) Elle yapılan kopyalar kaynağa fazla yakın: aynı yönergeler, aynı sırada maddeler (yalnız isimler değişmiş), serinin kendi bölüm adları ("SMALL TALK", "Modular Revision", "Knowledge of Language Means"). (3) Sistemin resimleri süs; alıştırmayla ilgisiz. AI çağrısı yok, 0 $.

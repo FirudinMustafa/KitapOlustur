@@ -69,6 +69,7 @@ import {
   resolveFinalTextModel,
   resolveReviewModel,
   toTextModel,
+  BOOK_PIPELINE_MODEL,
   resolveImageModel,
   resolveSpeechModel,
   isFreeImageModelActive,
@@ -120,6 +121,8 @@ import type { CharacterSheet } from "@/db/schema";
 import type { CourseUnitSummary } from "@/lib/pdf/ContentsDocument";
 import { resetBookFonts } from "@/lib/pdf/fonts";
 import { renderBookFitted } from "@/lib/pdf/render-fitted";
+import { bookSpecContext, designBookPage } from "@/lib/pdf/spec-design";
+import type { PageLayoutSpec } from "@/lib/design/page-layout-spec";
 import { activityEmojis, loadEmojiIcons } from "@/lib/pdf/emoji-icons";
 import { applyAnswerKeys, findAnswerKeyGaps } from "@/lib/answer-keys";
 import { applyListeningScripts, findListeningGaps } from "@/lib/listening";
@@ -419,7 +422,11 @@ async function fetchRunContext(runId: string) {
   const textModel = resolveTextModel(run.qualityMode);
   await db.update(generationRuns).set({ modelVersion: textModel }).where(eq(generationRuns.id, runId));
 
-  return { run, project, upload, niceToHave, styleProfile, textModel };
+  // The agent designer (designPageWithAgent) runs only with AGENT_DESIGNER=1.
+  // Read here, in a step, so a replay sees the value the run started with.
+  const agentDesigner = process.env.AGENT_DESIGNER === "1";
+
+  return { run, project, upload, niceToHave, styleProfile, textModel, agentDesigner };
 }
 
 // Süreç Günlüğü: something the human must know about even though the run
@@ -3332,6 +3339,62 @@ async function prepareReferencePages(
   return [...new Set(out)].slice(0, MAX_REFERENCE_PAGES);
 }
 
+// Plan "gör → tasarla → çiz → bak → düzelt" (AGENT_DESIGNER=1): one
+// mirrored page designed by the agent designer (src/lib/design/agent-designer.ts)
+// - Sonnet looks at the source page, writes a layout spec, renders it, looks
+// and fixes, within DEFAULT_MAX_TURNS turns and DEFAULT_MAX_COST_USD. The
+// whole loop is this one step, so a replay reuses its result. Returns the
+// spec, or null: the page then prints by its template as before. A failure
+// is never the run's - except the run's spend cap (recordUsage).
+async function designPageWithAgent(
+  runId: string,
+  input: {
+    units: GeneratedUnit[];
+    unitNumber: number;
+    pageIndex: number;
+    field: "studentBookPages" | "workbookPages";
+    layout: SourcePageLayout;
+    sourcePdfUrl: string;
+    pageImages: Record<number, string>;
+    sourceStyle?: BookDocumentSourceStyle;
+    designTheme?: string | null;
+    trimSize: TrimSizeId;
+    level: string;
+  },
+): Promise<PageLayoutSpec | null> {
+  "use step";
+
+  const ctx = await bookSpecContext({
+    units: input.units,
+    unitNumber: input.unitNumber,
+    pageIndex: input.pageIndex,
+    field: input.field,
+    pageImages: input.pageImages,
+    sourceType: input.sourceStyle?.type,
+    dominantColors: input.sourceStyle?.dominantColors,
+    designTheme: input.designTheme,
+    trimSize: input.trimSize,
+    level: input.level,
+  });
+  if (!ctx) return null;
+  try {
+    const pdf = await fetchPdfBytes(input.sourcePdfUrl);
+    const [source] = await rasterizePdf(pdf, { dpi: 80, pages: [ctx.page.sourcePageNumber] });
+    if (!source) return null;
+    const designed = await designBookPage(
+      ctx,
+      { png: source.png, layout: input.layout, pageImages: input.pageImages },
+      { model: toTextModel(BOOK_PIPELINE_MODEL), pricingModel: BOOK_PIPELINE_MODEL, onUsage: (usage) => recordUsage(runId, "agentDesigner", usage, BOOK_PIPELINE_MODEL) },
+    );
+    if (designed && !designed.result.spec) console.warn(`Agent designer, unit ${input.unitNumber} page ${ctx.page.sourcePageNumber}: ${designed.result.stopped} - ${designed.result.log.join("; ")}`);
+    return designed?.result.spec ?? null;
+  } catch (err) {
+    if (err instanceof FatalError) throw err;
+    console.warn(`Agent designer, unit ${input.unitNumber} page ${ctx.page.sourcePageNumber}: skipped -`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 const VARIANT_PAGE_FIELD: Record<Variant, "studentBookPages" | "workbookPages" | "teacherBookPages" | "testBookletPages"> = {
   student_book: "studentBookPages",
   workbook: "workbookPages",
@@ -4777,6 +4840,42 @@ export async function bookPipelineWorkflow(runId: string, scope: WorkflowScope =
     for (const unitNumber of designChangedUnits) {
       const unit = units.find((u) => u.unitNumber === unitNumber);
       if (unit && unitNumber < MIDTERM_UNIT_NUMBER) await replaceCheckpoint(runId, unitNumber, unit);
+    }
+
+    // The agent designer (AGENT_DESIGNER=1, off by default): each mirrored
+    // page laid out by the model looking at its source page; a page it
+    // cannot do keeps its template. Stored on the page (designSpec).
+    if (ctx.agentDesigner && !ctx.run.isFromScratch && ctx.upload.blobUrl) {
+      await setRunStatus(runId, "reviewing_design", "Sayfalar kaynağa bakılarak yeniden tasarlanıyor");
+      const field = ctx.upload.bookType === "workbook" ? "workbookPages" : "studentBookPages";
+      for (const [unitIdx, unit] of units.entries()) {
+        if (unit.unitNumber >= MIDTERM_UNIT_NUMBER) continue;
+        const pages = [...(unit[field] ?? [])];
+        let designedAny = false;
+        for (const [pageIndex, page] of pages.entries()) {
+          const layout = page.zonePlan ? pageMap.pages.find((p) => p.pageNumber === page.sourcePageNumber)?.layout : undefined;
+          if (!layout) continue;
+          const designSpec = await designPageWithAgent(runId, {
+            units,
+            unitNumber: unit.unitNumber,
+            pageIndex,
+            field,
+            layout,
+            sourcePdfUrl: ctx.upload.blobUrl,
+            pageImages,
+            sourceStyle,
+            designTheme: ctx.run.designTheme,
+            trimSize,
+            level: outline.level,
+          });
+          if (!designSpec) continue;
+          pages[pageIndex] = { ...page, designSpec };
+          designedAny = true;
+        }
+        if (!designedAny) continue;
+        units[unitIdx] = { ...unit, [field]: pages };
+        await replaceCheckpoint(runId, unit.unitNumber, units[unitIdx]);
+      }
     }
 
     // Faz "İnsan-onaylı üretim hattı": the real process's "Final Sign-Off ->

@@ -5,39 +5,37 @@
 //   npx tsx --env-file=.env.local scripts/relayout.mts <runId-prefix> <out.pdf> [variant] [--zones-from <source.pdf>]
 //
 // --zones-from rebuilds every mirrored page's zone plan from the source as
-// it is measured today, as a fresh run would (stored plans predate later
-// analyzer fixes), and sets the book in the source's measured colours and
-// type (Faz G1), and drops exercise tables that give the answers away
-// (dropLeakingTable - a fresh run does that while writing), and takes each
-// page's word budget from the source as measured today. Pages over their
-// budget are trimmed as a fresh run trims them (trimUnitToBudget). --no-style keeps
-// the run's own palette and theme type.
+// it is measured today, as a fresh run would, and sets the book in the
+// source's measured colours and type (see stored-run.mts). --no-style keeps
+// the run's own palette and theme type. --specs-from <dir> gives every
+// Student Book page that has a design spec there (<runId-prefix>-p<source
+// page>.json, as scripts/agent-designer.mts writes them and its fixtures
+// are) that spec, as the workflow's agent designer would store it.
 //
 // Then score it: npx tsx scripts/fidelity.mts <source.pdf> <out.pdf> ...
 import fs from "node:fs";
-import { desc, eq, sql } from "drizzle-orm";
-import { db } from "../src/db/client";
-import { extractedOutlines, generatedBooks, generationRuns, projects } from "../src/db/schema";
-import type { BookOutline, GeneratedPage, GeneratedUnit } from "../src/lib/ai/schemas";
+import path from "node:path";
+import type { GeneratedPage } from "../src/lib/ai/schemas";
+import { parseSpec } from "../src/lib/design/page-layout-spec";
 import { renderBookFitted } from "../src/lib/pdf/render-fitted";
 import { resolveTrimSize } from "../src/lib/pdf/page-geometry";
 import type { Variant } from "../src/lib/pdf/BookDocument";
-import { analyzeSourceLayout } from "../src/lib/source-layout-pdf";
-import { buildZonePlan, zonePictureCount } from "../src/lib/design/zones";
-import { classifyPageType } from "../src/lib/design/page-types";
-import { deriveSourceTheme, type SourceTheme } from "../src/lib/design/source-theme";
-import { dropLeakingTable } from "../src/lib/answer-leak";
-import { dropWriterLayouts } from "../src/lib/writer-layout";
-import { dropRepeatedBlocks } from "../src/lib/dedupe-blocks";
-import { dropMissingPictureRefs } from "../src/lib/picture-refs";
-import { continuesLesson, lessonOf, measuredWords } from "../src/lib/source-blueprint";
-import { numberUnitExercises } from "../src/lib/exercise-numbers";
-import { trimUnitToBudget } from "../src/lib/word-trim";
+import { loadStoredBook } from "./stored-run.mjs";
+
+function withSpec(page: GeneratedPage, dir: string, prefix: string): GeneratedPage {
+  const file = path.join(dir, `${prefix}-p${page.sourcePageNumber}.json`);
+  if (!fs.existsSync(file)) return page;
+  const parsed = parseSpec(JSON.parse(fs.readFileSync(file, "utf8")));
+  if (!parsed.spec) throw new Error(`${file}: ${parsed.issues.join("; ")}`);
+  return { ...page, designSpec: parsed.spec };
+}
 
 async function main() {
   const args = process.argv.slice(2);
   const zonesAt = args.indexOf("--zones-from");
   const zonesFrom = zonesAt >= 0 ? args.splice(zonesAt, 2)[1] : null;
+  const specsAt = args.indexOf("--specs-from");
+  const specsFrom = specsAt >= 0 ? args.splice(specsAt, 2)[1] : null;
   const noStyleAt = args.indexOf("--no-style");
   const noStyle = noStyleAt >= 0 && !!args.splice(noStyleAt, 1).length;
   const [prefix, outPath, variant = "student_book"] = args;
@@ -45,51 +43,9 @@ async function main() {
     console.error("usage: npx tsx --env-file=.env.local scripts/relayout.mts <runId-prefix> <out.pdf> [variant]");
     process.exit(1);
   }
-  const run = await db.query.generationRuns.findFirst({
-    where: sql`${generationRuns.id}::text like ${`${prefix}%`}`,
-  });
-  if (!run) throw new Error(`no run ${prefix}`);
-  const project = await db.query.projects.findFirst({ where: eq(projects.id, run.projectId) });
-  const outlineRow = await db.query.extractedOutlines.findFirst({ where: eq(extractedOutlines.runId, run.id) });
-  const book = await db.query.generatedBooks.findFirst({
-    where: eq(generatedBooks.runId, run.id),
-    orderBy: [desc(generatedBooks.createdAt)],
-  });
-  if (!outlineRow || !book?.content) throw new Error("run has no outline or book content");
-  const outline = (outlineRow.outline as { outline: BookOutline }).outline;
-  // Clean-ups a fresh run now applies while writing (applyDiagramFixes).
-  let units = (book.content as GeneratedUnit[]).map((u) => ({
-    ...u,
-    studentBookPages: u.studentBookPages.map((p) => dropMissingPictureRefs(dropRepeatedBlocks(p))),
-    workbookPages: u.workbookPages?.map((p) => dropMissingPictureRefs(dropRepeatedBlocks(p))),
-  }));
-  let measured: SourceTheme | null = null;
-  if (zonesFrom) {
-    const layouts = await analyzeSourceLayout(new Uint8Array(fs.readFileSync(zonesFrom)));
-    if (!noStyle) measured = deriveSourceTheme(layouts);
-    const rezone = <P extends GeneratedPage>(p: P): P => {
-      const layout = layouts[p.sourcePageNumber - 1];
-      const clean = dropWriterLayouts(p);
-      if (!layout) return p;
-      const zonePlan = buildZonePlan(layout);
-      // The page type as a fresh run stores it (applyZonePlans).
-      const pageType = classifyPageType(layout);
-      const shape = clean.sourceShape ?? { exercises: layout.exerciseCount, pictures: zonePlan ? zonePictureCount(zonePlan) : 0 };
-      // The word budget as the source measures today (older runs stored none).
-      const words = measuredWords(layout);
-      return { ...clean, zonePlan, sourceShape: { ...shape, pageType, words, ...continuesLesson(layout), ...lessonOf(layout) }, blocks: clean.blocks.map(dropLeakingTable) };
-    };
-    // Exercise numbers go on across a lesson's pages, as a fresh run numbers them.
-    units = units.map((u) => ({ ...u, studentBookPages: numberUnitExercises(u.studentBookPages.map(rezone)) }));
-  }
-  // A fresh run trims a page still over its word budget (trimUnitToBudget).
-  let trimmed = 0;
-  units = units.map((u) => {
-    const out = trimUnitToBudget(u, outline.level);
-    trimmed += out.studentBookPages.filter((p, i) => p !== u.studentBookPages[i]).length;
-    return out;
-  });
-  const paletteColors = measured?.colors.length ? measured.colors : ((run.paletteColors as string[] | null) ?? null);
+  const book = await loadStoredBook(prefix, { zonesFrom, noStyle });
+  const { run, project, outline, measured, paletteColors, trimmed } = book;
+  const units = specsFrom ? book.units.map((u) => ({ ...u, studentBookPages: u.studentBookPages.map((p) => withSpec(p, specsFrom, prefix)) })) : book.units;
 
   const started = Date.now();
   const { pdf, flattened, compacted } = await renderBookFitted({
