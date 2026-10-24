@@ -67,6 +67,22 @@ describe("analyzeStextPage", () => {
     expect(layout.exerciseCount).toBe(2);
     expect(layout.itemCount).toBe(2);
     expect(layout.exerciseRubrics).toEqual(["Listen and repeat.", "Circle the correct word."]);
+    expect(layout.firstExerciseNumber).toBe(1);
+  });
+
+  it("reads the page's first exercise number - the lowest, whatever order the lines are drawn in", () => {
+    // i5 Team 2 p.13: the right column's "4 Go through the Grammar box" is drawn last.
+    const page: StextPage = {
+      width: W,
+      height: H,
+      blocks: [
+        text(320, 100, 250, [line("6 Answer the questions.", 13, "bold"), line(words(30), 10)]),
+        text(40, 100, 250, [line("4 Go through the Grammar box.", 13, "bold"), line(words(30), 10)]),
+        text(40, 400, 250, [line("5 Complete the email.", 13, "bold"), line(words(30), 10)]),
+      ],
+    };
+    expect(analyzeStextPage(page).firstExerciseNumber).toBe(4);
+    expect(analyzeStextPage({ width: W, height: H, blocks: [text(40, 100, 500, [line(words(50), 10)])] }).firstExerciseNumber).toBeUndefined();
   });
 
   it("detects two text columns", () => {

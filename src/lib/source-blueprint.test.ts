@@ -59,6 +59,14 @@ describe("applyZonePlans", () => {
     const [bp] = writerBlueprint([page(5, strip)]);
     expect(bp).toMatchObject({ measured: { design: "cards", pictures: 11 } });
   });
+
+  it("marks a page that goes on with the lesson of the page before", () => {
+    const pages = (first?: number) =>
+      applyZonePlans([{ sourcePageNumber: 5, pageType: "content", unitNumber: 1, blocks: [] }], [page(5, layout({ exerciseCount: 3, firstExerciseNumber: first }))])[0];
+    expect(pages(4).sourceShape?.firstExercise).toBe(4);
+    expect(pages(1).sourceShape?.firstExercise).toBeUndefined();
+    expect(pages(undefined).sourceShape?.firstExercise).toBeUndefined();
+  });
 });
 
 describe("complementaryPlan", () => {

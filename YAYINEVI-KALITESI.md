@@ -5,6 +5,39 @@
 
 ---
 
+## 00. Elle yapılmış kıyas: i5 Team 2 karşılama modülü + Modül 1 (2026-10-24)
+
+Branch `handmade-i5`. Sistemin KIYAS-15'te ürettiği kaynak sayfaları (s.6–25) bir tasarımcı/yazar gibi elle yeniden yapıldı: özgün karakterler, metinler ve alıştırmalar. Kaynağın ders yapısı, iki sütunlu yoğunluğu, sayfa mobilyası ve alıştırma türleri korundu. Buna 4 sayfalık Modül 1 çalışma kitabı eklendi.
+- Script: `scripts/reference/handcraft-i5-full.tsx` (+ `-art.ts` ücretsiz kompozitler, `-images.mts` ücretli resimler).
+- Resimler: 8 yeni ücretli çağrı, **0,103 $**. Eski 8 resim tekrar kullanıldı; küçük ikonlar Twemoji.
+
+| | Yapı | Görünüm |
+|---|---|---|
+| Elle, s.6–25 (20 sayfa) | %81 | %72 (kaynak kendi içinde %65) |
+| Elle, 1a–1c (s.12–17) | %80 | %74 |
+| Önceki elle referans, 1a–1c | %41 | %65 |
+| Sistem, KIYAS-11 yeniden dizim (s.6–11) | %87 | %56 |
+| Elle, s.6–11 | %80 | %75 |
+
+Bu tablo, sistemin yapı puanında elle yapılana yetiştiğini, görünüm puanında ise geride kaldığını gösteriyor.
+
+**Elle yapılıp sistemde olmayanlar ve durumları:**
+1. ✅ **Alıştırma numarası dersin sayfaları boyunca sürüyor.** Kaynak s.7 3'ten, s.15 4'ten başlıyor; sistem her sayfada 1'den başlıyordu.
+   - Analizör sayfanın ilk alıştırma numarasını okuyor (`firstExerciseNumber`).
+   - `sourceShape.firstExercise` alanı ve `numberUnitExercises` numarayı önceki sayfadan devam ettiriyor (`applyDiagramFixes` ve `relayout`).
+   - KIYAS-11'de sayfalar artık 1–2 / 3–7 / 1–3 / 4–6 / 1–3 / 4–6 diye numaralanıyor. Puanlar değişmedi.
+2. ✅ (yalnız yazar komutu, canlı doğrulanmadı) **Alıştırma başlığı yönergenin kendisi.** Sistemdeki yazar "Geography Quiz", "Peer-Interview", "Quick-Check: …" gibi başlıklar uyduruyordu; yayınevi başlığı yönerge olarak basar. `BLUEPRINT_INSTRUCTIONS`'a kural eklendi.
+3. ❌ **Ders mobilyası basılmıyor.** Eksik olanlar: ders sekmesi ("1a" rozeti + başlık), bölüm başlıkları (Reading, Vocabulary, Grammar, Speaking and Writing, Everyday English), "Check these words" kutusu, sayfa altındaki "Language Review 1a / Workbook 1a" göndermeleri. Bunun için yazar şemasına bölüm alanı gerekiyor, ücretli çalıştırmayla doğrulanmalı.
+4. ❌ **Resimler büyük ve dolu değil.** Elle sayfalarda kaynak gibi büyük ve renkli resimler var: kenardan kenara sahne, tek parça kart ızgarası, kolaj. Sistemin resimleri beyaz zeminde küçük nesneler. Bu yüzden ink %44'e karşı %82, inkMap %41'e karşı %73.
+   - Zon planı resim yüksekliğini %50, toplamı %60 ile sınırlıyor ve resimleri kenardan taşırmıyor. Kaynak s.8'deki resim 0,95×0,61.
+5. ❌ **Kaynaktaki renkli zemin ve paneller sistemde yok.** Örnekler: s.6 limon yeşili zemin, s.8 mor yarım sayfa, Grammar kutusu, "Over to you" paneli.
+   - Kenar halkasından zemin rengi ölçmeyi denedim. Yalnız s.23'ü buldu: s.6 degrade olduğu için, s.10 yarım panel olduğu için yakalanmadı. Geri alındı.
+6. ℹ️ Kaynak sayfaların solundaki renkli "şerit" modül şeridi değil, kırpılmış yayılımdan kalan komşu sayfa taşması. Ölçüldü ve **eklenmedi**.
+
+Regresyon kontrolü: KIYAS-11 %87/%56 → %87/%56, KIYAS-14 %68/%71 → %68/%71.
+
+---
+
 ## 0. Faz P — ücretli modlar, dinleme, CEFR (2026-10-21)
 
 Plan: `~/.claude/plans/simdi-bu-projenin-vizyonu-sparkling-corbato.md`. Commit: `4174ae6`.

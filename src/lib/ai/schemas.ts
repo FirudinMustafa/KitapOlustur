@@ -488,6 +488,10 @@ export const storedPageSchema = generatedPageSchema.extend({
       items: z.number().optional(),
       words: z.number().optional(),
       pageType: z.enum(PAGE_LAYOUT_TYPES).optional(),
+      // The source page's first exercise number when above 1: the page goes
+      // on with the previous page's lesson, so its exercises go on with that
+      // page's numbering (numberUnitExercises).
+      firstExercise: z.number().optional(),
     })
     .optional(),
   // Plan step 4: words printed on a scene's main picture (source p.7's
