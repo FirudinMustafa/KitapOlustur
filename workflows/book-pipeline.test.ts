@@ -188,6 +188,23 @@ describe("validateUnitStructure", () => {
     });
     expect(validateUnitStructure(unit)).toEqual([]);
   });
+
+  // KIYAS-14 jury: "Point to Misty. Point to Leo." - the source's own mascot.
+  it("sends back a page with the source's character, and a mirrored page that follows its source item by item", () => {
+    const names = { characters: ["Misty"], names: ["Misty"], features: [] };
+    const story = makePage({ sourcePageNumber: 5, blocks: [{ kind: "narrative", heading: "1 Watch and listen", body: "Point to Misty. Point to Leo." }] });
+    expect(validateUnitStructure(makeUnit({ studentBookPages: [story] }), undefined, "", { names }).some((i) => i.includes('"Misty"'))).toBe(true);
+
+    const sourceText = "1 Where’s the Park Hotel?\n2 Where’s the post office?\n3 Is there a bank near here?\n4 How do I get to the museum?\n5 Is the café next to the cinema?";
+    const mirrored = makePage({
+      sourcePageNumber: 5,
+      blocks: [{ kind: "practice", heading: "1 Ask and answer", body: "", items: ["Where's the bus station?", "Where's the library?", "Is there a park near here?", "How do I get to the zoo?", "Is the shop next to the school?"], answerKey: ["a", "b", "c", "d", "e"] }],
+    });
+    const issues = validateUnitStructure(makeUnit({ studentBookPages: [mirrored] }), undefined, "", { pages: [{ pageNumber: 5, sourceText }] });
+    expect(issues.some((i) => i.includes("mirrors its source page too closely"))).toBe(true);
+    // A complementary page (renumbered) is not compared with source page 5.
+    expect(validateUnitStructure(makeUnit({ workbookPages: [{ ...mirrored, sourcePageNumber: 305 }] }), undefined, "", { pages: [{ pageNumber: 5, sourceText }] })).toEqual([]);
+  });
 });
 
 describe("applyFallbackImagePrompts", () => {
