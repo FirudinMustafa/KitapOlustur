@@ -14,6 +14,7 @@ import { CrosswordView, MarkingList, MatchLinesView, WordSearchView } from "./pu
 import { resolveTextStyle } from "@/lib/text-style";
 import { ArtefactBody } from "./artefacts";
 import { SectionHead } from "./lesson-furniture";
+import type { PictureInfo } from "./picture-fit";
 
 // Faz 1 "Tasarım sistemi": the per-block print pieces, split out of
 // BookDocument.tsx so the page templates (./templates.tsx) and the original
@@ -28,6 +29,8 @@ export type Look = {
   bodyFont: string[];
   /** emoji -> image src for activity pictures (filled by the book renderer when icons are available). */
   pictureSrc?: Record<string, string>;
+  /** Page picture src -> its measured shape and object (picture-info.ts); a picture missing here is drawn by its frame's shape. */
+  pictures?: Record<string, PictureInfo>;
   /** Tighter activity/diagram sizes - set by renderBookFitted for a page that still ran over. */
   compact?: boolean;
   /** Faz G3: empty height (pt) a render of this page left at its foot - see planZones. */

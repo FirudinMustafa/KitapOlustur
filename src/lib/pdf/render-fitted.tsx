@@ -12,6 +12,8 @@ import { derivePaletteFromColors } from "./derive-palette";
 import { resolveDesignTheme } from "@/lib/design/themes";
 import { pageLayoutType } from "@/lib/design/page-types";
 import { resolvePageImageUrls } from "@/lib/page-image";
+import { measurePictures } from "./picture-info";
+import { pagesForVariant } from "@/lib/content-html";
 
 type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forcePlain" | "compact">;
 
@@ -30,11 +32,15 @@ type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forc
 // lost the source's layout on 5 of its 6 pages that way.
 export async function renderBookFitted(input: BookProps & { tintPictures?: boolean }): Promise<{ pdf: Buffer; flattened: string[]; compacted: string[] }> {
   const { tintPictures = true, ...rest } = input;
+  const pageImages = tintPictures ? await tintZonedPictures(rest) : rest.pageImages;
   // Activity pictures are drawn from Twemoji; fetched once per book.
   const props = {
     ...rest,
     pictureSrc: input.pictureSrc ?? (await loadEmojiIcons(activityEmojis(input.units))),
-    pageImages: tintPictures ? await tintZonedPictures(rest) : rest.pageImages,
+    pageImages,
+    // Each page picture's real shape and object, measured once as printed
+    // (tinted): every frame places its picture by them (picture-fit.ts).
+    pictures: input.pictures ?? (await measurePictures(bookPictures(rest.units, rest.variant, pageImages))),
   };
 
   async function render(forcePlain?: Set<string>, compact?: Set<string>, slack?: Map<string, number>) {
@@ -128,6 +134,12 @@ async function tintZonedPictures(props: BookProps): Promise<BookProps["pageImage
   const tinted = await tintPictureGrounds(srcs, pictureGroundTints(palette));
   if (!tinted.size) return pageImages;
   return Object.fromEntries(Object.entries(pageImages).map(([k, src]) => [k, tinted.get(src) ?? src]));
+}
+
+// Every picture the book's pages print, main pictures and extras.
+function bookPictures(units: BookProps["units"], variant: BookProps["variant"], pageImages: BookProps["pageImages"]): string[] {
+  if (!pageImages) return [];
+  return units.flatMap((u) => pagesForVariant(u, variant)).flatMap((p) => resolvePageImageUrls(p, pageImages));
 }
 
 // "<unit>:<page>" or a later sheet of it, "<unit>:<page>/<k>" (BookDocument sheetKey).

@@ -382,6 +382,15 @@ export const ZONE_GAP = 12;
 // their subject (live re-layout of KIYAS-7: a ball and a desk cut in half,
 // still at 2:1), so a wider slot keeps the picture at this shape, centred.
 export const MAX_PICTURE_ASPECT = 1.6;
+// And the narrowest: a slot thinner than this (KIYAS-13 p.10, a 0.24 strip
+// left by a neighbour page's edge in an older zone plan) draws its picture
+// this shape, centred in the row's height, instead of a sliver of it - a
+// 2:3 picture cropped to it keeps three quarters of its width.
+export const MIN_PICTURE_ASPECT = 0.5;
+
+// Each frame's height in a row of this height: the row's, or less for a
+// frame narrower than MIN_PICTURE_ASPECT.
+export const frameHeights = (frames: number[], height: number) => frames.map((w) => Math.min(height, Math.round(w / MIN_PICTURE_ASPECT)));
 
 // KIYAS-13: a picture grown past its source size (a page with measured
 // room left, see planZones) keeps most of what was drawn - its frame stays
@@ -433,6 +442,16 @@ export function zoneRowFrames(
   const deepest = Math.min(...slots.map((s, k) => s / (MIN_FRAME_SHARE * shapeAspect((sourceSpan * band.widths[k] * PAGE_ASPECT) / band.height))));
   const height = Math.round(Math.max(base, Math.min(base * scale, deepest)));
   return { left: contentWidth * left, width, height, frames: slots.map((s) => Math.min(s, height * MAX_PICTURE_ASPECT)) };
+}
+
+// Slot k of a picture row (pt), the row's gaps taken out. An edge-to-edge
+// row also covers the print bleed `out` on both sides: the first slot runs
+// into the left bleed and the last into the right one. (Only a one-picture
+// row used to get it, on both sides; in a row of several the pictures sat
+// one bleed to the left, a white strip at the trimmed right edge.)
+export function rowSlotWidth(rowWidth: number, widths: number[], k: number, out = 0): number {
+  const n = widths.length;
+  return (rowWidth - ZONE_GAP * (n - 1)) * widths[k] + (k === 0 ? out : 0) + (k === n - 1 ? out : 0);
 }
 
 // A split band's picture column (width, total height) at a picture scale.

@@ -3,8 +3,11 @@ import { unitBadgeText } from "@/lib/unit-label";
 import type { ContentBlock, GeneratedPage } from "@/lib/ai/schemas";
 import {
   DENSE_LINE,
+  MAX_PICTURE_ASPECT,
   ZONE_GAP,
+  frameHeights,
   isExerciseBlock,
+  rowSlotWidth,
   panelledExercises,
   planZones,
   zoneColumnFrame,
@@ -22,6 +25,8 @@ import { BubbleOverlay } from "./bubble-overlay";
 import type { PageBubble } from "@/lib/ai/page-bubbles";
 import type { PageLesson } from "@/lib/lesson-furniture";
 import { LessonTab } from "./lesson-furniture";
+import { FramedImage, pictureGround, pictureRect } from "./picture-frame";
+import { frameWidthFor } from "./picture-fit";
 
 // Faz 1 "Tasarım sistemi": PDF renderers for each layout template in
 // src/lib/design/layouts.ts. BookDocument.tsx decides WHICH template a page
@@ -60,6 +65,7 @@ export function Illustration({
   labels,
   bubbles,
   width,
+  fill,
 }: {
   src: string;
   height: number | string;
@@ -71,21 +77,41 @@ export function Illustration({
   /** A scene's dialogue as speech bubbles on the picture (needs the frame's width). */
   bubbles?: PageBubble[];
   width?: number;
+  /** The frame runs edge to edge: it keeps its width whatever the picture's shape. */
+  fill?: boolean;
 }) {
+  // A cropped scene keeps its upper part, where faces are (s.10 cut heads
+  // off at the centre crop); a measured picture of one object is placed by
+  // its object (picture-fit.ts).
+  const anchorY = 0.3;
+  const sized = !!width && typeof height === "number";
+  // A measured scene's frame no wider than keeps most of the scene,
+  // centred in its slot - unless the frame runs edge to edge (`fill`).
+  const info = look.pictures?.[src];
+  const frameW = sized && info && !fill ? frameWidthFor(info, width, height, MAX_PICTURE_ASPECT) : width;
+  const rect = sized ? pictureRect(look, src, frameW!, height, { fit, anchorY }) : null;
+  const ground = sized ? pictureGround(look, src, rect, frameW!, height) : undefined;
+  // The overlays map their points through the rectangle the picture is
+  // drawn in; unmeasured, the picture was drawn at the generator size for
+  // this frame's shape.
+  const placement = rect ? { crop: rect } : sized ? { imageAspect: shapeAspect(width / (height as number)), fit, positionY: anchorY } : {};
   return (
     // A contained picture sits on the page (a tint behind it framed it with
-    // coloured bars, KIYAS-13 Workbook p.5); a cropped one keeps its upper
-    // part, where faces are (s.10 cut heads off at the centre crop).
-    <View style={{ height, borderRadius: look.theme.radius, overflow: "hidden", backgroundColor: fit === "contain" ? undefined : look.palette.primaryLight, marginBottom: gap }} wrap={false}>
-      {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-      <Image src={src} style={{ width: "100%", height: "100%", objectFit: fit, ...(fit === "cover" ? { objectPositionY: "30%" } : {}) }} />
-      {labels?.length && width && typeof height === "number" ? (
-        // The picture was drawn at the generator size for this frame's shape.
-        <LabelOverlay labels={labels} width={width} height={height} look={look} imageAspect={shapeAspect(width / height)} fit={fit} positionY={0.3} />
-      ) : null}
-      {bubbles?.length && width && typeof height === "number" ? (
-        <BubbleOverlay bubbles={bubbles} width={width} height={height} look={look} imageAspect={shapeAspect(width / height)} fit={fit} positionY={0.3} />
-      ) : null}
+    // coloured bars, KIYAS-13 Workbook p.5).
+    <View
+      style={{
+        height,
+        ...(sized ? { width: frameW, alignSelf: "center" as const } : {}),
+        borderRadius: look.theme.radius,
+        overflow: "hidden",
+        backgroundColor: ground ?? (fit === "contain" ? undefined : look.palette.primaryLight),
+        marginBottom: gap,
+      }}
+      wrap={false}
+    >
+      <FramedImage src={src} rect={rect} width={frameW} height={height as number} fit={fit} anchorY={anchorY} />
+      {labels?.length && sized ? <LabelOverlay labels={labels} width={frameW!} height={height as number} look={look} {...placement} /> : null}
+      {bubbles?.length && sized ? <BubbleOverlay bubbles={bubbles} width={frameW!} height={height as number} look={look} {...placement} /> : null}
     </View>
   );
 }
@@ -238,13 +264,15 @@ export function TemplatedPageBody(props: TemplateProps) {
               // An edge-to-edge row also covers the print bleed, square-cornered.
               const out = row.bleed ? bleed : 0;
               const rowLook = row.bleed ? { ...look, theme: { ...look.theme, radius: 0 } } : look;
-              const slotWidth = (k: number) => (row.width - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k] + (band.pictures.length === 1 ? 2 * out : 0);
+              const slotWidth = (k: number) => rowSlotWidth(row.width, band.widths, k, out);
+              // A frame thinner than MIN_PICTURE_ASPECT is drawn shorter, centred in the row.
+              const heights = row.bleed ? band.pictures.map(() => row.height) : frameHeights(row.frames, row.height);
               return (
                 <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom, marginLeft: row.left - out, width: row.width + 2 * out }} wrap={false}>
                   {band.pictures.map((p, k) => (
-                    <View key={k} style={{ width: slotWidth(k), alignItems: "center" }}>
+                    <View key={k} style={{ width: slotWidth(k), height: row.height, alignItems: "center", justifyContent: "center" }}>
                       <View style={{ width: row.bleed ? slotWidth(k) : row.frames[k] }}>
-                        <Illustration src={pictures[p]} height={row.height} look={rowLook} gap={0} labels={labelsOn(p)} bubbles={bubblesOn(p)} width={row.bleed ? slotWidth(k) : row.frames[k]} />
+                        <Illustration src={pictures[p]} height={heights[k]} look={rowLook} gap={0} labels={labelsOn(p)} bubbles={bubblesOn(p)} width={row.bleed ? slotWidth(k) : row.frames[k]} fill={row.bleed} />
                       </View>
                     </View>
                   ))}

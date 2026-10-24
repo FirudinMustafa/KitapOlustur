@@ -9,6 +9,7 @@ import { BlockCard, PictureMatch, WordBank, centredFigure, type Look } from "./b
 import { UnitHeading } from "./templates";
 import { NOTO_SANS } from "./fonts";
 import { CrosswordView } from "./puzzle-blocks";
+import { BandPicture, FramedPicture } from "./picture-frame";
 
 // A workbook page as an activity book sets it (worksheetLayout,
 // src/lib/design/worksheet-layout.ts): every exercise in a frame, picture
@@ -73,9 +74,8 @@ function Exercise({ item, look: sheetLook, showAnswerKey, marginBottom, mainSrc 
         <View style={{ flex: 1, marginBottom: -DENSE_TAIL }}>
           <BlockCard block={block} look={look} showAnswerKey={showAnswerKey} frameless dense />
         </View>
-        <View style={{ width: side, height: item.sideHeight, marginLeft: SIDE_GAP, borderRadius: Math.max(8, look.theme.radius), overflow: "hidden" }}>
-          {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-          <Image src={mainSrc} style={{ width: side, height: item.sideHeight, objectFit: "cover", objectPositionY: "35%" }} />
+        <View style={{ marginLeft: SIDE_GAP }}>
+          <FramedPicture src={mainSrc} width={side} height={item.sideHeight ?? side} look={look} radius={Math.max(8, look.theme.radius)} anchorY={0.35} />
         </View>
       </View>
     );
@@ -119,7 +119,10 @@ export function WorksheetPageBody({
   unitKicker,
   mainSrc,
   sheetStart,
+  contentWidth,
 }: {
+  /** Width of the page's content area (pt) - the room the page's picture can take. */
+  contentWidth: number;
   layout: WorksheetLayout;
   unit: { unitNumber: number; title: string };
   isUnitFirstPage: boolean;
@@ -139,10 +142,7 @@ export function WorksheetPageBody({
             {k > 0 ? sheetStart(k) : null}
             {k === 0 && isUnitFirstPage ? <UnitHeading unit={unit} look={look} kicker={unitKicker} /> : null}
             {sheet.mainHeight && mainSrc ? (
-              <View style={{ height: sheet.mainHeight, borderRadius: Math.max(10, look.theme.radius), overflow: "hidden", marginBottom: sheet.gap }} wrap={false}>
-                {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer's Image has no `alt` prop */}
-                <Image src={mainSrc} style={{ width: "100%", height: "100%", objectFit: "cover", objectPositionY: "35%" }} />
-              </View>
+              <BandPicture src={mainSrc} height={sheet.mainHeight} maxWidth={contentWidth} look={look} radius={Math.max(10, look.theme.radius)} anchorY={0.35} marginBottom={sheet.gap} />
             ) : null}
             {sheet.items.map((item, i) => (
               <Exercise key={i} item={item} look={sheetLook} showAnswerKey={showAnswerKey} marginBottom={i < sheet.items.length - 1 ? sheet.gap : 0} mainSrc={mainSrc} />

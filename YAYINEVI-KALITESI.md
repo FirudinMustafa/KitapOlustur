@@ -5,6 +5,32 @@
 
 ---
 
+## 0000. Çerçevesinde kayan resimler (2026-10-24, branch `picfix`)
+
+Kullanıcı bildirimi: "bazı resimlerin yeri ya da kutusu içindeki konumu kaymış". Sistem çıktıları (KIYAS-11/13/14, SB+WB) ve iki elle kitap sayfa sayfa görüntüye çevrilip incelendi. AI çağrısı yok, 0 $.
+
+**Kök neden:** çerçeve resmi sabit bir dikey noktadan `cover` ile kırpıyordu. Etiket ve konuşma balonları ise resmin olması gereken şekli varsayıyordu (yuvanın üretim boyutu). Kayıtlı resim başka şekilde olabiliyor; beyaz zemin üstündeki tek nesne de sahne gibi kırpılıyordu.
+
+**Düzeltme:**
+- `picture-info.ts` her resmi bir kez ölçüyor: gerçek en-boy oranı, düz zemindeki nesnenin kutusu ve zemin rengi.
+- `picture-fit.ts` `fitPicture` resmin çerçevedeki yerini hesaplayan **tek** yer. Resim de, etiket ve balonlar da aynı dikdörtgeni kullanıyor (`PlaceOptions.crop`), artık birbirinden ayrışamazlar.
+
+| Yer | Sorun | Durum |
+|---|---|---|
+| KIYAS-14 s.4 sahne | Resim kare, 3:2 varsayılmış: "boy"/"girl" resmin kenarını gösteriyordu, "tree"/"sun" kırpılmış sayılıp düşmüştü | ✅ |
+| KIYAS-14 s.6 kartların altı | 4,2:1 şeritte iki çocuğun başı kesikti | ✅ en fazla 3:1, ortalı, üstten |
+| KIYAS-13 s.4 | Kare resim 2,8:1 şeride kırpılmış, yüzler ağız hizasında kesik | ✅ resmin %75'i kalacak genişlik |
+| KIYAS-13 s.10 | Eski zon planından kalan 0,24'lük dilim çerçeve | ✅ en dar 0,5 |
+| KIYAS-13 WB s.5 | Altı nesnelik sırada elma ve çiçek ortadan kesikti | ✅ nesne bütün ve ortada |
+| KIYAS-11 s.5–7 | Masa ve küre/harita büyük çerçevede alttan kesik ya da kaymış | ✅ |
+| Kenardan kenara resim sırası (baskı) | Birden çok resimli sıra taşma payına tek taraftan giriyordu, sağ kenarda beyaz şerit kalıyordu | ✅ |
+| Elle i5 s.2, s.7, s.10, s.14, arka kapaklar | Karakter daireleri yüz yerine çene ve omuz gösteriyordu; çizgi roman şeritleri ve sahnelerde başlar kesikti | ✅ script düzeltildi |
+| Elle Super Minds s.3, s.6 | Çocukların başları kesikti | ✅ |
+
+Regresyon kontrolü: KIYAS-14 %71/%74 → %71/%74, KIYAS-11 %89/%68 → %89/%68.
+
+---
+
 ## 000. Ders mobilyası, zeminler, büyük resimler (2026-10-24, branch `lessonfurniture`)
 
 Elle yapılan i5 kitabının sistemde eksik olanları (aşağıda 00, madde 3–5) eklendi. AI çağrısı yok, 0 $.
