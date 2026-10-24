@@ -68,6 +68,7 @@ async function loadAssets() {
   return {
     emoji,
     friends: card("w-friends"),
+    cover: card("cover"),
     familyTree: await art.familyTree(),
     chalkboard: await art.chalkboard(),
     landmarks: await art.landmarkCollage(),
@@ -75,25 +76,211 @@ async function loadAssets() {
     moves: await art.cardGrid("moves", Array.from({ length: 9 }, (_, i) => card(`w-moves-${i + 1}`)), 3, { caption: 64, tiles: ["#E8F5E9", "#E3F2FD", "#FFF8E1"] }),
     modules: await art.cardGrid("modules", ["1a-cards-4", "1c-cards-7", "w-landmarks-2", "d-games-3", "w-family-2", "1b-cards-6", "f-fun-4"].map(card), 4, { caption: 70, tiles: ["#B3E5FC", "#F8BBD0", "#C8E6C9", "#FFE0B2", "#D1C4E9", "#FFF59D", "#B2DFDB"] }),
     scene1a: card("1a-scene"),
-    vocab1a: await art.cardGrid("vocab-1a", Array.from({ length: 6 }, (_, i) => card(`1a-cards-${i + 1}`)), 3, { caption: 56 }),
     didYouKnow: await art.didYouKnow(),
     girl: card("w-family-10"),
     scene1b: card("1b-scene"),
-    chores: await art.cardGrid("chores-1b", Array.from({ length: 6 }, (_, i) => card(`1b-cards-${i + 1}`)), 3, { caption: 56, tiles: ["#FFF3E0", "#E1F5FE", "#F3E5F5"] }),
     party: card("1b-party"),
-    hobbies: await art.cardGrid("hobbies-1c", Array.from({ length: 8 }, (_, i) => card(`1c-cards-${i + 1}`)), 4, { tiles: ["#FFCDD2", "#C5CAE9", "#FFF9C4", "#C8E6C9", "#B3E5FC", "#F8BBD0", "#FFE0B2", "#DCEDC8"] }),
     quiz: card("1c-quiz"),
     park: card("1c-park"),
     listenFaces: await art.stackedFaces("listen-faces", ["w-family-7", "w-family-8", "w-family-10"], ["#4FC3F7", "#F06292", "#AED581"]),
     games: [1, 2, 3, 4].map((i) => card(`d-games-${i}`)),
     likeScale: await art.likeScale(["😍", "🙂", "😐", "🙁", "😖"].map((e) => Buffer.from((emoji[e] ?? "").split(",")[1] ?? "", "base64"))),
     talkFaces: await art.stackedFaces("talk-faces", ["w-family-9", "w-family-7", "w-family-8"], ["#FFB74D", "#4DB6AC", "#BA68C8"]),
-    comic: card("c-comic"),
+    comic: await art.stippleGutters("comic-bolt-2", card("c-comic")),
     fun: [1, 2, 3, 4].map((i) => card(`f-fun-${i}`)),
     nowICan: await art.nowICan(),
+    ...(await roundTwoArt(card, emoji)),
     hobbyCards: Array.from({ length: 8 }, (_, i) => card(`1c-cards-${i + 1}`)),
     roomCards: Array.from({ length: 6 }, (_, i) => card(`1a-cards-${i + 1}`)),
     choreCards: Array.from({ length: 6 }, (_, i) => card(`1b-cards-${i + 1}`)),
+  };
+}
+// Picture areas built to the source pages' measured boxes (3 px per pt).
+async function roundTwoArt(card: (n: string) => Buffer, emoji: Record<string, string>) {
+  const px = (f: number, side: number) => Math.round(f * side * 3);
+  const size = (box: FBox) => [px(box[2], W), px(box[3], H)] as const;
+  const emo = (e: string) => Buffer.from((emoji[e] ?? "").split(",")[1] ?? "", "base64");
+  const emailWindow = (name: string, box: FBox) => {
+    const [w, h] = size(box);
+    return art.compose(
+      name,
+      w,
+      h,
+      `<rect x="3" y="3" width="${w - 6}" height="${h - 6}" rx="16" fill="#fff" stroke="#4FC3F7" stroke-width="6"/><rect x="3" y="3" width="${w - 6}" height="48" rx="16" fill="#81D4FA"/><rect x="3" y="30" width="${w - 6}" height="21" fill="#81D4FA"/>
+       <circle cx="34" cy="27" r="9" fill="#EF5350"/><circle cx="62" cy="27" r="9" fill="#FFCA28"/><circle cx="90" cy="27" r="9" fill="#66BB6A"/>`,
+    );
+  };
+  const examTip = (name: string, box: FBox) => {
+    const [w, h] = size(box);
+    return art.compose(name, w, h, `<rect x="4" y="4" width="${w - 8}" height="${h - 8}" rx="24" fill="#F3E5F5" stroke="#7E57C2" stroke-width="6"/>`);
+  };
+  const [lw, lh] = [Math.round(W * 2), Math.round(H * 2)];
+  const [cw, ch] = size([0.03, 0.08, 0.95, 0.63]);
+  const comicPanels = [
+    await art.crop(card("1a-scene"), 0, 0.05, 1, 0.6),
+    await art.crop(card("1a-scene"), 0.5, 0.33, 0.5, 0.34),
+    await art.crop(card("1a-scene"), 0.2, 0.0, 0.8, 0.48),
+  ];
+  const [hw, hh] = size([0.05, 0.04, 0.87, 0.49]);
+  const hk = hw / 1500;
+  const [lbw, lbh] = size([0.05, 0.58, 0.44, 0.41]);
+  const [tbw, tbh] = size([0.06, 0.12, 0.4, 0.5]);
+  const [iw, ih] = size([0.05, 0.14, 0.43, 0.48]);
+  return {
+    scene1bVivid: await art.vivid("scene-1b-vivid", card("1b-scene")),
+    boysVivid: await art.vivid("boys-vivid", card("d-games-4")),
+    limeGround: await art.compose(
+      "lime-ground-5",
+      lw,
+      lh,
+      `<defs><linearGradient id="g" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#B8D42A"/><stop offset="0.45" stop-color="#D6E96E"/><stop offset="0.8" stop-color="#FFFFFF"/></linearGradient></defs><rect width="${lw}" height="${lh}" fill="url(#g)"/>`,
+    ),
+    badges: await Promise.all(
+      [
+        ["37", "#43A047"],
+        ["14", "#1E88E5"],
+        ["58", "#E53935"],
+        ["90", "#8E24AA"],
+        ["26", "#FB8C00"],
+        ["71", "#00ACC1"],
+      ].map(([n, c], i) => art.numberBadge(n, c, i % 2 ? 4 : -5)),
+    ),
+    ageBadges: await Promise.all(
+      [
+        ["10", "#43A047"],
+        ["11", "#1E88E5"],
+        ["12", "#E53935"],
+      ].map(([n, c], i) => art.numberBadge(n, c, i % 2 ? 3 : -3)),
+    ),
+    idCard: await art.compose(
+      "id-card",
+      ...size([0.45, 0.04, 0.53, 0.45]),
+      `<rect x="6" y="6" width="${size([0, 0, 0.53, 0])[0] - 12}" height="${size([0, 0, 0, 0.45])[1] - 12}" rx="40" fill="#EDE7F6" stroke="${PURPLE}" stroke-width="12"/>
+       <text x="${size([0, 0, 0.53, 0])[0] - 40}" y="230" font-family="Arial Black, Arial" font-weight="bold" font-size="220" fill="#D1C4E9" text-anchor="end">ID</text>
+       <rect x="40" y="${size([0, 0, 0, 0.45])[1] - 70}" width="${size([0, 0, 0.53, 0])[0] - 80}" height="26" rx="13" fill="#B39DDB"/>`,
+    ),
+    comic1a: await art.compose(
+      "comic-1a-2",
+      cw,
+      ch,
+      `<rect width="${cw}" height="${ch}" fill="#263238"/>`,
+      comicPanels.map((b, i) => ({ buf: b, x: 0, y: i * Math.round(ch / 3), w: cw, h: Math.round(ch / 3) + 2, fit: "cover" as const })),
+    ),
+    vocab1a: await art.cardGrid("vocab-1a-2", Array.from({ length: 6 }, (_, i) => card(`1a-cards-${i + 1}`)), 3, { caption: 56, gap: 60 }),
+    chores: await art.cardGrid("chores-1b-2", Array.from({ length: 6 }, (_, i) => card(`1b-cards-${i + 1}`)), 3, { caption: 56, gap: 60, tiles: ["#FFF3E0", "#E1F5FE", "#F3E5F5"] }),
+    emailWin: await emailWindow("email-11b", [0.48, 0.4, 0.46, 0.23]),
+    overToYou: await art.compose(
+      "over-to-you",
+      ...size([0.48, 0.68, 0.5, 0.21]),
+      `<rect x="0" y="0" width="${size([0, 0, 0.5, 0])[0] - 250}" height="${size([0, 0, 0, 0.21])[1]}" rx="30" fill="${SKY}"/>${Array.from({ length: 7 }, (_, i) => `<line x1="30" x2="${size([0, 0, 0.5, 0])[0] - 280}" y1="${150 + i * 50}" y2="${150 + i * 50}" stroke="#90CAF9" stroke-width="3"/>`).join("")}`,
+      [{ buf: card("w-family-10"), x: size([0, 0, 0.5, 0])[0] - 300, y: 20, w: 300, h: size([0, 0, 0, 0.21])[1] - 20 }],
+    ),
+    pronTable: await art.compose(
+      "pron-table",
+      ...size([0.55, 0.795, 0.32, 0.16]),
+      (() => {
+        const [w, h] = size([0, 0, 0.32, 0.16]);
+        const rh = h / 7;
+        return `<rect x="3" y="3" width="${w - 6}" height="${h - 6}" rx="16" fill="#fff" stroke="${PEACH_LINE}" stroke-width="5"/><rect x="3" y="3" width="${w - 6}" height="${rh}" rx="16" fill="#FCE1D3"/>${Array.from({ length: 6 }, (_, i) => `<line x1="3" x2="${w - 3}" y1="${rh * (i + 1)}" y2="${rh * (i + 1)}" stroke="#F8CDB8" stroke-width="3"/>`).join("")}<line x1="${w * 0.44}" x2="${w * 0.44}" y1="3" y2="${h - 3}" stroke="#F8CDB8" stroke-width="3"/><line x1="${w * 0.72}" x2="${w * 0.72}" y1="3" y2="${h - 3}" stroke="#F8CDB8" stroke-width="3"/>`;
+      })(),
+    ),
+    poster: await art.compose(
+      "poster-2",
+      ...size([0, 0.58, 0.5, 0.42]),
+      `<rect width="${size([0, 0, 0.5, 0])[0]}" height="${size([0, 0, 0, 0.42])[1]}" fill="#FFF3C4"/>`,
+      [{ buf: card("1b-party"), x: 0, y: 0, w: size([0, 0, 0.5, 0])[0], h: Math.round(size([0, 0, 0, 0.42])[1] * 0.5), fit: "cover" }],
+    ),
+    hobbies: await art.compose(
+      "hobbies-3",
+      hw,
+      hh,
+      `<rect width="${hw}" height="${hh}" rx="24" fill="#FFD9B3"/>`,
+      Array.from({ length: 8 }, (_, i) => ({ buf: card(`1c-cards-${i + 1}`), x: (60 + (i % 4) * 350) * hk, y: (380 + Math.floor(i / 4) * 350) * hk, w: 300 * hk, h: 300 * hk })),
+    ).then(async (base) =>
+      art.compose(
+        "hobbies-3b",
+        hw,
+        hh,
+        `<rect width="${hw}" height="${hh}" rx="24" fill="#FFD9B3"/>${Array.from({ length: 8 }, (_, i) => `<rect x="${(50 + (i % 4) * 350) * hk}" y="${(370 + Math.floor(i / 4) * 350) * hk}" width="${320 * hk}" height="${320 * hk}" rx="${20 * hk}" fill="${["#FFCDD2", "#C5CAE9", "#FFF9C4", "#C8E6C9", "#B3E5FC", "#F8BBD0", "#FFE0B2", "#DCEDC8"][i]}"/>`).join("")}`,
+        [{ buf: base, x: 0, y: 0, w: hw, h: hh, knock: true }],
+      ),
+    ),
+    listenBlock: await art.compose(
+      "listen-block",
+      lbw,
+      lbh,
+      Array.from({ length: 3 }, (_, i) => `<rect x="${lbw * 0.3}" y="${(i * lbh) / 3 + 10}" width="${lbw * 0.68}" height="${lbh / 3 - 20}" rx="24" fill="#FAFAFA" stroke="#B0BEC5" stroke-width="4"/><rect x="10" y="${(i * lbh) / 3 + 14}" width="${lbw * 0.27}" height="${lbh / 3 - 28}" rx="30" fill="${["#4FC3F7", "#F06292", "#AED581"][i]}" transform="rotate(${i % 2 ? 4 : -4} ${lbw * 0.15} ${(i * lbh) / 3 + lbh / 6})"/>`).join(""),
+      ["w-family-7", "w-family-8", "w-family-10"].map((c, i) => ({ buf: card(c), x: 18, y: (i * lbh) / 3 + 22, w: lbw * 0.25, h: lbh / 3 - 44, circle: true })),
+    ),
+    noughts: await art.compose(
+      "noughts",
+      ...size([0.5, 0.71, 0.45, 0.27]),
+      (() => {
+        const [w, h] = size([0, 0, 0.45, 0.27]);
+        return `<rect width="${w}" height="${h}" rx="30" fill="#FFF0F5"/><line x1="${w / 3}" x2="${w / 3}" y1="20" y2="${h - 20}" stroke="#F48FB1" stroke-width="16" stroke-linecap="round"/><line x1="${(2 * w) / 3}" x2="${(2 * w) / 3}" y1="20" y2="${h - 20}" stroke="#F48FB1" stroke-width="16" stroke-linecap="round"/><line y1="${h / 3}" y2="${h / 3}" x1="20" x2="${w - 20}" stroke="#F48FB1" stroke-width="16" stroke-linecap="round"/><line y1="${(2 * h) / 3}" y2="${(2 * h) / 3}" x1="20" x2="${w - 20}" stroke="#F48FB1" stroke-width="16" stroke-linecap="round"/>`;
+      })(),
+    ),
+    gameLeft: await art.compose(
+      "game-left",
+      ...size([0.07, 0.225, 0.4, 0.13]),
+      `<rect width="${size([0, 0, 0.4, 0])[0]}" height="${size([0, 0, 0, 0.13])[1]}" rx="24" fill="#311B92"/>${Array.from({ length: 14 }, (_, i) => `<circle cx="${40 + i * 52}" cy="${30 + ((i * 37) % 250)}" r="${4 + (i % 3) * 2}" fill="#FFF59D"/>`).join("")}`,
+      [{ buf: card("d-games-2"), x: size([0, 0, 0.4, 0])[0] - 300, y: 10, w: 280, h: size([0, 0, 0, 0.13])[1] - 20 }],
+    ),
+    gameRight: await art.compose(
+      "game-right",
+      ...size([0.53, 0.12, 0.44, 0.23]),
+      "",
+      [
+        { buf: card("d-games-1"), x: 0, y: 0, w: size([0, 0, 0.26, 0])[0], h: size([0, 0, 0, 0.23])[1] },
+        { buf: card("d-games-3"), x: size([0, 0, 0.25, 0])[0], y: size([0, 0, 0, 0.08])[1], w: size([0, 0, 0.19, 0])[0], h: size([0, 0, 0, 0.14])[1], knock: true },
+      ],
+    ),
+    tipPanel: await art.compose(
+      "tip-panel",
+      ...size([0.03, 0.61, 0.46, 0.27]),
+      `<rect x="6" y="6" width="${size([0, 0, 0.46, 0])[0] - 12}" height="${size([0, 0, 0, 0.27])[1] - 12}" rx="30" fill="#F1F8E9" stroke="${GREEN}" stroke-width="10"/>`,
+    ),
+    emailWin17: await emailWindow("email-17b", [0.49, 0.7, 0.45, 0.25]),
+    emailWin19: await emailWindow("email-19b", [0.48, 0.25, 0.43, 0.37]),
+    examTip18: await examTip("exam-18", [0.42, 0.22, 0.51, 0.12]),
+    examTip19: await examTip("exam-19", [0.49, 0.105, 0.42, 0.12]),
+    talkBlock: await art.compose(
+      "talk-block",
+      tbw,
+      tbh,
+      `<rect width="${tbw}" height="${tbh}" rx="30" fill="#FFF8E1"/>`,
+      [
+        ["w-family-9", "w-family-8"],
+        ["w-family-7", "w-family-10"],
+        ["w-family-6", "w-family-4"],
+      ].flatMap(([a, b], i) => [
+        { buf: card(a), x: 10, y: (i * tbh) / 3 + 20, w: tbw * 0.26, h: tbw * 0.26, circle: true, ring: "#FFB74D" },
+        { buf: card(b), x: 30, y: (i * tbh) / 3 + 20 + tbw * 0.24, w: tbw * 0.2, h: tbw * 0.2, circle: true, ring: "#4DB6AC" },
+      ]),
+    ),
+    inventions: await art.compose(
+      "inventions",
+      iw,
+      ih,
+      Array.from({ length: 3 }, (_, i) => `<ellipse cx="${i % 2 ? iw * 0.78 : iw * 0.2}" cy="${(i * ih) / 3 + ih / 6}" rx="${iw * 0.19}" ry="${ih / 6 - 12}" fill="#fff" stroke="${["#FFB74D", "#4FC3F7", "#AED581"][i]}" stroke-width="10"/>`).join(""),
+      [0, 1, 2].map((i) => ({ buf: card(`f-fun-${i + 1}`), x: (i % 2 ? iw * 0.78 : iw * 0.2) - iw * 0.14, y: (i * ih) / 3 + 30, w: iw * 0.28, h: ih / 3 - 60 })),
+    ),
+    joke: await art.compose(
+      "joke",
+      ...size([0.11, 0.63, 0.39, 0.25]),
+      `<rect width="${size([0, 0, 0.39, 0])[0]}" height="${size([0, 0, 0, 0.25])[1]}" rx="30" fill="#fff"/>`,
+      [{ buf: emo("🎹"), x: 20, y: 40, w: size([0, 0, 0.13, 0])[0], h: size([0, 0, 0.13, 0])[0] }],
+    ),
+    funBadge: await art.compose(
+      "fun-badge",
+      ...size([0.73, 0.12, 0.25, 0.11]),
+      `<g transform="rotate(4 230 130)"><rect x="20" y="40" width="${size([0, 0, 0.25, 0])[0] - 40}" height="${size([0, 0, 0, 0.11])[1] - 80}" rx="40" fill="#7CB342"/><text x="${size([0, 0, 0.25, 0])[0] / 2}" y="${size([0, 0, 0, 0.11])[1] / 2 + 30}" font-family="Arial Black, Arial" font-weight="bold" font-size="90" fill="#fff" text-anchor="middle">Fun Time</text></g>`,
+    ),
+    nowICanBox: await art.compose(
+      "now-i-can-box",
+      ...size([0.07, 0.8, 0.4, 0.12]),
+      `<rect x="6" y="40" width="${size([0, 0, 0.4, 0])[0] - 12}" height="${size([0, 0, 0, 0.12])[1] - 46}" rx="20" fill="#fff" stroke="#E2001A" stroke-width="6"/><path d="M10 10 L360 0 L370 90 L20 100 Z" fill="#E2001A"/><text x="190" y="70" font-family="Arial Black, Arial" font-weight="bold" font-size="56" fill="#fff" text-anchor="middle">NOW I CAN</text>`,
+    ),
   };
 }
 let A: Assets;
@@ -148,6 +335,32 @@ function BookPage({ n, label = "Module 1", refs, children, bg, strip = true }: {
 const Abs = ({ l, tp, w, h, children, z }: { l: number; tp: number; w?: number; h?: number; children: React.ReactNode; z?: number }) => (
   <View style={{ position: "absolute", left: l, top: tp, ...(w !== undefined ? { width: w } : {}), ...(h !== undefined ? { height: h } : {}), ...(z ? { zIndex: z } : {}) }}>{children}</View>
 );
+
+// A picture area where the source page has one: [x, y, w, h] as fractions
+// of the page (measured from the source, see docs/handmade-design-decisions.md),
+// turned into content-box coordinates.
+type FBox = [number, number, number, number];
+const SB = ([x, y, w, h]: FBox) => ({ l: x * W - ML, tp: y * H - TOP, w: w * W, h: h * H });
+// Artwork filling a source picture area, with text printed over it.
+function Area({ box, src, children, pad = 8, fit = "cover", r = 0, pos }: { box: FBox; src: Src; children?: React.ReactNode; pad?: number | [number, number, number, number]; fit?: "cover" | "contain"; r?: number; pos?: string }) {
+  const b = SB(box);
+  const [pt, pr, pb, pl] = typeof pad === "number" ? [pad, pad, pad, pad] : pad;
+  return (
+    <Abs l={b.l} tp={b.tp} w={b.w} h={b.h}>
+      <Pic src={src} w={b.w} h={b.h} r={r} fit={fit} pos={pos} />
+      {children ? <View style={{ position: "absolute", top: pt, right: pr, bottom: pb, left: pl }}>{children}</View> : null}
+    </Abs>
+  );
+}
+// Overlay text box at a page fraction (no picture).
+function At({ box, children }: { box: FBox; children: React.ReactNode }) {
+  const b = SB(box);
+  return (
+    <Abs l={b.l} tp={b.tp} w={b.w}>
+      {children}
+    </Abs>
+  );
+}
 
 function Splash({ code, size = 58 }: { code: string; size?: number }) {
   const pts = Array.from({ length: 24 }, (_, i) => {
@@ -204,10 +417,10 @@ function Headphones({ size = 12 }: { size?: number }) {
 // An exercise heading: the number at 14 pt (as the source prints it - the
 // layout analyzer reads a line opening with a number at >= 1.15x body as an
 // exercise), the rubric bold beside it with a hanging indent.
-function Ex({ n, children, listen, mt = 3, color = INK, tag }: { n: string; children: React.ReactNode; listen?: boolean; mt?: number; color?: string; tag?: React.ReactNode }) {
+function Ex({ n, children, listen, mt = 3, color = INK, tag, small }: { n: string; children: React.ReactNode; listen?: boolean; mt?: number; color?: string; tag?: React.ReactNode; small?: boolean }) {
   return (
     <View style={{ flexDirection: "row", marginTop: mt, marginBottom: 2.5 }} wrap={false}>
-      <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 14, color: RED, width: n.length > 1 ? 22 : 15, lineHeight: 1 }}>{n}</Text>
+      <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: small ? 9 : 14, color: RED, width: n.length > 1 ? 22 : 15, lineHeight: 1, marginTop: small ? 1.5 : 0 }}>{n}</Text>
       {listen ? (
         <View style={{ marginTop: 1.5, marginRight: 3 }}>
           <Headphones />
@@ -333,25 +546,6 @@ function Lines({ n, w = "100%", ml = 15, gap = 15 }: { n: number; w?: number | s
   );
 }
 
-function EmailBox({ head, children, ml = 15, w }: { head?: string[]; children: React.ReactNode; ml?: number; w?: number | string }) {
-  return (
-    <View style={{ marginLeft: ml, borderWidth: 1.2, borderColor: "#90A4AE", borderRadius: 5, overflow: "hidden", marginBottom: 4, ...(w ? { width: w } : {}) }}>
-      <View style={{ backgroundColor: "#CFD8DC", height: 13, flexDirection: "row", alignItems: "center", paddingHorizontal: 4, gap: 3 }}>
-        {["#EF5350", "#FFCA28", "#66BB6A"].map((c) => (
-          <View key={c} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c }} />
-        ))}
-      </View>
-      <View style={{ padding: 6, backgroundColor: "#fff" }}>
-        {head?.map((h) => (
-          <Text key={h} style={{ ...t(9.2), borderBottomWidth: 0.5, borderColor: "#CFD8DC", marginBottom: 1 }}>
-            {h}
-          </Text>
-        ))}
-        {children}
-      </View>
-    </View>
-  );
-}
 
 function Bubble({ l, tp, w = 120, children, who, tail = "bl" }: { l: number; tp: number; w?: number; children: React.ReactNode; who?: string; tail?: "bl" | "br" | "tl" | "tr" }) {
   const tailStyle = {
@@ -374,7 +568,9 @@ function Bubble({ l, tp, w = 120, children, who, tail = "bl" }: { l: number; tp:
 const Box = ({ ch = "☐", s = 11 }: { ch?: string; s?: number }) => <Text style={{ fontFamily: "Sym", fontSize: s }}>{ch}</Text>;
 
 // =============================================================================
-// WELCOME MODULE (source pp.6-11)
+// Student's Book pages. Every picture area sits where the source page has
+// one (FBox = fractions of the page, measured from i_5_team_2.pdf with
+// src/lib/source-layout.ts); the content in it is new.
 // =============================================================================
 function Puzzle({ l, tp, c, s = 40, rot = 0 }: { l: number; tp: number; c: string; s?: number; rot?: number }) {
   return (
@@ -385,18 +581,20 @@ function Puzzle({ l, tp, c, s = 40, rot = 0 }: { l: number; tp: number; c: strin
     </View>
   );
 }
+const g2 = (s: string) => <Text style={{ color: BLUE, fontWeight: 700 }}>{s}</Text>;
 
+// --- Welcome Module (source pp.6-11) -------------------------------------------
 function P4() {
   return (
-    <BookPage n={4} label="Welcome Module" bg="#DCEB9A">
-      <Puzzle l={W - 92} tp={-6} c="#F06292" s={44} rot={12} />
-      <Puzzle l={W - 52} tp={20} c="#FFD54F" s={34} rot={-20} />
-      <Abs l={CW - 232} tp={6} w={232} h={214}>
-        <Pic src={A.friends} w={232} h={214} r={14} border="#fff" />
+    <BookPage n={4} label="Welcome Module" bg="#fff">
+      <Abs l={-ML} tp={-TOP} w={W} h={H}>
+        <Pic src={A.limeGround} w={W} h={H} r={0} />
       </Abs>
+      <Puzzle l={W - 100} tp={-14} c="#F06292" s={44} rot={12} />
+      <Puzzle l={W - 60} tp={14} c="#FFD54F" s={34} rot={-20} />
       <View style={{ width: 300 }}>
         <UnitTitle title="Let's Begin!" />
-        <Ex n="1" listen>
+        <Ex n="1" listen mt={6}>
           a) Read and complete the dialogue with the phrases below. Listen and check.
         </Ex>
         <View style={{ flexDirection: "row", flexWrap: "wrap", marginLeft: 15, marginVertical: 3, gap: 4 }}>
@@ -406,7 +604,7 @@ function P4() {
             </Text>
           ))}
         </View>
-        <View style={{ marginLeft: 15, backgroundColor: "#ffffffcc", borderRadius: 8, padding: 7 }}>
+        <View style={{ marginLeft: 15, backgroundColor: "#ffffffd9", borderRadius: 8, padding: 7 }}>
           <Dialogue
             lines={[
               ["Max", <Text key="1">Hi, Nina! <B>1)</B> {GAPLINE}?</Text>],
@@ -427,14 +625,15 @@ function P4() {
           b) <Text style={{ color: "#FFEB3B" }}>Over to you:</Text> In groups of three, act out a dialogue like the one in Ex. 1a.
         </Text>
       </View>
-      <Ex n="2" mt={9}>
+      <Ex n="2" mt={8}>
         a) Look at Leo&apos;s family tree. Complete the sentences with words from the box.
       </Ex>
       <WordBox words={["aunt", "uncle", "cousin", "daughter", "wife", "granddad", "nephew", "niece", "son"]} color={GREEN} />
       <Items
         cols={2}
+        rowGap={1}
         items={[
-          <Text key="1" style={t()}>Leo is Ruth&apos;s <Text style={{ color: BLUE, fontWeight: 700 }}>grandson</Text>.</Text>,
+          <Text key="1" style={t()}>Leo is Ruth&apos;s {g2("grandson")}.</Text>,
           `Paul is Leo's ${GAPLINE}.`,
           `Anna is Leo's ${GAPLINE}.`,
           `Jack is Leo's ${GAPLINE}.`,
@@ -446,44 +645,38 @@ function P4() {
           `David is Frank's ${GAPLINE}.`,
         ]}
       />
-      <Abs l={0} tp={500} w={150}>
-        <Sub ml={15}>b) Who is Jack&apos;s mum? Who is Ella&apos;s uncle? Who is Mia&apos;s aunt? Ask and answer in class.</Sub>
-        <Text style={{ ...it(9.4), marginLeft: 15, marginTop: 4 }}>A: Who is Jack&apos;s mum?{"\n"}B: Anna. Who is ...?</Text>
-      </Abs>
-      <Abs l={170} tp={478} w={420} h={266}>
-        <Pic src={A.familyTree} w={420} h={266} fit="contain" r={0} />
-      </Abs>
+      <At box={[0.07, 0.66, 0.17, 0.25]}>
+        <Text style={t(10, 700)}>b) Who is Jack&apos;s mum? Who is Ella&apos;s uncle? Who is Mia&apos;s aunt? Ask and answer in class.</Text>
+        <Text style={{ ...it(9.4), marginTop: 4 }}>A: Who is Jack&apos;s mum?{"\n"}B: Anna. Who is ...?</Text>
+      </At>
+      <Area box={[0.24, 0.62, 0.61, 0.32]} src={A.familyTree} fit="contain" />
     </BookPage>
   );
 }
 
 function P5() {
-  const nums = [
-    { n: "37", c: "#43A047", w: "thirty-seven" },
-    { n: "14", c: "#1E88E5" },
-    { n: "58", c: "#E53935" },
-    { n: "90", c: "#8E24AA" },
-    { n: "26", c: "#FB8C00" },
-    { n: "71", c: "#00ACC1" },
+  const nums: [string, string, string?][] = [
+    ["37", "#43A047", "thirty-seven"],
+    ["14", "#1E88E5"],
+    ["58", "#E53935"],
+    ["90", "#8E24AA"],
+    ["26", "#FB8C00"],
+    ["71", "#00ACC1"],
   ];
   return (
     <BookPage n={5} label="Welcome Module">
-      <Ex n="3">What&apos;s the subject? Look, choose and write.</Ex>
-      <View style={{ marginTop: 4, marginBottom: 4 }}>
-        <Pic src={A.chalkboard} w={CW} h={CW / 2.344} fit="contain" r={0} />
-      </View>
-      <WordBox words={["Art", "Maths", "Music", "Science", "History", "PE", "IT"]} color={RED} />
-      <View style={{ flexDirection: "row", gap: GAP, marginTop: 4 }}>
+      <At box={[0.07, 0.066, 0.9, 0.03]}>
+        <Ex n="3" mt={0}>What&apos;s the subject? Look, choose and write.</Ex>
+      </At>
+      <Area box={[0.07, 0.09, 0.92, 0.32]} src={A.chalkboard} fit="contain" />
+      <View style={{ flexDirection: "row", gap: GAP, marginTop: SB([0, 0.42, 0, 0]).tp }}>
         <View style={{ width: COL }}>
+          <WordBox words={["Art", "Maths", "Music", "Science", "History", "PE", "IT"]} color={RED} />
           <Ex n="4">Write the numbers.</Ex>
-          {nums.map((x, i) => (
-            <View key={x.n} style={{ flexDirection: "row", alignItems: "flex-end", marginLeft: 15, marginBottom: 4 }}>
-              <View style={{ width: 42, height: 28, borderRadius: 6, backgroundColor: x.c, transform: `rotate(${i % 2 ? 4 : -5}deg)` }}>
-                <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 17, color: "#fff", width: 42, textAlign: "center", marginTop: 2, lineHeight: 1.2 }}>{x.n}</Text>
-              </View>
-              <View style={{ flex: 1, marginLeft: 10, borderBottomWidth: 0.8, borderColor: "#9E9E9E", height: 18 }}>
-                {x.w ? <Text style={{ ...t(10, 700, BLUE) }}>{x.w}</Text> : null}
-              </View>
+          {nums.map(([n, , w], i) => (
+            <View key={n} style={{ flexDirection: "row", alignItems: "flex-end", marginLeft: 15, marginBottom: 3 }}>
+              <Pic src={A.badges[i]} w={44} h={30} fit="contain" r={0} />
+              <View style={{ flex: 1, marginLeft: 8, borderBottomWidth: 0.8, borderColor: "#9E9E9E", height: 18 }}>{w ? <Text style={t(10, 700, BLUE)}>{w}</Text> : null}</View>
             </View>
           ))}
           <Ex n="5" mt={6}>Read and match.</Ex>
@@ -514,17 +707,17 @@ function P5() {
               ["twelfth", "", "#D81B60"],
               ["hundredth", "", "#5E35B1"],
             ].map(([w, a, c]) => (
-              <View key={w} style={{ width: "50%", marginBottom: 6, paddingRight: 8 }}>
+              <View key={w} style={{ width: "50%", marginBottom: 5, paddingRight: 8 }}>
                 <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 13, color: c }}>{w}:</Text>
-                <View style={{ borderBottomWidth: 0.8, borderColor: "#9E9E9E", height: 14 }}>{a ? <Text style={t(10, 700, BLUE)}>{a}</Text> : null}</View>
+                <View style={{ borderBottomWidth: 0.8, borderColor: "#9E9E9E", height: 13 }}>{a ? <Text style={t(10, 700, BLUE)}>{a}</Text> : null}</View>
               </View>
             ))}
           </View>
           <Ex n="7">Complete the short dialogues. Then take roles and act out.</Ex>
           <Items
-            rowGap={4}
+            rowGap={3}
             items={[
-              <Text key="1" style={t()}>A: Is your mum&apos;s birthday on the <Text style={{ color: BLUE, fontWeight: 700 }}>twentieth</Text> (20) of May?{"\n"}B: No, it&apos;s on the {GAPLINE} (21).</Text>,
+              <Text key="1" style={t()}>A: Is your mum&apos;s birthday on the {g2("twentieth")} (20) of May?{"\n"}B: No, it&apos;s on the {GAPLINE} (21).</Text>,
               <Text key="2" style={t()}>A: Which floor is the dentist on?{"\n"}B: The {GAPLINE} (4) floor. Take the lift.</Text>,
               <Text key="3" style={t()}>A: Who came {GAPLINE} (1) in the race?{"\n"}B: Kenji! And Sam was {GAPLINE} (2).</Text>,
               <Text key="4" style={t()}>A: Is Halloween on the {GAPLINE} (31) of October?{"\n"}B: Yes, it is. Let&apos;s have a party!</Text>,
@@ -545,35 +738,36 @@ function P6() {
     ["Japan", "#8E24AA"],
     ["Spain", "#00897B"],
   ];
-  const ch = W / 1.5417;
+  const box: FBox = [0.03, 0.02, 0.95, 0.61];
+  const b = SB(box);
   const tags = ["The Taj Mahal", "The Sydney Opera House", "The Great Wall", "Christ the Redeemer", "Mount Fuji", "The Sagrada Família"];
   return (
     <BookPage n={6} label="Welcome Module" strip={false}>
-      <UnitTitle title="Let's Begin!" />
-      <Ex n="1">Are you good at Geography? Look and say the country.</Ex>
-      <View style={{ flexDirection: "row", marginLeft: 15, gap: 12 }}>
-        {countries.map(([c, col]) => (
-          <Text key={c} style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: col }}>
-            {c}
-          </Text>
-        ))}
-      </View>
-      <Text style={{ ...it(), marginLeft: 15 }}>The Taj Mahal is in India.</Text>
-      <Abs l={-ML} tp={86} w={W} h={ch}>
-        <Pic src={A.landmarks} w={W} h={ch} fit="contain" r={0} />
-        {art.LANDMARK_TILES.map((tile, i) => (
-          <Text
-            key={i}
-            style={{ position: "absolute", left: ((tile.x + 20) / 1480) * W, top: ((tile.y + tile.h - 18) / 960) * ch, ...t(8.6, 700, "#fff"), backgroundColor: ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00897B"][i], paddingHorizontal: 5, borderRadius: 4 }}
-          >
-            {tags[i]}
-          </Text>
-        ))}
-      </Abs>
-      <View style={{ flexDirection: "row", gap: GAP, marginTop: ch + 6 - 56 }}>
-        <View style={{ width: COL - 30 }}>
+      <Area box={box} src={A.landmarks} />
+      {art.LANDMARK_TILES2.map((tile, i) => (
+        <Text
+          key={i}
+          style={{ position: "absolute", left: b.l + ((tile.x + 16) / 1480) * b.w, top: b.tp + ((tile.y + tile.h - 30) / 1210) * b.h, ...t(8.6, 700, "#fff"), backgroundColor: countries[i][1], paddingHorizontal: 5, borderRadius: 4 }}
+        >
+          {tags[i]}
+        </Text>
+      ))}
+      <At box={[0.07, 0.035, 0.42, 0.2]}>
+        <UnitTitle title="Let's Begin!" />
+        <Ex n="1" mt={2}>Are you good at Geography? Look and say the country.</Ex>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", marginLeft: 15, columnGap: 10 }}>
+          {countries.map(([c, col]) => (
+            <Text key={c} style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: col }}>
+              {c}
+            </Text>
+          ))}
+        </View>
+        <Text style={{ ...it(), marginLeft: 15 }}>The Taj Mahal is in India.</Text>
+      </At>
+      <View style={{ flexDirection: "row", gap: GAP, marginTop: SB([0, 0.64, 0, 0]).tp }}>
+        <View style={{ width: COL }}>
           <Ex n="2">Complete the table.</Ex>
-          <View style={{ marginLeft: 15, borderWidth: 1.2, borderColor: PEACH_LINE, borderRadius: 8, overflow: "hidden" }}>
+          <View style={{ marginLeft: 15, borderWidth: 1.2, borderColor: PEACH_LINE, borderRadius: 8, overflow: "hidden", backgroundColor: PEACH }}>
             {[
               ["Subject pronouns", "Object pronouns", "Possessive adjectives", "Possessive pronouns"],
               ["I", "me", "my", "mine"],
@@ -584,9 +778,9 @@ function P6() {
               ["we", "", "our", ""],
               ["they", "", "their", ""],
             ].map((row, r) => (
-              <View key={r} style={{ flexDirection: "row", backgroundColor: r === 0 ? PEACH : "#fff", borderTopWidth: r ? 0.6 : 0, borderColor: "#F8CDB8" }}>
+              <View key={r} style={{ flexDirection: "row", backgroundColor: r === 0 ? "#FCE1D3" : "#fff", borderTopWidth: r ? 0.6 : 0, borderColor: "#F8CDB8" }}>
                 {row.map((c, k) => (
-                  <Text key={k} style={{ ...t(r === 0 ? 8.4 : 9.4, r === 0 ? 700 : 400, r === 1 && k > 0 ? BLUE : INK), width: "25%", textAlign: "center", paddingVertical: 2, borderLeftWidth: k ? 0.6 : 0, borderColor: "#F8CDB8" }}>
+                  <Text key={k} style={{ ...t(r === 0 ? 8.2 : 9.2, r === 0 ? 700 : 400, r === 1 && k > 0 ? BLUE : INK), width: "25%", textAlign: "center", paddingVertical: 1.5, borderLeftWidth: k ? 0.6 : 0, borderColor: "#F8CDB8" }}>
                     {c || "______"}
                   </Text>
                 ))}
@@ -594,20 +788,20 @@ function P6() {
             ))}
           </View>
         </View>
-        <View style={{ width: COL + 30 }}>
+        <View style={{ width: COL }}>
           <Ex n="3">Complete the short dialogues. Then take roles and act out.</Ex>
           <Items
-            size={9.4}
-            rowGap={2}
+            size={9.2}
+            rowGap={1}
             items={[
-              <Text key="1" style={t(9.4)}>A: Are these <Text style={{ color: BLUE, fontWeight: 700 }}>your</Text> (you) headphones? B: Yes, they&apos;re <Text style={{ color: BLUE, fontWeight: 700 }}>mine</Text> (I). Thanks!</Text>,
-              `A: Is this Maria's scarf? B: No, it isn't ________ (she). ________ (she) scarf is red.`,
-              `A: Whose keys are these? B: They're ________ (we). Thank you!`,
-              `A: Is that Sam's bike? B: Yes, it's ________ (he). He loves ________ (it) colour.`,
-              `A: Can you help ________ (I) with my homework? B: Sure. Give ________ (it) to me.`,
-              `A: Are the twins coming? B: Yes. I'm meeting ________ (they) at the station.`,
-              `A: This umbrella isn't mine. Is it ________ (you)? B: Yes! I need it today.`,
-              `A: My cousins are here. Do you want to meet ________ (they)? B: Sure! What are ________ (they) names?`,
+              <Text key="1" style={t(9.2)}>A: Are these {g2("your")} (you) headphones? B: Yes, they&apos;re {g2("mine")} (I). Thanks!</Text>,
+              `A: Is this Maria's scarf? B: No, it isn't ______ (she). ______ (she) scarf is red.`,
+              `A: Whose keys are these? B: They're ______ (we). Thank you!`,
+              `A: Is that Sam's bike? B: Yes, it's ______ (he). He loves ______ (it) colour.`,
+              `A: Can you help ______ (I) with my homework? B: Sure.`,
+              `A: Are the twins coming? B: Yes. I'm meeting ______ (they) at six.`,
+              `A: Is this umbrella ______ (you)? B: Yes! I need it today.`,
+              `A: My cousins are here. Do you want to meet ______ (they)?`,
             ]}
           />
         </View>
@@ -619,44 +813,40 @@ function P6() {
 function P7() {
   return (
     <BookPage n={7} label="Welcome Module">
-      <Ex n="4">What is there in Lily&apos;s new room? Talk with your friend.</Ex>
-      <View style={{ marginTop: 4, marginBottom: 6 }}>
-        <Pic src={A.scene1a} w={CW} h={268} r={10} pos="50% 60%" />
+      <At box={[0.07, 0.066, 0.9, 0.03]}>
+        <Ex n="4" mt={0}>What is there in Lily&apos;s new room? Talk with your friend.</Ex>
+      </At>
+      <Area box={[0.06, 0.09, 0.85, 0.33]} src={A.scene1a} r={10} pos="50% 60%" />
+      <View style={{ marginTop: SB([0, 0.43, 0, 0]).tp }}>
+        <Items cols={4} items={["boxes", "a rug", "a wardrobe", "curtains", "a beanbag", "a laptop", "a bookcase", "a paint pot"]} />
+        <Text style={{ ...it(), marginLeft: 15, marginBottom: 6 }}>A: There&apos;s a beanbag in Lily&apos;s room.   B: Where is it?   A: It&apos;s next to the desk.</Text>
       </View>
-      <Items cols={4} items={["boxes", "a rug", "a wardrobe", "curtains", "a beanbag", "a laptop", "a bookcase", "a paint pot"]} />
-      <View style={{ marginLeft: 15, marginBottom: 8 }}>
-        <Text style={it()}>A: There&apos;s a beanbag in Lily&apos;s room.   B: Where is it?   A: It&apos;s next to the desk.</Text>
-      </View>
-      <View style={{ flexDirection: "row", gap: GAP }}>
-        <View style={{ width: COL }}>
-          <Ex n="5" listen>
-            Listen and choose.
-          </Ex>
-          <View style={{ marginLeft: 15, marginTop: 4 }}>
-            <Pic src={A.clocks} w={COL - 15} h={(COL - 15) * (760 / 700)} fit="contain" r={0} />
-          </View>
-        </View>
-        <View style={{ width: COL }}>
-          <Ex n="6">Make the words plural.</Ex>
-          <Items
-            rowGap={5}
-            items={[
-              <Text key="1" style={t()}>a door  –  <Text style={{ color: BLUE, fontWeight: 700 }}>doors</Text></Text>,
-              `a box  –  ${GAPLINE}`,
-              `a leaf  –  ${GAPLINE}`,
-              `a child  –  ${GAPLINE}`,
-              `a city  –  ${GAPLINE}`,
-              `a knife  –  ${GAPLINE}`,
-              `a foot  –  ${GAPLINE}`,
-              `a toy  –  ${GAPLINE}`,
-              `a sandwich  –  ${GAPLINE}`,
-              `a man  –  ${GAPLINE}`,
-              `a potato  –  ${GAPLINE}`,
-              `a fish  –  ${GAPLINE}`,
-            ]}
-          />
-        </View>
-      </View>
+      <At box={[0.07, 0.5, 0.45, 0.04]}>
+        <Ex n="5" listen mt={0}>
+          Listen and choose.
+        </Ex>
+      </At>
+      <Area box={[0.1, 0.55, 0.41, 0.39]} src={A.clocks} fit="contain" />
+      <At box={[0.55, 0.5, 0.4, 0.44]}>
+        <Ex n="6" mt={0}>Make the words plural.</Ex>
+        <Items
+          rowGap={4.5}
+          items={[
+            <Text key="1" style={t()}>a door  –  {g2("doors")}</Text>,
+            `a box  –  ${GAPLINE}`,
+            `a leaf  –  ${GAPLINE}`,
+            `a child  –  ${GAPLINE}`,
+            `a city  –  ${GAPLINE}`,
+            `a knife  –  ${GAPLINE}`,
+            `a foot  –  ${GAPLINE}`,
+            `a toy  –  ${GAPLINE}`,
+            `a sandwich  –  ${GAPLINE}`,
+            `a man  –  ${GAPLINE}`,
+            `a potato  –  ${GAPLINE}`,
+            `a fish  –  ${GAPLINE}`,
+          ]}
+        />
+      </At>
     </BookPage>
   );
 }
@@ -679,7 +869,7 @@ function P8() {
       <View style={{ flexDirection: "row", gap: GAP + 14 }}>
         <View style={{ width: COL }}>
           <UnitTitle title="Let's Begin!" />
-          <Ex n="1">What is Tiger the cat doing? Look and say.</Ex>
+          <Ex n="1" mt={6}>What is Tiger the cat doing? Look and say.</Ex>
           <View style={{ width: gw, height: gh, marginTop: 3 }}>
             <Pic src={A.moves} w={gw} h={gh} fit="contain" r={0} />
             {caps.map((c, i) => {
@@ -713,9 +903,12 @@ function P8() {
           />
         </View>
         <View style={{ width: COL - 14 }}>
-          <Ex n="3" color="#fff">
-            Put the words in the right category.
-          </Ex>
+          <View style={{ flexDirection: "row", marginTop: 18, marginBottom: 2.5 }}>
+            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", marginRight: 4 }}>
+              <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 14, color: RED, lineHeight: 1 }}>3</Text>
+            </View>
+            <Text style={{ ...t(10.5, 700, "#fff"), flex: 1, paddingTop: 2 }}>Put the words in the right category.</Text>
+          </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", marginLeft: 15, marginTop: 3, marginBottom: 8, backgroundColor: "#fff", borderRadius: 8, padding: 6 }}>
             {["tennis", "museum", "sofa", "cheese", "judo", "library", "cooker", "pasta", "swimming", "stadium", "bath", "bananas", "chess", "café", "wardrobe", "soup", "golf", "bakery", "fridge", "rice"].map((w) => (
               <Text key={w} style={{ ...t(9.4), width: "33%" }}>
@@ -724,9 +917,9 @@ function P8() {
             ))}
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginLeft: 6 }}>
-            {cats.map(([c, col, e], i) => (
-              <View key={c} style={{ width: (COL - 14 - 16) / 2, backgroundColor: "#fff", borderRadius: i % 2 ? 40 : 14, borderWidth: 4, borderColor: col, padding: 8, paddingTop: 16, marginTop: 8 }}>
-                <View style={{ position: "absolute", top: -11, left: 10, flexDirection: "row", alignItems: "center", backgroundColor: col, borderRadius: 9, paddingHorizontal: 6, paddingVertical: 1 }}>
+            {cats.map(([c, col, e]) => (
+              <View key={c} style={{ width: (COL - 14 - 16) / 2, backgroundColor: "#fff", borderWidth: 4, borderColor: col, padding: 8, paddingTop: 16, marginTop: 8 }}>
+                <View style={{ position: "absolute", top: -11, left: 10, flexDirection: "row", alignItems: "center", backgroundColor: col, paddingHorizontal: 6, paddingVertical: 1 }}>
                   <Ico e={e} s={12} />
                   <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 12, color: "#fff", marginLeft: 3 }}>{c}</Text>
                 </View>
@@ -743,93 +936,88 @@ function P8() {
 }
 
 function P9() {
-  const mw = 470;
-  const cell = mw / (1272 / 300);
-  const mh = mw * (764 / 1272);
+  const box: FBox = [0.02, 0.53, 0.93, 0.43];
+  const b = SB(box);
   return (
     <BookPage n={9} label="Welcome Module">
-      <View style={{ flexDirection: "row", gap: GAP }}>
-        <View style={{ width: COL }}>
-          <Ex n="4" listen>
-            Read and choose. Then listen and check your answers.
-          </Ex>
-          <Items
-            rowGap={3}
-            items={[
-              ["Hi, I'm Max Green.", "Hello, Max.", "Hi, Green."],
-              ["How's it going?", "Not bad, thanks.", "I'm twelve."],
-              ["Nice to meet you.", "Nice to meet you, too.", "By bus."],
-              ["See you on Monday!", "It's Monday.", "Bye! See you!"],
-              ["Sorry I'm late!", "That's OK.", "Hello!"],
-              ["Have a nice weekend!", "It's Sunday.", "Thanks, you too!"],
-              ["Thank you for your help.", "You're welcome.", "I'm Sam."],
-              ["Where's the bus station?", "It's a big bus.", "It's on Hill Road."],
-            ].map(([a, x, y]) => (
-              <View key={a}>
-                <Text style={t()}>
-                  <B>A:</B> {a}
-                </Text>
-                <Text style={t()}>
-                  <B>B:</B> <B c={RED}>a)</B> {x}   <B c={RED}>b)</B> {y}
-                </Text>
-              </View>
-            ))}
-          />
-        </View>
-        <View style={{ width: COL }}>
-          <View style={{ backgroundColor: "#EDE7F6", borderRadius: 10, borderWidth: 2, borderColor: PURPLE, padding: 8, paddingTop: 4 }}>
-            <Text style={{ position: "absolute", right: 8, top: -6, fontFamily: "Baloo", fontWeight: 700, fontSize: 64, color: "#D1C4E9" }}>ID</Text>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 14, color: RED, width: 15 }}>5</Text>
-              <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#fff", backgroundColor: PURPLE, borderRadius: 5, paddingHorizontal: 6 }}>My ID File</Text>
+      <At box={[0.07, 0.066, 0.37, 0.43]}>
+        <Ex n="4" listen mt={0}>
+          Read and choose. Then listen and check your answers.
+        </Ex>
+        <Items
+          rowGap={2.5}
+          items={[
+            ["Hi, I'm Max Green.", "Hello, Max.", "Hi, Green."],
+            ["How's it going?", "Not bad, thanks.", "I'm twelve."],
+            ["Nice to meet you.", "Nice to meet you, too.", "By bus."],
+            ["See you on Monday!", "It's Monday.", "Bye! See you!"],
+            ["Sorry I'm late!", "That's OK.", "Hello!"],
+            ["Have a nice weekend!", "It's Sunday.", "Thanks, you too!"],
+            ["Thank you for your help.", "You're welcome.", "I'm Sam."],
+            ["Where's the bus station?", "It's a big bus.", "It's on Hill Road."],
+          ].map(([a, x, y]) => (
+            <View key={a}>
+              <Text style={t()}>
+                <B>A:</B> {a}
+              </Text>
+              <Text style={t()}>
+                <B>B:</B> <B c={RED}>a)</B> {x}   <B c={RED}>b)</B> {y}
+              </Text>
             </View>
-            <Text style={{ ...t(10.5, 700), marginBottom: 3, marginLeft: 15 }}>Answer the questions about you.</Text>
-            <Items
-              rowGap={0}
-              items={[
-                "What's your full name?",
-                "When's your birthday?",
-                "Who do you live with?",
-                "What's your lucky number?",
-                "When do your holidays start?",
-                "What do you do after school?",
-                "What's your favourite band?",
-                "What's your favourite subject?",
-                "Which sport do you like?",
-                "What's your favourite meal?",
-              ].map((q) => (
-                <View key={q}>
-                  <Text style={t()}>{q}</Text>
-                  <View style={{ height: 6, borderBottomWidth: 0.8, borderColor: "#9575CD", marginBottom: 2 }} />
-                </View>
-              ))}
-            />
-          </View>
+          ))}
+        />
+      </At>
+      <Area box={[0.45, 0.04, 0.53, 0.45]} src={A.idCard} pad={[16, 18, 10, 22]}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 14, color: RED, width: 15 }}>5</Text>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#fff", backgroundColor: PURPLE, borderRadius: 5, paddingHorizontal: 6 }}>My ID File</Text>
         </View>
-      </View>
-      <Ex n="6" mt={8}>
-        Look at the pictures from the modules in this book. What do you think each module is about? Then go through the contents and find the modules.
-      </Ex>
-      <View style={{ width: mw, height: mh, alignSelf: "center", marginTop: 4 }}>
-        <Pic src={A.modules} w={mw} h={mh} fit="contain" r={0} />
-        {Array.from({ length: 7 }, (_, i) => {
-          const gx = mw / (1272 / 24);
-          const x = (i % 4) * (cell + gx);
-          const y = Math.floor(i / 4) * (cell + (70 / 300) * cell + gx) + cell + 2;
-          return (
-            <Text key={i} style={{ position: "absolute", left: x, top: y, width: cell, textAlign: "center", ...t(9.6, 700) }}>
-              {i === 0 ? "Module 1" : "Module ___"}
-            </Text>
-          );
-        })}
-      </View>
+        <Text style={{ ...t(10.5, 700), marginBottom: 3, marginLeft: 15 }}>Answer the questions about you.</Text>
+        <Items
+          rowGap={0}
+          items={[
+            "What's your full name?",
+            "When's your birthday?",
+            "Who do you live with?",
+            "What's your lucky number?",
+            "When do your holidays start?",
+            "What do you do after school?",
+            "What's your favourite band?",
+            "What's your favourite subject?",
+            "Which sport do you like?",
+            "What's your favourite meal?",
+          ].map((q) => (
+            <View key={q}>
+              <Text style={t()}>{q}</Text>
+              <View style={{ height: 5, borderBottomWidth: 0.8, borderColor: "#9575CD", marginBottom: 2 }} />
+            </View>
+          ))}
+        />
+      </Area>
+      <At box={[0.07, 0.49, 0.88, 0.04]}>
+        <Ex n="6" mt={0}>
+          Look at the pictures from the modules in this book. What do you think each module is about? Then go through the contents and find the modules.
+        </Ex>
+      </At>
+      <Area box={box} src={A.modules} fit="contain" />
+      {Array.from({ length: 7 }, (_, i) => {
+        const imgW = Math.min(b.w, b.h * (1272 / 764));
+        const k = imgW / 1272;
+        const x0 = b.l + (b.w - imgW) / 2;
+        const c = 300 * k;
+        const x = x0 + (i % 4) * (300 + 24) * k;
+        const y = b.tp + Math.floor(i / 4) * (300 + 70 + 24) * k + c + 2;
+        return (
+          <Text key={i} style={{ position: "absolute", left: x, top: y, width: c, textAlign: "center", ...t(9.6, 700) }}>
+            {i === 0 ? "Module 1" : "Module ___"}
+          </Text>
+        );
+      })}
     </BookPage>
   );
 }
 
-// =============================================================================
-// MODULE 1 - 1a Moving day (source pp.12-13)
-// =============================================================================
+// --- 1a Moving day (source pp.12-13) --------------------------------------------
 function NumCaption({ n, children }: { n: string; children: React.ReactNode }) {
   return (
     <View style={{ flexDirection: "row", marginBottom: 2 }}>
@@ -840,16 +1028,16 @@ function NumCaption({ n, children }: { n: string; children: React.ReactNode }) {
     </View>
   );
 }
+const DlgBox = ({ children, w }: { children: React.ReactNode; w: number }) => (
+  <View style={{ width: w, backgroundColor: "#ffffffc8", borderRadius: 10, borderWidth: 1.5, borderColor: RED, padding: 7 }}>{children}</View>
+);
 
 function P10() {
-  const ih = W / 1.5;
   return (
-    <BookPage n={10} strip={false}>
-      <Abs l={-ML} tp={150 - TOP} w={W} h={ih}>
-        <Pic src={A.scene1a} w={W} h={ih} r={0} />
-      </Abs>
+    <BookPage n={10} strip={false} bg="#DDEFF9">
+      <Area box={[0.03, 0.08, 0.95, 0.63]} src={A.comic1a} />
       <LessonHeader code="1a" title="Moving day" />
-      <Abs l={W - MR - 205 - ML} tp={4} w={205}>
+      <Abs l={CW - 205} tp={-6} w={205}>
         <CheckWords
           w={205}
           words={["decorate", "wardrobe", "bookcase", "curtains", "beanbag", "carry", "unpack", "take a break", "Wi-Fi", "go with"]}
@@ -857,22 +1045,24 @@ function P10() {
           extra={["It looks amazing!", "Who's hungry?"]}
         />
       </Abs>
-      <View style={{ width: 300, backgroundColor: "#fff", borderRadius: 10, borderWidth: 1.5, borderColor: RED, padding: 7, marginTop: 6 }}>
-        <NumCaption n="1">Zoe, Sam and Kenji are helping Lily with her new room.</NumCaption>
-        <Dialogue
-          size={9.6}
-          lines={[
-            ["Zoe", "Your room looks amazing, Lily!"],
-            ["Lily", "Thanks! Dad's building a new bookcase for me. The old one is too small."],
-            ["Sam", "Where do you want this box?"],
-            ["Lily", "Next to the desk, please. It's full of comics!"],
-            ["Zoe", "I love the colour of your wardrobe."],
-            ["Lily", "I'm painting it light blue. It goes with the curtains."],
-          ]}
-        />
-      </View>
-      <View style={{ flexDirection: "row", gap: GAP, marginTop: ih - 150 + 20 }}>
-        <View style={{ width: COL, backgroundColor: "#fff", borderRadius: 10, borderWidth: 1.5, borderColor: RED, padding: 7 }}>
+      <At box={[0.06, 0.13, 0.43, 0.28]}>
+        <DlgBox w={0.43 * W}>
+          <NumCaption n="1">Zoe, Sam and Kenji are helping Lily with her new room.</NumCaption>
+          <Dialogue
+            size={9.6}
+            lines={[
+              ["Zoe", "Your room looks amazing, Lily!"],
+              ["Lily", "Thanks! Dad's building a new bookcase for me. The old one is too small."],
+              ["Sam", "Where do you want this box?"],
+              ["Lily", "Next to the desk, please. It's full of comics!"],
+              ["Zoe", "I love the colour of your wardrobe."],
+              ["Lily", "I'm painting it light blue. It goes with the curtains."],
+            ]}
+          />
+        </DlgBox>
+      </At>
+      <At box={[0.06, 0.73, 0.42, 0.2]}>
+        <DlgBox w={0.4 * W}>
           <NumCaption n="2">Kenji is sitting at the desk.</NumCaption>
           <Dialogue
             size={9.6}
@@ -884,8 +1074,10 @@ function P10() {
               ["Kenji", "Just a quick one ... I'm taking a break!"],
             ]}
           />
-        </View>
-        <View style={{ width: COL, backgroundColor: "#fff", borderRadius: 10, borderWidth: 1.5, borderColor: RED, padding: 7 }}>
+        </DlgBox>
+      </At>
+      <At box={[0.53, 0.73, 0.42, 0.2]}>
+        <DlgBox w={0.42 * W}>
           <NumCaption n="3">Lily&apos;s mum comes in.</NumCaption>
           <Dialogue
             size={9.6}
@@ -897,194 +1089,186 @@ function P10() {
               ["Kenji", "Great. I'm staying here then - next to the Wi-Fi!"],
             ]}
           />
-        </View>
-      </View>
+        </DlgBox>
+      </At>
     </BookPage>
   );
 }
 
 function P11() {
-  const vw = COL - 15;
-  const vh = vw * (724 / 948);
-  const cell = vw / (948 / 300);
+  const vb = SB([0.02, 0.43, 0.47, 0.25]);
   return (
     <BookPage n={11} refs="1a">
-      <View style={{ flexDirection: "row", gap: GAP }}>
-        <View style={{ width: COL }}>
-          <Section name="Reading" icon="📖" mt={0} />
-          <Ex n="1" listen>
-            Look at the picture and the title. In pairs, decide what the dialogue is about. Listen, read and check your answers.
-          </Ex>
-          <Ex n="2">a) Read again and circle a or b.</Ex>
-          <Items
-            rowGap={2}
-            items={[
-              ["Lily's dad is ________ a new bookcase.", "painting", "building"],
-              ["Lily's box is full of ________.", "comics", "clothes"],
-              ["Lily is painting her wardrobe ________.", "light blue", "yellow"],
-              ["Kenji says he is ________.", "unpacking", "taking a break"],
-            ].map(([s, a, b]) => (
-              <View key={s}>
-                <Text style={t()}>{s}</Text>
-                <Opts opts={[a, b]} letters="ab" w={110} />
-              </View>
-            ))}
-          />
-          <Sub>b) Give the dialogue a new title.</Sub>
-          <Section name="Vocabulary" icon="🔤" />
-          <Ex n="3" listen>
-            Listen and repeat. Use the words to complete the sentences.
-          </Ex>
-          <View style={{ width: vw, height: vh, marginLeft: 15, marginVertical: 3 }}>
-            <Pic src={A.vocab1a} w={vw} h={vh} fit="contain" r={0} />
-            {["wardrobe", "desk lamp", "rug", "beanbag", "bookcase", "curtains"].map((c, i) => (
-              <Text key={c} style={{ position: "absolute", left: (i % 3) * (cell + (24 / 300) * cell), top: Math.floor(i / 3) * (cell + (56 / 300) * cell + (24 / 300) * cell) + cell, width: cell, textAlign: "center", ...t(9.4) }}>
-                {c}
-              </Text>
-            ))}
-          </View>
-          <Items
-            items={[
-              <Text key="1" style={t()}>It&apos;s dark in here. Please turn on the <Text style={{ color: BLUE, fontWeight: 700 }}>desk lamp</Text>.</Text>,
-              `Hang your school jacket in the ${GAPLINE}.`,
-              `Close the ${GAPLINE}. The sun is in my eyes!`,
-              `My cat sleeps on the ${GAPLINE} in front of the fire.`,
-              `I keep all my comics on the ${GAPLINE}.`,
-              `Sit on the ${GAPLINE}. It's really comfy!`,
-            ]}
-          />
-          <View style={{ width: 200, height: 86, marginLeft: 20 }}>
-            <Pic src={A.didYouKnow} w={200} h={86} fit="contain" r={0} />
-            <Text style={{ position: "absolute", left: 76, top: 26, width: 108, ...t(8.4), fontFamily: "Andika", transform: "rotate(-8deg)" }}>In Japan, lots of people sleep on a futon on the floor!</Text>
-          </View>
-        </View>
-        <View style={{ width: COL }}>
-          <Section name="Grammar" sub="Present Continuous" icon="✏️" mt={0} />
-          <Ex n="4">
-            Go through the Grammar box. Read the dialogue again and underline the <Text style={{ fontStyle: "italic" }}>Present Continuous</Text>. How is it formed/used?
-          </Ex>
-          <GrammarBox
-            examples={[
-              <Text key="1">I {g("am (I'm) unpacking")} my boxes.</Text>,
-              <Text key="2">He {g("is (He's) painting")}.</Text>,
-              <Text key="3">She {g("is not (isn't) sleeping")}.</Text>,
-              <Text key="4">{g("Are")} they {g("playing")} a game? {g("Yes")}, they {g("are")}./{g("No")}, they {g("aren't")}.</Text>,
-            ]}
-            notes={[<Text key="n">We use the <B>present continuous</B> for <B>actions happening now</B>.</Text>]}
-            extras={[
-              { title: "Spelling rules", body: "make – making    sit – sitting    carry – carrying" },
-              { title: "Time expressions:", body: "now, right now, at the moment, today, these days" },
-            ]}
-          />
-          <Ex n="5">a) Complete the email.</Ex>
-          <Text style={{ ...t(), marginLeft: 15, marginBottom: 2 }}>• hang  • build  • carry  • put  • take</Text>
-          <EmailBox>
-            <Text style={t(9.6)}>
-              Hi Mia,{"\n"}It&apos;s moving day at our new flat and everybody is busy! Right now my mum <B>1)</B> ________ pictures in the hall and my dad <B>2)</B> ________ a bookcase in my room. My brothers <B>3)</B> ________ boxes up the stairs and my grandma <B>4)</B> ________ the plates into the cupboards. And me? I <B>5)</B> ________ a short break!{"\n"}Write soon,{"\n"}Lily
+      {/* left column */}
+      <At box={[0.07, 0.06, 0.4, 0.37]}>
+        <Section name="Reading" icon="📖" mt={0} />
+        <Ex n="1" listen>
+          Look at the picture and the title. In pairs, decide what the dialogue is about. Listen, read and check your answers.
+        </Ex>
+        <Ex n="2">a) Read again and circle a or b.</Ex>
+        <Items
+          rowGap={1.5}
+          items={[
+            ["Lily's dad is ________ a new bookcase.", "painting", "building"],
+            ["Lily's box is full of ________.", "comics", "clothes"],
+            ["Lily is painting her wardrobe ________.", "light blue", "yellow"],
+            ["Kenji says he is ________.", "unpacking", "taking a break"],
+          ].map(([s, a, b]) => (
+            <View key={s}>
+              <Text style={t()}>{s}</Text>
+              <Opts opts={[a, b]} letters="ab" w={100} />
+            </View>
+          ))}
+        />
+        <Sub>b) Give the dialogue a new title.</Sub>
+        <Section name="Vocabulary" icon="🔤" />
+        <Ex n="3" listen>
+          Listen and repeat. Use the words to complete the sentences.
+        </Ex>
+      </At>
+      <Area box={[0.02, 0.43, 0.47, 0.25]} src={A.vocab1a} fit="contain" />
+      {["wardrobe", "desk lamp", "rug", "beanbag", "bookcase", "curtains"].map((c, i) => {
+        const imgW = Math.min(vb.w, vb.h * (1020 / 772));
+        const k = imgW / 1020;
+        const x0 = vb.l + (vb.w - imgW) / 2;
+        return (
+          <Text key={c} style={{ position: "absolute", left: x0 + (i % 3) * 360 * k, top: vb.tp + Math.floor(i / 3) * 416 * k + 302 * k, width: 300 * k, textAlign: "center", ...t(9.2) }}>
+            {c}
+          </Text>
+        );
+      })}
+      <At box={[0.07, 0.69, 0.4, 0.14]}>
+        <Items
+          rowGap={0.5}
+          size={9.6}
+          items={[
+            <Text key="1" style={t(9.6)}>It&apos;s dark. Turn on the {g2("desk lamp")}.</Text>,
+            `Hang your jacket in the ________.`,
+            `Close the ________. It's sunny!`,
+            `My cat sleeps on the ________.`,
+            `I keep my comics on the ________.`,
+            `Sit on the ________. It's comfy!`,
+          ]}
+        />
+      </At>
+      <Area box={[0.11, 0.83, 0.33, 0.11]} src={A.didYouKnow} fit="contain">
+        <Text style={{ position: "absolute", left: 58, top: 16, width: 120, ...t(8.4), fontFamily: "Andika", transform: "rotate(-8deg)" }}>In Japan, lots of people sleep on a futon on the floor!</Text>
+      </Area>
+      {/* right column */}
+      <At box={[0.5, 0.06, 0.45, 0.32]}>
+        <Section name="Grammar" sub="Present Continuous" icon="✏️" mt={0} />
+        <Ex n="4">
+          Go through the Grammar box. Read the dialogue again and underline the <Text style={{ fontStyle: "italic" }}>Present Continuous</Text>. How is it formed/used?
+        </Ex>
+        <GrammarBox
+          examples={[
+            <Text key="1">I {g("am (I'm) unpacking")} my boxes.</Text>,
+            <Text key="2">He {g("is (He's) painting")}.</Text>,
+            <Text key="3">She {g("is not (isn't) sleeping")}.</Text>,
+            <Text key="4">{g("Are")} they {g("playing")} a game? {g("Yes")}, they {g("are")}./{g("No")}, they {g("aren't")}.</Text>,
+          ]}
+          notes={[<Text key="n">We use the <B>present continuous</B> for <B>actions happening now</B>.</Text>]}
+          extras={[
+            { title: "Spelling rules", body: "make – making    sit – sitting    carry – carrying" },
+            { title: "Time expressions:", body: "now, right now, at the moment, today, these days" },
+          ]}
+        />
+      </At>
+      <At box={[0.5, 0.36, 0.45, 0.04]}>
+        <Ex n="5" mt={0}>a) Complete the email.  <Text style={{ fontWeight: 400 }}>• hang • build • carry • put • take</Text></Ex>
+      </At>
+      <Area box={[0.48, 0.4, 0.46, 0.23]} src={A.emailWin} pad={[22, 10, 6, 12]}>
+        <Text style={t(9.4)}>
+          Hi Mia,{"\n"}It&apos;s moving day at our new flat and everybody is busy! Right now my mum <B>1)</B> ________ pictures in the hall and my dad <B>2)</B> ________ a bookcase in my room. My brothers <B>3)</B> ________ boxes up the stairs and my grandma <B>4)</B> ________ the plates into the cupboards. And me? I <B>5)</B> ________ a short break!{"\n"}Write soon, Lily
+        </Text>
+      </Area>
+      <At box={[0.5, 0.635, 0.45, 0.05]}>
+        <Text style={t(10, 700)}>b) Read the email again. In pairs, ask and answer.  <Text style={{ fontWeight: 400, fontStyle: "italic" }}>A: What is Lily&apos;s mum doing? B: She&apos;s ...</Text></Text>
+      </At>
+      <Area box={[0.48, 0.68, 0.5, 0.21]} src={A.overToYou} pad={[4, 96, 6, 12]}>
+        <Section name="Speaking and Writing" icon="💬" mt={0} />
+        <Ex n="6" mt={0}>
+          <Text style={{ color: RED }}>Over to you:</Text> Answer the questions.
+        </Ex>
+        <Items
+          rowGap={0}
+          size={9.4}
+          items={["What colour is your bedroom?", "Have you got pictures on the walls?", "What can you see from your window?", "Where do you keep your books?", "What do you want to change? Why?"].map((q) => (
+            <Text key={q} style={it(9.4)}>
+              {q}
             </Text>
-          </EmailBox>
-          <Sub>b) Read the email again. In pairs, ask and answer questions.</Sub>
-          <Text style={{ ...it(), marginLeft: 15 }}>A: What is Lily&apos;s mum doing?   B: She&apos;s ...</Text>
-          <Section name="Speaking and Writing" icon="💬" />
-          <Ex n="6">
-            <Text style={{ color: RED }}>Over to you:</Text> Answer the questions.
-          </Ex>
-          <View style={{ marginLeft: 15, backgroundColor: SKY, borderRadius: 8, padding: 6, width: COL - 15 - 60 }}>
-            <Items
-              ml={0}
-              items={["What colour is your bedroom?", "Have you got any pictures on the walls?", "What can you see from your window?", "Where do you keep your books?", "You want to change one thing in your room. What is it? Why?"].map((q) => (
-                <Text key={q} style={it()}>
-                  {q}
-                </Text>
-              ))}
-            />
-          </View>
-          <Abs l={COL - 92} tp={538} w={100} h={110}>
-            <Pic src={A.girl} w={100} h={110} fit="contain" r={0} />
-          </Abs>
-          <Ex
-            n="7"
-            mt={6}
-            tag={<Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 10, color: "#fff", backgroundColor: RED, paddingHorizontal: 4, marginRight: 4, borderRadius: 2 }}>PORTFOLIO</Text>}
-          >
-            Write about your room. Start like this: <Text style={{ fontStyle: "italic" }}>My room is small but cosy. I&apos;ve got ...</Text>
-          </Ex>
-        </View>
-      </View>
+          ))}
+        />
+      </Area>
+      <At box={[0.5, 0.895, 0.46, 0.045]}>
+        <Ex n="7" mt={0} tag={<Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 10, color: "#fff", backgroundColor: RED, paddingHorizontal: 4, marginRight: 4, borderRadius: 2 }}>PORTFOLIO</Text>}>
+          Write about your room. <Text style={{ fontStyle: "italic" }}>My room is small but cosy. I&apos;ve got ...</Text>
+        </Ex>
+      </At>
     </BookPage>
   );
 }
 
-// =============================================================================
-// 1b Party night! (source pp.14-15)
-// =============================================================================
+// --- 1b Party night! (source pp.14-15) ----------------------------------------
 function P12() {
-  const iw = 512;
-  const ih = iw / 1.5;
-  const vw = COL - 15;
-  const vh = vw * (724 / 948);
-  const cell = vw / (948 / 300);
+  const cb = SB([0.03, 0.73, 0.48, 0.24]);
+  const imgW = Math.min(cb.w, cb.h * (1020 / 772));
+  const k = imgW / 1020;
+  const x0 = cb.l + (cb.w - imgW) / 2;
+  const sb = SB([0.19, 0.17, 0.79, 0.51]);
   return (
     <BookPage n={12}>
       <LessonHeader code="1b" title="Party night!" />
-      <Abs l={W - MR - 215 - ML} tp={4} w={215}>
+      <Abs l={CW - 215} tp={-6} w={215}>
         <CheckWords w={215} words={["chores", "dishwasher", "rubbish", "laundry", "be exhausted", "No way!", "count me in", "costume", "theme party", "arrangement"]} />
       </Abs>
-      <Section name="Reading" icon="📖" mt={8} />
-      <View style={{ height: ih + 10 }}>
-        <Abs l={CW - iw + 10} tp={0} w={iw} h={ih}>
-          <Pic src={A.scene1b} w={iw} h={ih} r={12} />
-          <Bubble l={6} tp={4} w={120} who="Mum" tail="bl">I&apos;m going to the market. Grandpa&apos;s party is at seven!</Bubble>
-          <Bubble l={iw - 132} tp={6} w={126} who="Dad" tail="br">The dishwasher is full again! Who&apos;s eating all the snacks?</Bubble>
-          <Bubble l={250} tp={32} w={128} who="Emily" tail="bl">I&apos;m vacuuming the living room. Then I&apos;m going to a sleepover.</Bubble>
-          <Bubble l={120} tp={66} w={118} who="Tom" tail="bl">I&apos;m taking out the rubbish. Can I play football after this?</Bubble>
-          <Bubble l={18} tp={ih - 70} w={130} who="Biscuit the cat" tail="tr">Me? I&apos;m resting. It&apos;s Saturday!</Bubble>
-          <Bubble l={iw - 160} tp={ih - 70} w={150} who="Grandma" tail="tl">I&apos;m watering the plants. They&apos;re thirsty too, you know!</Bubble>
-        </Abs>
-        <Abs l={-8} tp={70} w={128}>
-          <View style={{ backgroundColor: "#E1F5FE", padding: 8, transform: "rotate(-4deg)", borderWidth: 1, borderColor: "#81D4FA" }}>
-            <Text style={{ fontFamily: "Andika", fontSize: 9.4, lineHeight: 1.3 }}>
-              Family,{"\n"}It&apos;s Grandpa&apos;s 70th birthday dinner tonight! Eight people are coming. Things to do:{"\n"}– shopping{"\n"}– rubbish{"\n"}– plants{"\n"}– dishwasher{"\n"}– vacuuming{"\n"}– set the table{"\n"}Thanks!{"\n"}Mum x
-            </Text>
-          </View>
-        </Abs>
-      </View>
-      <View style={{ flexDirection: "row", gap: GAP, marginTop: 4 }}>
-        <View style={{ width: COL }}>
-          <Ex n="1" listen>
-            Listen and repeat. Do you help your parents at home? Which of the following do you like doing?
-          </Ex>
-          <View style={{ width: vw, height: vh, marginLeft: 15, marginTop: 2 }}>
-            <Pic src={A.chores} w={vw} h={vh} fit="contain" r={0} />
-            {["do the laundry", "load the dishwasher", "take out the rubbish", "water the plants", "set the table", "vacuum the floor"].map((c, i) => (
-              <Text key={c} style={{ position: "absolute", left: (i % 3) * (cell + (24 / 300) * cell), top: Math.floor(i / 3) * (cell + (56 / 300) * cell + (24 / 300) * cell) + cell + 1, width: cell, textAlign: "center", ...t(8.8, 700) }}>
-                • {c}
-              </Text>
-            ))}
-          </View>
-          <Text style={{ ...it(), marginLeft: 15 }}>I like setting the table.</Text>
+      <Section name="Reading" icon="📖" mt={10} />
+      <Area box={[0.19, 0.17, 0.79, 0.51]} src={A.scene1bVivid} r={12} pos="40% 50%">
+        <Bubble l={sb.w * 0.02} tp={4} w={118} who="Mum" tail="bl">I&apos;m going to the market. Grandpa&apos;s party is at seven!</Bubble>
+        <Bubble l={sb.w - 150} tp={8} w={128} who="Dad" tail="br">The dishwasher is full again! Who&apos;s eating the snacks?</Bubble>
+        <Bubble l={sb.w * 0.45} tp={60} w={126} who="Emily" tail="bl">I&apos;m vacuuming the living room. Then I&apos;m going to a sleepover.</Bubble>
+        <Bubble l={sb.w * 0.2} tp={86} w={118} who="Tom" tail="bl">I&apos;m taking out the rubbish. Can I play football after this?</Bubble>
+        <Bubble l={sb.w * 0.12} tp={sb.h - 84} w={126} who="Biscuit the cat" tail="tr">Me? I&apos;m resting. It&apos;s Saturday!</Bubble>
+        <Bubble l={sb.w - 170} tp={sb.h - 84} w={150} who="Grandma" tail="tl">I&apos;m watering the plants. They&apos;re thirsty too, you know!</Bubble>
+      </Area>
+      <At box={[0.02, 0.22, 0.2, 0.4]}>
+        <View style={{ backgroundColor: "#E1F5FE", padding: 8, transform: "rotate(-4deg)", borderWidth: 1, borderColor: "#81D4FA" }}>
+          <Text style={{ fontFamily: "Andika", fontSize: 9.4, lineHeight: 1.3 }}>
+            Family,{"\n"}It&apos;s Grandpa&apos;s 70th birthday dinner tonight! Eight people are coming. Things to do:{"\n"}– shopping{"\n"}– rubbish{"\n"}– plants{"\n"}– dishwasher{"\n"}– vacuuming{"\n"}– set the table{"\n"}Thanks!{"\n"}Mum x
+          </Text>
         </View>
-        <View style={{ width: COL }}>
-          <Ex n="2" listen>
-            Which of the chores in Ex. 1 are in the text? Listen, read and find out.
-          </Ex>
-          <Section name="Pronunciation" icon="🗣️" />
-          <Ex n="3" listen>
-            Listen and tick (<Text style={{ fontFamily: "Sym" }}>✓</Text>).
-          </Ex>
-          <View style={{ marginLeft: 15, borderWidth: 1, borderColor: PEACH_LINE, borderRadius: 6, overflow: "hidden", width: 200 }}>
-            {[["", "/ɪ/", "/iː/"], ["sit"], ["seat"], ["fill"], ["feel"], ["ship"], ["sheep"]].map((row, r) => (
-              <View key={r} style={{ flexDirection: "row", backgroundColor: r === 0 ? PEACH : r % 2 ? "#fff" : "#FFF8F4", borderTopWidth: r ? 0.6 : 0, borderColor: "#F8CDB8" }}>
-                {(r === 0 ? row : [row[0], "", ""]).map((c, k) => (
-                  <Text key={k} style={{ ...t(9.6, r === 0 || k === 0 ? 700 : 400), width: k === 0 ? 100 : 50, padding: 2, textAlign: k ? "center" : "left", borderLeftWidth: k ? 0.6 : 0, borderColor: "#F8CDB8" }}>
-                    {c}
-                  </Text>
-                ))}
-              </View>
-            ))}
-          </View>
-        </View>
-      </View>
+      </At>
+      <At box={[0.07, 0.685, 0.45, 0.05]}>
+        <Ex n="1" listen mt={0} small>
+          Listen and repeat. Do you help your parents at home? Which of these do you like doing?
+        </Ex>
+      </At>
+      <Area box={[0.03, 0.73, 0.48, 0.24]} src={A.chores} fit="contain" />
+      {["do the laundry", "load the dishwasher", "take out the rubbish", "water the plants", "set the table", "vacuum the floor"].map((c, i) => (
+        <Text key={c} style={{ position: "absolute", left: x0 + (i % 3) * 360 * k, top: cb.tp + Math.floor(i / 3) * 416 * k + 302 * k, width: 300 * k, textAlign: "center", ...t(8.4, 700) }}>
+          • {c}
+        </Text>
+      ))}
+      <At box={[0.55, 0.69, 0.4, 0.1]}>
+        <Ex n="2" listen mt={0} small>
+          Which of the chores in Ex. 1 are in the text? Listen, read and find out.
+        </Ex>
+        <Section name="Pronunciation" icon="🗣️" mt={2} />
+      </At>
+      <At box={[0.55, 0.765, 0.4, 0.03]}>
+        <Ex n="3" listen mt={0} small>
+          Listen and tick (<Text style={{ fontFamily: "Sym" }}>✓</Text>).
+        </Ex>
+      </At>
+      <Area box={[0.55, 0.795, 0.32, 0.16]} src={A.pronTable} pad={0}>
+        {["", "sit", "seat", "fill", "feel", "ship", "sheep"].map((w, r) => (
+          <Text key={r} style={{ position: "absolute", left: 8, top: (r * (0.16 * H)) / 7 + 2, ...t(9.4, 700) }}>
+            {r === 0 ? "" : w}
+          </Text>
+        ))}
+        <Text style={{ position: "absolute", left: 0.32 * W * 0.5, top: 2, ...t(9.4, 700) }}>/ɪ/</Text>
+        <Text style={{ position: "absolute", left: 0.32 * W * 0.78, top: 2, ...t(9.4, 700) }}>/iː/</Text>
+      </Area>
     </BookPage>
   );
 }
@@ -1092,7 +1276,7 @@ function P12() {
 function P13() {
   return (
     <BookPage n={13} refs="1b">
-      <View style={{ flexDirection: "row", gap: GAP }}>
+      <View style={{ flexDirection: "row", gap: GAP, marginTop: 18 }}>
         <View style={{ width: COL }}>
           <Section name="Grammar" sub="future meaning" icon="✏️" mt={0} />
           <Ex n="4">
@@ -1104,9 +1288,9 @@ function P13() {
           />
           <Ex n="5">Complete the sentences.</Ex>
           <Items
-            rowGap={3}
+            rowGap={2.5}
             items={[
-              <Text key="1" style={t()}><Text style={{ color: BLUE, fontWeight: 700 }}>Are you doing</Text> (you/do) anything this weekend?</Text>,
+              <Text key="1" style={t()}>{g2("Are you doing")} (you/do) anything this weekend?</Text>,
               `We ${GAPLINE} (have) a picnic on Sunday.`,
               `My brother ${GAPLINE} (fly) to Rome next week.`,
               `${GAPLINE} (Zoe/come) to the party tonight?`,
@@ -1119,16 +1303,6 @@ function P13() {
           <Ex n="6" listen>
             Sam is having a party. Listen, read and circle the right words.
           </Ex>
-          <View style={{ marginLeft: 15, borderRadius: 10, overflow: "hidden", backgroundColor: "#1A237E" }}>
-            <Pic src={A.party} w={COL - 15} h={150} r={0} pos="50% 35%" />
-            <View style={{ padding: 9 }}>
-              <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 19, color: "#FFEB3B", transform: "rotate(-2deg)" }}>We&apos;re having a party!</Text>
-              <Text style={{ fontFamily: "Andika", fontSize: 10.4, color: "#fff", lineHeight: 1.35 }}>
-                Come to my <B>1)</B> Space/Jungle party on <B>2)</B> 14th/24th May at <B>3)</B> 6:00/7:00 pm! Food, music and games for everyone. My flat: <B>4)</B> 18/80 Park Road.
-              </Text>
-              <Text style={{ fontFamily: "Andika", fontSize: 10, color: "#B3E5FC", marginTop: 3 }}>PS Wear something out of this world!   Sam</Text>
-            </View>
-          </View>
         </View>
         <View style={{ width: COL }}>
           <Section name="Speaking and Writing" icon="💬" mt={0} />
@@ -1144,7 +1318,7 @@ function P13() {
           </View>
           <Text style={{ ...it(), marginLeft: 15 }}>We&apos;re having a superhero party on Saturday at ...</Text>
           <Sub>b) Write the invitation for your party.</Sub>
-          <Section name="Everyday English" sub="Inviting/Accepting invitations" icon="💬" />
+          <Section name="Everyday English" sub="Inviting/Accepting" icon="💬" />
           <Ex n="8" listen>
             a) Listen. In pairs, read out the dialogue.
           </Ex>
@@ -1169,7 +1343,7 @@ function P13() {
             ].map(([h, xs]) => (
               <View key={h as string} style={{ flex: 1 }}>
                 <Text style={{ ...t(9, 700, "#fff"), backgroundColor: RED, textAlign: "center", paddingVertical: 1.5 }}>{h as string}</Text>
-                <View style={{ padding: 4 }}>
+                <View style={{ padding: 4, backgroundColor: "#FFEBEE" }}>
                   {(xs as string[]).map((x) => (
                     <Text key={x} style={t(9.2)}>
                       • {x}
@@ -1184,29 +1358,32 @@ function P13() {
           </Ex>
           <View style={{ marginLeft: 22 }}>
             {[
-              ["⛸", "go ice skating"],
+              ["⭐", "go ice skating"],
               ["🎵", "go to a concert"],
               ["🍕", "have a pizza"],
             ].map(([e, x]) => (
               <View key={x} style={{ flexDirection: "row", alignItems: "center", marginBottom: 3 }}>
-                <Ico e={e === "⛸" ? "⭐" : e} s={16} />
+                <Ico e={e} s={16} />
                 <Text style={{ ...t(), marginLeft: 6 }}>{x}</Text>
               </View>
             ))}
           </View>
         </View>
       </View>
+      <Area box={[0.0, 0.58, 0.5, 0.42]} src={A.poster} pad={[0.42 * H * 0.52, 18, 22, 52]}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 19, color: RED, transform: "rotate(-2deg)" }}>We&apos;re having a party!</Text>
+        <Text style={{ fontFamily: "Andika", fontSize: 10.4, color: INK, lineHeight: 1.35 }}>
+          Come to my <B>1)</B> Space/Jungle party on <B>2)</B> 14th/24th May at <B>3)</B> 6:00/7:00 pm! Food, music and games for everyone. My flat: <B>4)</B> 18/80 Park Road.
+        </Text>
+        <Text style={{ fontFamily: "Andika", fontSize: 10, color: PURPLE, marginTop: 3 }}>PS Wear something out of this world!   Sam</Text>
+      </Area>
     </BookPage>
   );
 }
 
-// =============================================================================
-// 1c Free-time fun (source pp.16-17)
-// =============================================================================
+// --- 1c Free-time fun (source pp.16-17) ---------------------------------------
 function P14() {
-  const hw = CW * 0.88;
-  const hh = hw * (624 / 1272);
-  const cell = hw / (1272 / 300);
+  const hb = SB([0.05, 0.04, 0.87, 0.49]);
   const caps = ["go skateboarding", "play video games", "bake cakes", "draw comics", "take photos", "go swimming", "play the guitar", "play football"];
   const quiz: [string, string, string][] = [
     ["On a free afternoon, you'd rather ...", "draw or bake something.", "meet friends at the park."],
@@ -1217,174 +1394,171 @@ function P14() {
   ];
   return (
     <BookPage n={14}>
-      <LessonHeader code="1c" title="Free-time fun" />
-      <Abs l={W - MR - 200 - ML} tp={4} w={200}>
-        <CheckWords w={200} words={["free time", "would rather", "prefer", "creative", "sporty", "sociable", "patient", "on your own", "as long as", "dream job"]} />
-      </Abs>
-      <Section name="Vocabulary" icon="🔤" mt={6} />
-      <Ex n="1" listen>
-        Listen and repeat. Which of these do you do in your free time? Tell the class.
-      </Ex>
-      <View style={{ width: hw, height: hh, marginTop: 4, marginLeft: 15 }}>
-        <Pic src={A.hobbies} w={hw} h={hh} fit="contain" r={0} />
-        {caps.map((c, i) => (
-          <Text
-            key={c}
-            style={{ position: "absolute", left: (i % 4) * (cell + (24 / 300) * cell) + 8, top: Math.floor(i / 4) * (cell + (24 / 300) * cell) + cell - 20, ...t(9, 700), backgroundColor: "#fff", borderRadius: 4, paddingHorizontal: 4 }}
-          >
+      <Area box={[0.05, 0.04, 0.87, 0.49]} src={A.hobbies} />
+      {caps.map((c, i) => {
+        const k = hb.w / 1500;
+        const x = hb.l + (60 + (i % 4) * 350) * k;
+        const y = hb.tp + (380 + Math.floor(i / 4) * 350) * k + 300 * k - 22;
+        return (
+          <Text key={c} style={{ position: "absolute", left: x + 6, top: y, ...t(9, 700), backgroundColor: "#fff", borderRadius: 4, paddingHorizontal: 4 }}>
             {c}
           </Text>
-        ))}
-      </View>
-      <Text style={{ ...it(), marginTop: 3 }}>I take photos at the weekend.</Text>
-      <Section name="Reading" icon="📖" />
-      <Ex n="2">What&apos;s your free-time style? Do the quiz and find out! Then tell the class.</Ex>
-      <View style={{ flexDirection: "row", gap: 12, marginTop: 3 }}>
-        <View style={{ width: 345, backgroundColor: "#FCE4EC", borderRadius: 12, padding: 9 }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 20, color: PINK, textAlign: "center", lineHeight: 1 }}>WHAT&apos;S YOUR STYLE?</Text>
-          <Text style={{ ...t(9.4, 700, PURPLE), marginBottom: 4 }}>The things you do in your free time say a lot about you. Try our quiz and see!</Text>
+        );
+      })}
+      <LessonHeader code="1c" title="Free-time fun" />
+      <Abs l={CW - 200} tp={-6} w={200}>
+        <CheckWords w={200} words={["free time", "would rather", "prefer", "creative", "sporty", "sociable", "patient", "on your own", "as long as", "dream job"]} />
+      </Abs>
+      <At box={[0.07, 0.11, 0.5, 0.08]}>
+        <Section name="Vocabulary" icon="🔤" mt={0} />
+        <Ex n="1" listen mt={0}>
+          Listen and repeat. Which of these do you do in your free time? Tell the class.
+        </Ex>
+      </At>
+      <At box={[0.07, 0.535, 0.85, 0.06]}>
+        <Text style={it()}>I take photos at the weekend.</Text>
+        <Section name="Reading" icon="📖" mt={1} />
+        <Ex n="2" mt={0}>What&apos;s your free-time style? Do the quiz and find out! Then tell the class.</Ex>
+      </At>
+      <At box={[0.03, 0.62, 0.48, 0.33]}>
+        <View style={{ backgroundColor: "#FCE4EC", borderRadius: 12, padding: 8, height: 0.31 * H }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 18, color: PINK, textAlign: "center", lineHeight: 1 }}>WHAT&apos;S YOUR STYLE?</Text>
+          <Text style={{ ...t(9, 700, PURPLE), marginBottom: 3 }}>The things you do in your free time say a lot about you. Try our quiz!</Text>
           <Items
             ml={0}
-            rowGap={4}
+            rowGap={2}
+            size={9.4}
             items={quiz.map(([q, a, b]) => (
               <View key={q}>
-                <Text style={t(10)}>{q}</Text>
-                <Text style={t(10)}>
+                <Text style={t(9.4)}>{q}</Text>
+                <Text style={t(9.4)}>
                   <B c={PINK}>A</B> {a}   <B c={PINK}>B</B> {b}
                 </Text>
               </View>
             ))}
           />
         </View>
-        <View style={{ flex: 1 }}>
-          <Pic src={A.quiz} w="100%" h={150} r={10} pos="50% 30%" />
+      </At>
+      <Area box={[0.53, 0.62, 0.44, 0.21]} src={A.quiz} r={10} pos="50% 30%" />
+      <At box={[0.53, 0.835, 0.44, 0.1]}>
+        <View style={{ flexDirection: "row", gap: 4 }}>
           {[
-            ["MOSTLY A", "You're creative and patient. You don't mind spending time on your own, and you love making things."],
-            ["MOSTLY B", "You're sporty and sociable. You're happy doing anything, as long as it's with friends!"],
+            ["MOSTLY A", "You're creative and patient. You love making things on your own."],
+            ["MOSTLY B", "You're sporty and sociable. You're happy as long as you're with friends!"],
           ].map(([h, s]) => (
-            <View key={h} style={{ backgroundColor: PURPLE, borderRadius: 6, padding: 5, marginTop: 4 }}>
-              <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 11, color: "#FFEB3B" }}>{h}</Text>
-              <Text style={t(8.8, 400, "#fff")}>{s}</Text>
+            <View key={h} style={{ flex: 1, backgroundColor: PURPLE, borderRadius: 6, padding: 4 }}>
+              <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 10.5, color: "#FFEB3B" }}>{h}</Text>
+              <Text style={t(8.4, 400, "#fff")}>{s}</Text>
             </View>
           ))}
         </View>
-      </View>
+      </At>
     </BookPage>
   );
 }
 
 function P15() {
-  const fw = 86;
-  const fh = fw * (810 / 300);
+  const lb = SB([0.05, 0.58, 0.44, 0.41]);
+  const gb = SB([0.5, 0.71, 0.45, 0.27]);
   return (
     <BookPage n={15} refs="1c">
-      <View style={{ flexDirection: "row", gap: GAP }}>
-        <View style={{ width: COL }}>
-          <Section name="Grammar" sub="Present Simple" icon="✏️" mt={0} />
-          <GrammarBox
-            examples={[
-              <Text key="1">I {g("go")} skateboarding on Sundays.</Text>,
-              <Text key="2">Kenji {g("doesn't like")} football.</Text>,
-              <Text key="3">{g("Do")} you {g("play")} the guitar? {g("Yes")}, I {g("do")}./{g("No")}, I {g("don't")}.</Text>,
-            ]}
-            notes={[<Text key="n">We use the <B>present simple</B> for <B>habits</B> and <B>daily routines</B>.</Text>]}
-            extras={[
-              { title: "Spelling rules", body: "play – plays    go – goes    watch – watches    study – studies" },
-              { title: "Adverbs of frequency: always, usually, often, sometimes, hardly ever, never", body: "I always meet my friends on Saturday. Sam is never late." },
-            ]}
-          />
-          <Ex n="3">Make sentences.</Ex>
-          <Items
-            rowGap={1}
-            items={["Zoe/skateboarding/never/goes", "swimming/you/do/often/go/?", "always/I/breakfast/have/at 7:30", "late/is/hardly ever/Sam", "Kenji/usually/get up/doesn't/early/on Sundays"].map((s) => (
-              <View key={s}>
-                <Text style={t()}>{s}</Text>
-                <View style={{ height: 11, borderBottomWidth: 0.8, borderColor: "#9E9E9E", marginBottom: 2 }} />
-              </View>
-            ))}
-          />
-          <Section name="Listening and Speaking" icon="🎧" />
-          <Ex n="4" listen>
-            Listen and choose A, B or C.
-          </Ex>
-          <View style={{ flexDirection: "row", marginLeft: 6 }}>
-            <Pic src={A.listenFaces} w={fw} h={fh} fit="contain" r={0} />
-            <View style={{ flex: 1, marginLeft: 6 }}>
-              {[
-                ["How often does Leo go swimming?", ["every day", "twice a week", "hardly ever"]],
-                ["How often does Mia tidy her room?", ["once a week", "every day", "never"]],
-                ["What does Ella always do before bed?", ["read a book", "watch TV", "play games"]],
-              ].map(([q, os], i) => (
-                <View key={i} style={{ height: fh / 3, justifyContent: "center" }}>
-                  <View style={{ borderWidth: 1, borderColor: "#B0BEC5", borderRadius: 8, padding: 5, backgroundColor: "#FAFAFA" }}>
-                    <Text style={t(9.6, 700)}>
-                      <Text style={{ color: RED }}>{i + 1}</Text> {q as string}
-                    </Text>
-                    {(os as string[]).map((o, k) => (
-                      <Text key={o} style={t(9.4)}>
-                        <B c={RED}>{"ABC"[k]}</B> {o}
-                      </Text>
-                    ))}
-                  </View>
-                </View>
-              ))}
+      <At box={[0.07, 0.06, 0.41, 0.5]}>
+        <Section name="Grammar" sub="Present Simple" icon="✏️" mt={0} />
+        <GrammarBox
+          examples={[
+            <Text key="1">I {g("go")} skateboarding on Sundays.</Text>,
+            <Text key="2">Kenji {g("doesn't like")} football.</Text>,
+            <Text key="3">{g("Do")} you {g("play")} the guitar? {g("Yes")}, I {g("do")}./{g("No")}, I {g("don't")}.</Text>,
+          ]}
+          notes={[<Text key="n">We use the <B>present simple</B> for <B>habits</B> and <B>daily routines</B>.</Text>]}
+          extras={[
+            { title: "Adverbs of frequency: always, usually, often, sometimes, hardly ever, never", body: "I always meet my friends on Saturday. Sam is never late." },
+          ]}
+        />
+        <Ex n="3">Make sentences.</Ex>
+        <Items
+          rowGap={0.5}
+          items={["Zoe/skateboarding/never/goes", "swimming/you/do/often/go/?", "always/I/breakfast/have/at 7:30", "late/is/hardly ever/Sam", "Kenji/usually/get up/doesn't/early"].map((s) => (
+            <View key={s}>
+              <Text style={t()}>{s}</Text>
+              <View style={{ height: 10, borderBottomWidth: 0.8, borderColor: "#9E9E9E", marginBottom: 2 }} />
             </View>
-          </View>
-        </View>
-        <View style={{ width: COL }}>
-          <Ex n="5" mt={0}>
-            Talk with your friend. Use ideas from Ex. 1.
-          </Ex>
-          <View style={{ marginLeft: 15, height: 168, marginBottom: 4 }}>
-            <Pic src={A.park} w={COL - 15} h={168} r={10} />
-            <Bubble l={4} tp={6} w={98} tail="bl">How often do you take photos?</Bubble>
-            <Bubble l={COL - 15 - 104} tp={6} w={100} tail="br">Almost every day! What about you?</Bubble>
-            <Bubble l={70} tp={118} w={120} tail="tl">I hardly ever take photos.</Bubble>
-          </View>
-          <Section name="Grammar" sub="Present Simple – Present Continuous" icon="✏️" />
-          <GrammarBox
-            examples={[
-              <Text key="1">I {g("usually walk")} to school. <B>(habit)</B></Text>,
-              <Text key="2">Today I{g("'m taking")} the bus. <B>(action happening now)</B></Text>,
-              <Text key="3">We{g("'re having")} a party on Friday. <B>(fixed arrangement)</B></Text>,
-            ]}
-          />
-          <Ex n="6">
-            Complete the sentences. Use the <Text style={{ fontStyle: "italic" }}>present simple</Text> or the <Text style={{ fontStyle: "italic" }}>present continuous</Text>.
-          </Ex>
-          <Items
-            rowGap={2.5}
-            items={[
-              <Text key="1" style={t()}>We usually <Text style={{ color: BLUE, fontWeight: 700 }}>go</Text> (go) to the park on Saturday, but today we<Text style={{ color: BLUE, fontWeight: 700 }}>&apos;re staying</Text> (stay) at home.</Text>,
-              `Why ${GAPLINE} (you/laugh)? What's so funny?`,
-              `Zoe ${GAPLINE} (play) the guitar every evening.`,
-              `Look! Kenji ${GAPLINE} (skate) on the ramp.`,
-              `I ${GAPLINE} (not/watch) TV in the mornings.`,
-            ]}
-          />
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#fff", backgroundColor: RED, borderRadius: 6, paddingHorizontal: 7, transform: "rotate(-4deg)" }}>Let&apos;s Play!</Text>
-            <Text style={{ ...t(10, 700, RED), marginLeft: 6 }}>(Noughts and Crosses)</Text>
-          </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", width: 210, marginLeft: 22, marginTop: 4 }}>
-            {["always", "does", "when", "how often", "never", "free time", "where", "usually", "doing"].map((w, i) => (
-              <Text
-                key={w}
-                style={{ width: 70, height: 26, paddingTop: 5, textAlign: "center", ...t(10, 700, ["#1E88E5", "#8E24AA", "#43A047"][i % 3]), borderRightWidth: i % 3 < 2 ? 3 : 0, borderBottomWidth: i < 6 ? 3 : 0, borderColor: "#F48FB1" }}
-              >
-                {w}
+          ))}
+        />
+      </At>
+      <At box={[0.07, 0.528, 0.41, 0.05]}>
+        <Section name="Listening and Speaking" icon="🎧" mt={0} />
+        <Ex n="4" listen mt={0}>
+          Listen and choose A, B or C.
+        </Ex>
+      </At>
+      <Area box={[0.05, 0.58, 0.44, 0.41]} src={A.listenBlock} pad={0}>
+        {[
+          ["How often does Leo go swimming?", ["every day", "twice a week", "hardly ever"]],
+          ["How often does Mia tidy her room?", ["once a week", "every day", "never"]],
+          ["What does Ella always do before bed?", ["read a book", "watch TV", "play games"]],
+        ].map(([q, os], i) => (
+          <View key={i} style={{ position: "absolute", left: lb.w * 0.34, top: (i * lb.h) / 3 + 14, width: lb.w * 0.6 }}>
+            <Text style={t(9.4, 700)}>
+              <Text style={{ color: RED }}>{i + 1}</Text> {q as string}
+            </Text>
+            {(os as string[]).map((o, k) => (
+              <Text key={o} style={t(9.2)}>
+                <B c={RED}>{"ABC"[k]}</B> {o}
               </Text>
             ))}
           </View>
+        ))}
+      </Area>
+      <At box={[0.52, 0.062, 0.45, 0.03]}>
+        <Ex n="5" mt={0}>Talk with your friend. Use ideas from Ex. 1.</Ex>
+      </At>
+      <Area box={[0.52, 0.085, 0.41, 0.22]} src={A.park} r={10}>
+        <Bubble l={0} tp={0} w={96} tail="bl">How often do you take photos?</Bubble>
+        <Bubble l={0.41 * W - 116} tp={0} w={100} tail="br">Almost every day! What about you?</Bubble>
+        <Bubble l={60} tp={0.22 * H - 50} w={120} tail="tl">I hardly ever take photos.</Bubble>
+      </Area>
+      <At box={[0.52, 0.31, 0.45, 0.4]}>
+        <Section name="Grammar" sub="Present Simple – Present Continuous" icon="✏️" mt={0} />
+        <GrammarBox
+          examples={[
+            <Text key="1">I {g("usually walk")} to school. <B>(habit)</B></Text>,
+            <Text key="2">Today I{g("'m taking")} the bus. <B>(action now)</B></Text>,
+            <Text key="3">We{g("'re having")} a party on Friday. <B>(arrangement)</B></Text>,
+          ]}
+        />
+        <Ex n="6">
+          Complete the sentences. Use the <Text style={{ fontStyle: "italic" }}>present simple</Text> or the <Text style={{ fontStyle: "italic" }}>present continuous</Text>.
+        </Ex>
+        <Items
+          rowGap={2}
+          items={[
+            <Text key="1" style={t()}>We usually {g2("go")} (go) to the park, but today we{g2("'re staying")} (stay) at home.</Text>,
+            `Why ${GAPLINE} (you/laugh)?`,
+            `Zoe ${GAPLINE} (play) the guitar every day.`,
+            `Look! Kenji ${GAPLINE} (skate) on the ramp.`,
+            `I ${GAPLINE} (not/watch) TV in the mornings.`,
+          ]}
+        />
+      </At>
+      <At box={[0.52, 0.675, 0.45, 0.03]}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#fff", backgroundColor: RED, borderRadius: 6, paddingHorizontal: 7, transform: "rotate(-4deg)" }}>Let&apos;s Play!</Text>
+          <Text style={{ ...t(10, 700, RED), marginLeft: 6 }}>(Noughts and Crosses)</Text>
         </View>
-      </View>
+      </At>
+      <Area box={[0.5, 0.71, 0.45, 0.27]} src={A.noughts} fit="contain" pad={0}>
+        {["always", "does", "when", "how often", "never", "free time", "where", "usually", "doing"].map((w, i) => (
+          <Text key={w} style={{ position: "absolute", left: (i % 3) * (gb.w / 3), top: Math.floor(i / 3) * (gb.h / 3) + gb.h / 6 - 7, width: gb.w / 3, textAlign: "center", ...t(10.5, 700, ["#1E88E5", "#8E24AA", "#43A047"][i % 3]) }}>
+            {w}
+          </Text>
+        ))}
+      </Area>
     </BookPage>
   );
 }
 
-// =============================================================================
-// 1d Skills work (source pp.18-19)
-// =============================================================================
+// --- 1d Skills work (source pp.18-19) -------------------------------------------
 function P16() {
   return (
     <BookPage n={16}>
@@ -1392,193 +1566,179 @@ function P16() {
         <Splash code="1d" />
         <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 22, color: "#fff", backgroundColor: RED, borderRadius: 8, paddingHorizontal: 10, marginLeft: 8, marginTop: 4 }}>Skills work</Text>
       </View>
-      <Abs l={W - MR - 215 - ML} tp={4} w={215}>
+      <Abs l={CW - 215} tp={-6} w={215}>
         <CheckWords w={215} words={["mission", "explore", "crystal", "pirates", "trap", "spell", "potion", "broomstick", "tunnel", "thief", "solve", "a must"]} />
       </Abs>
-      <View style={{ width: 300 }}>
-        <Section name="Reading" icon="📖" mt={6} />
-        <Ex n="1">
+      <At box={[0.07, 0.1, 0.45, 0.11]}>
+        <Section name="Reading" icon="📖" mt={0} />
+        <Ex n="1" mt={0}>
           <Text style={{ color: RED }}>Over to you:</Text> Do you like video games? Which ones do you play? Tell the class.
         </Ex>
-      </View>
-      <Ex n="2" listen>
-        Look at the pictures and the title. What do you think the texts are about? Listen, read and check your answers.
-      </Ex>
-      <View style={{ backgroundColor: "#311B92", borderRadius: 16, borderWidth: 6, borderColor: "#B39DDB", padding: 12, marginTop: 6 }}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 30, color: "#FFEB3B", transform: "rotate(-3deg)", marginBottom: 4 }}>GAME ON!</Text>
-        <View style={{ flexDirection: "row", gap: 14 }}>
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: "row", gap: 8, marginBottom: 4 }}>
-              <Pic src={A.games[0]} w={128} h={150} fit="contain" r={4} />
-              <Text style={{ ...t(9.6, 700, "#FFEB3B"), flex: 1, marginTop: 20 }}>Do you love adventure? Are you good at puzzles? Then these two games are for you!</Text>
+        <Ex n="2" listen mt={1}>
+          Look at the pictures and the title. What are the texts about? Listen, read and check.
+        </Ex>
+      </At>
+      <At box={[0.04, 0.215, 0.92, 0.39]}>
+        <View style={{ backgroundColor: "#E1BEE7", borderRadius: 16, borderWidth: 4, borderColor: "#BA68C8", height: 0.39 * H }} />
+      </At>
+      <Area box={[0.07, 0.225, 0.4, 0.13]} src={A.gameLeft} r={8} />
+      <Area box={[0.53, 0.12, 0.44, 0.23]} src={A.gameRight} fit="contain" />
+      <At box={[0.07, 0.36, 0.42, 0.24]}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 22, color: "#4527A0", transform: "rotate(-3deg)" }}>GAME ON!</Text>
+        <Text style={t(10, 700, "#4527A0")}>Do you love adventure? Are you good at puzzles? Then these two games are for you!</Text>
+      </At>
+      <At box={[0.53, 0.36, 0.41, 0.07]}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#4527A0" }}>Star Rider</Text>
+      </At>
+      <At box={[0.07, 0.44, 0.88, 0.17]}>
+        <Text style={t(10)}>
+          <B c="#4527A0">Star Rider: </B>Your <B>mission</B>: find the lost crystals and save the planet Zorna! Captain Nova flies her spaceship through dangerous asteroid fields and fights space <B>pirates</B>. You can <B>explore</B> twelve planets, collect power stars and build your own space station. Watch out for the pirates&apos; traps! It&apos;s fast, funny and full of surprises.
+        </Text>
+        <Text style={{ ...t(10), marginTop: 4 }}>
+          <B c="#4527A0">Spellbound Academy: </B>You are a new student at a school for young wizards. Learn spells, make a magic <B>potion</B> and fly on a broomstick over the castle. But someone is stealing the school&apos;s magic books! <B>Solve</B> puzzles, explore secret <B>tunnels</B> and catch the thief before the end of term. A must for fans of fantasy stories!
+        </Text>
+      </At>
+      <At box={[0.07, 0.62, 0.42, 0.3]}>
+        <Ex n="3" mt={0}>Match the words in bold in the texts with their definitions.</Ex>
+        <Items
+          rowGap={2}
+          items={[
+            <Text key="1" style={t()}>people who rob ships   {g2("pirates")}</Text>,
+            `look around a new place  ________`,
+            `ways under the ground  ________`,
+            `a magic drink  ________`,
+            `a job that a hero has to do  ________`,
+            `find the answer to  ________`,
+          ]}
+        />
+      </At>
+      <At box={[0.52, 0.62, 0.44, 0.3]}>
+        <Ex n="4" mt={0}>a) Read the texts again and complete.</Ex>
+        <View style={{ marginLeft: 15, borderWidth: 1, borderColor: "#B39DDB", borderRadius: 6, overflow: "hidden" }}>
+          {[
+            ["Name", "Star Rider", "Spellbound ..."],
+            ["Hero", "Captain Nova", ""],
+            ["Story", "find the lost crystals", ""],
+            ["You can", "", "learn spells"],
+          ].map((row, r) => (
+            <View key={r} style={{ flexDirection: "row", backgroundColor: r === 0 ? "#EDE7F6" : "#fff", borderTopWidth: r ? 0.6 : 0, borderColor: "#D1C4E9" }}>
+              {row.map((c, k) => (
+                <Text key={k} style={{ ...t(9.2, r === 0 || k === 0 ? 700 : 400, r === 0 && k ? "#4527A0" : INK), width: k ? "38%" : "24%", padding: 2.5, borderLeftWidth: k ? 0.6 : 0, borderColor: "#D1C4E9" }}>
+                  {c || "..."}
+                </Text>
+              ))}
             </View>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#80DEEA" }}>Star Rider</Text>
-            <Text style={t(10.8, 400, "#fff")}>
-              Your <B>mission</B> in Star Rider: find the lost crystals and save the planet Zorna! Captain Nova flies her spaceship through dangerous asteroid fields and fights space <B>pirates</B>. You can <B>explore</B> twelve planets, collect power stars and build your own space station. But watch out for the pirates&apos; traps! It&apos;s fast, funny and full of surprises.
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#F48FB1" }}>Spellbound Academy</Text>
-            <Text style={t(10.8, 400, "#fff")}>
-              In Spellbound Academy, you are a new student at a school for young wizards. Learn spells, make a magic <B>potion</B> and fly on a broomstick over the castle. But someone is stealing the school&apos;s magic books! <B>Solve</B> puzzles, explore secret <B>tunnels</B> and catch the thief before the end of term. Can you become the best wizard in the school? A must for fans of fantasy stories!
-            </Text>
-            <View style={{ alignItems: "flex-end", marginTop: 4 }}>
-              <Pic src={A.games[1]} w={128} h={150} fit="contain" r={4} />
-            </View>
-          </View>
+          ))}
         </View>
-      </View>
-      <View style={{ flexDirection: "row", gap: GAP, marginTop: 8 }}>
-        <View style={{ width: COL }}>
-          <Ex n="3">Match the words in bold in the texts with their definitions.</Ex>
-          <Items
-            rowGap={2}
-            items={[
-              <Text key="1" style={t()}>people who rob ships   <Text style={{ color: BLUE, fontWeight: 700 }}>pirates</Text></Text>,
-              `look around a new place  ________`,
-              `ways under the ground  ________`,
-              `a magic drink  ________`,
-              `a job that a hero has to do  ________`,
-              `find the answer to  ________`,
-            ]}
-          />
-        </View>
-        <View style={{ width: COL }}>
-          <Ex n="4">a) Read the texts again and complete.</Ex>
-          <View style={{ marginLeft: 15, borderWidth: 1, borderColor: "#B39DDB", borderRadius: 6, overflow: "hidden" }}>
-            {[
-              ["Name", "Star Rider", "Spellbound ..."],
-              ["Hero", "Captain Nova", ""],
-              ["Story", "find the lost crystals", ""],
-              ["You can", "", "learn spells"],
-            ].map((row, r) => (
-              <View key={r} style={{ flexDirection: "row", backgroundColor: r === 0 ? "#EDE7F6" : "#fff", borderTopWidth: r ? 0.6 : 0, borderColor: "#D1C4E9" }}>
-                {row.map((c, k) => (
-                  <Text key={k} style={{ ...t(9.2, r === 0 || k === 0 ? 700 : 400, r === 0 && k ? PURPLE : INK), width: k ? "38%" : "24%", padding: 2.5, borderLeftWidth: k ? 0.6 : 0, borderColor: "#D1C4E9" }}>
-                    {c || "..."}
-                  </Text>
-                ))}
-              </View>
-            ))}
-          </View>
-          <Sub>b) Now, choose a video game and tell the class.</Sub>
-          <Text style={{ ...it(), marginLeft: 15 }}>&apos;Star Rider&apos; is a space game. The hero is ...</Text>
-        </View>
-      </View>
+        <Sub>b) Now, choose a video game and tell the class.</Sub>
+        <Text style={{ ...it(), marginLeft: 15 }}>&apos;Star Rider&apos; is a space game. The hero is ...</Text>
+      </At>
     </BookPage>
   );
 }
 
 function P17() {
-  const sw = COL - 15;
-  const sh = sw * (590 / 760);
+  const sb = SB([0.07, 0.3, 0.39, 0.3]);
   return (
     <BookPage n={17} refs="1d">
-      <View style={{ flexDirection: "row", gap: GAP }}>
-        <View style={{ width: COL }}>
-          <Section name="Grammar" sub="-ing form" icon="✏️" mt={0} />
-          <GrammarBox
-            examples={[<Text key="1">I {g("love playing")} video games.</Text>, <Text key="2">Zoe {g("enjoys drawing")} comics.</Text>, <Text key="3">Kenji {g("doesn't mind setting")} the table.</Text>]}
-            notes={[<Text key="n">We use the <B>-ing form</B> after the verbs/phrases: <B>like, love, enjoy, hate, can&apos;t stand, don&apos;t mind, be crazy about</B>.</Text>, <Text key="m"><B>Note:</B> I like <Text style={{ color: BLUE }}>playing</Text> = I like <Text style={{ color: BLUE }}>to play</Text>.</Text>]}
-          />
-          <Ex n="5">
-            What do you like doing in your free time? Talk with your friend. Use: <Text style={{ color: BLUE }}>play video games, take photos, read comics, go skateboarding, bake cakes</Text>.
-          </Ex>
-          <View style={{ width: sw, height: sh, marginLeft: 15, marginVertical: 3 }}>
-            <Pic src={A.likeScale} w={sw} h={sh} fit="contain" r={0} />
-            {["I'm crazy about ...", "I (really) like ...", "I don't mind ...", "I don't (really) like ...", "I can't stand ..."].map((x, i) => {
-              const rowH = sh / 5;
-              const len = (640 - i * 90) / 760;
-              return (
-                <Text key={x} style={{ position: "absolute", left: (110 / 760 + len - 250 / 760) * sw, top: i * rowH + rowH * 0.36, width: (230 / 760) * sw, ...t(8.4, 700), textAlign: "center" }}>
-                  {x}
-                </Text>
-              );
-            })}
+      <At box={[0.07, 0.055, 0.41, 0.25]}>
+        <Section name="Grammar" sub="-ing form" icon="✏️" mt={0} />
+        <GrammarBox
+          examples={[<Text key="1">I {g("love playing")} video games.</Text>, <Text key="2">Zoe {g("enjoys drawing")} comics.</Text>, <Text key="3">Kenji {g("doesn't mind setting")} the table.</Text>]}
+          notes={[<Text key="n">We use the <B>-ing form</B> after: <B>like, love, enjoy, hate, can&apos;t stand, don&apos;t mind, be crazy about</B>.</Text>]}
+        />
+        <Ex n="5">
+          What do you like doing in your free time? Talk with your friend. Use: <Text style={{ color: BLUE }}>play video games, take photos, read comics, bake cakes</Text>.
+        </Ex>
+      </At>
+      <Area box={[0.07, 0.3, 0.39, 0.3]} src={A.likeScale} fit="contain" pad={0}>
+        {["I'm crazy about ...", "I (really) like ...", "I don't mind ...", "I don't (really) like ...", "I can't stand ..."].map((x, i) => {
+          const imgH = Math.min(sb.h, sb.w * (590 / 760));
+          const k = imgH / 590;
+          const y0 = (sb.h - imgH) / 2;
+          const len = 640 - i * 90;
+          return (
+            <Text key={x} style={{ position: "absolute", left: (110 + len - 250) * k, top: y0 + (i * 118 + 46) * k, width: 230 * k, ...t(8.2, 700), textAlign: "center" }}>
+              {x}
+            </Text>
+          );
+        })}
+      </Area>
+      <At box={[0.07, 0.565, 0.41, 0.045]}>
+        <Ex n="6" mt={0}>Join the sentences.</Ex>
+      </At>
+      <Area box={[0.03, 0.61, 0.46, 0.27]} src={A.tipPanel} pad={[10, 10, 6, 26]}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 12, color: "#fff", backgroundColor: GREEN, alignSelf: "flex-start", borderRadius: 4, paddingHorizontal: 5, marginBottom: 2 }}>Writing Tip</Text>
+        <Text style={t(9.2)}>I like Star Rider. I like Robo Racers, too. → I like Star Rider <B c={BLUE}>and</B> Robo Racers.</Text>
+        <Text style={{ ...t(9.2), marginBottom: 3 }}>• <B>and</B> joins similar ideas, <B>but</B> joins different ideas.</Text>
+        <Items
+          ml={0}
+          rowGap={0.5}
+          size={9.4}
+          items={["I've got a skateboard. I've got a helmet, too.", "Zoe likes jazz. She doesn't like rap.", "I can play chess. I can't play cards.", "Sam loves swimming. He hates running.", "In Star Rider you can fly. You can build a station, too."]}
+        />
+      </Area>
+      <At box={[0.52, 0.055, 0.45, 0.035]}>
+        <Section name="Listening and Speaking" icon="🎧" mt={0} />
+      </At>
+      <Area box={[0.5, 0.09, 0.48, 0.45]} src={A.boysVivid} r={10} pos="50% 40%" pad={[0.45 * H * 0.42, 8, 8, 8]}>
+        <View style={{ backgroundColor: "#E3F2FDee", borderRadius: 8, padding: 5 }}>
+          <View style={{ flexDirection: "row" }}>
+            <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 14, color: RED, width: 15, lineHeight: 1 }}>7</Text>
+            <Text style={{ ...t(10, 700), flex: 1, paddingTop: 1 }}>Listen to Ben and Max talking about a computer game and write <Text style={{ fontFamily: "Sym" }}>✗</Text> in the right box.</Text>
           </View>
-          <Text style={{ ...it(), marginLeft: 15 }}>A: I love taking photos. What about you?{"\n"}B: I don&apos;t mind taking photos, but I ...</Text>
-          <Ex n="6" mt={6}>Join the sentences.</Ex>
-          <View style={{ marginLeft: 15, borderWidth: 1.2, borderColor: GREEN, borderRadius: 8, padding: 6, marginBottom: 4 }}>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 12, color: "#fff", backgroundColor: GREEN, alignSelf: "flex-start", borderRadius: 4, paddingHorizontal: 5, marginBottom: 2 }}>Writing Tip</Text>
-            <Text style={t(9.2)}>I like <Text style={{ fontStyle: "italic" }}>Star Rider</Text>. I like <Text style={{ fontStyle: "italic" }}>Robo Racers</Text>, too.  →  I like <Text style={{ fontStyle: "italic" }}>Star Rider</Text> <B c={BLUE}>and</B> <Text style={{ fontStyle: "italic" }}>Robo Racers</Text>.</Text>
-            <Text style={t(9.2)}>• We use <B>and</B> to join similar ideas and <B>but</B> to join different ideas.</Text>
+          <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+            <Text style={{ ...t(8.8, 700), width: 30, textAlign: "center" }}>YES</Text>
+            <Text style={{ ...t(8.8, 700), width: 30, textAlign: "center" }}>NO</Text>
           </View>
           <Items
-            rowGap={1.5}
-            items={["I've got a skateboard. I've got a helmet, too.", "Zoe likes jazz. She doesn't like rap.", "I can play chess. I can't play cards.", "Sam loves swimming. He hates running.", "In Star Rider you can fly a spaceship. You can build a space station, too."]}
+            ml={0}
+            rowGap={1}
+            items={["The game is called Robo Racers.", "You build your own robots.", "Players race on the Moon.", "The game costs £50."].map((s) => (
+              <View key={s} style={{ flexDirection: "row" }}>
+                <Text style={{ ...t(), flex: 1 }}>{s}</Text>
+                <View style={{ width: 30, alignItems: "center" }}>
+                  <Box />
+                </View>
+                <View style={{ width: 30, alignItems: "center" }}>
+                  <Box />
+                </View>
+              </View>
+            ))}
           />
         </View>
-        <View style={{ width: COL }}>
-          <Section name="Listening and Speaking" icon="🎧" mt={0} />
-          <Ex n="7" listen>
-            Listen to Ben talking to Max about a computer game and write <Text style={{ fontFamily: "Sym" }}>✗</Text> in the right box.
-          </Ex>
-          <View style={{ marginLeft: 15, marginVertical: 3 }}>
-            <Pic src={A.games[3]} w={COL - 15} h={150} fit="cover" r={10} pos="50% 40%" />
-          </View>
-          <View style={{ marginLeft: 15, backgroundColor: "#E3F2FD", borderRadius: 8, padding: 5 }}>
-            <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-              <Text style={{ ...t(8.8, 700), width: 30, textAlign: "center" }}>YES</Text>
-              <Text style={{ ...t(8.8, 700), width: 30, textAlign: "center" }}>NO</Text>
-            </View>
-            <Items
-              ml={0}
-              rowGap={2}
-              items={["The name of the game is Robo Racers.", "You build your own robots.", "Players race on the Moon.", "The game costs £50."].map((s) => (
-                <View key={s} style={{ flexDirection: "row" }}>
-                  <Text style={{ ...t(), flex: 1 }}>{s}</Text>
-                  <View style={{ width: 30, alignItems: "center" }}>
-                    <Box />
-                  </View>
-                  <View style={{ width: 30, alignItems: "center" }}>
-                    <Box />
-                  </View>
-                </View>
-              ))}
-            />
-          </View>
-          <Ex
-            n="8"
-            mt={6}
-            tag={<Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 10, color: "#fff", backgroundColor: ORANGE, paddingHorizontal: 4, marginRight: 4, borderRadius: 2 }}>THINK</Text>}
-          >
-            Think of a video game you want to buy and talk with your friend about:
-          </Ex>
-          <View style={{ marginLeft: 22, flexDirection: "row", flexWrap: "wrap" }}>
-            {["the name", "the story", "the characters", "what players can do"].map((x) => (
-              <Text key={x} style={{ ...t(), width: "50%" }}>
-                • {x}
-              </Text>
-            ))}
-          </View>
-          <Section name="Writing" icon="📝" />
-          <Ex n="9">Write an email to your friend about your favourite video game.</Ex>
-          <View style={{ flexDirection: "row" }}>
-            <EmailBox w={COL - 15 - 64}>
-              <Text style={{ ...t(9.6), fontFamily: "Andika" }}>
-                Dear ...,{"\n"}My favourite video game is ... The characters in the game are ... They ... This video game is really exciting! Players can ...{"\n"}What&apos;s your favourite video game? Write and tell me.{"\n"}Talk to you soon,{"\n"}...
-              </Text>
-            </EmailBox>
-            <View style={{ marginLeft: 4, marginTop: 30 }}>
-              <Pic src={A.games[2]} w={60} h={60} fit="contain" r={0} />
-            </View>
-          </View>
+      </Area>
+      <At box={[0.52, 0.55, 0.45, 0.15]}>
+        <Ex n="8" mt={0} tag={<Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 10, color: "#fff", backgroundColor: ORANGE, paddingHorizontal: 4, marginRight: 4, borderRadius: 2 }}>THINK</Text>}>
+          Think of a video game you want to buy and talk with your friend about:
+        </Ex>
+        <View style={{ marginLeft: 22, flexDirection: "row", flexWrap: "wrap" }}>
+          {["the name", "the story", "the characters", "what players can do"].map((x) => (
+            <Text key={x} style={{ ...t(), width: "50%" }}>
+              • {x}
+            </Text>
+          ))}
         </View>
-      </View>
+        <Section name="Writing" icon="📝" mt={3} />
+        <Ex n="9" mt={0}>Write an email to your friend about your favourite video game.</Ex>
+      </At>
+      <Area box={[0.49, 0.7, 0.45, 0.25]} src={A.emailWin17} pad={[22, 12, 6, 12]}>
+        <Text style={{ ...t(9.6), fontFamily: "Andika" }}>
+          Dear ...,{"\n"}My favourite video game is ... The characters in the game are ... They ... This video game is really exciting! Players can ...{"\n"}What&apos;s your favourite video game? Write and tell me.{"\n"}Talk to you soon,{"\n"}...
+        </Text>
+      </Area>
     </BookPage>
   );
 }
 
-// =============================================================================
-// Skills Practice (source pp.20-21)
-// =============================================================================
+// --- Skills Practice (source pp.20-21) -----------------------------------------
 function VocabBank({ title, color, words, cols = 2 }: { title: string; color: string; words: string[]; cols?: number }) {
   return (
-    <View style={{ marginBottom: 6 }}>
+    <View style={{ marginBottom: 5 }}>
       <Text style={{ ...t(9.6, 700, "#fff"), backgroundColor: color, alignSelf: "flex-start", borderTopLeftRadius: 6, borderTopRightRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>{title}</Text>
-      <View style={{ backgroundColor: color + "22", borderTopRightRadius: 6, borderBottomLeftRadius: 6, borderBottomRightRadius: 6, padding: 5, flexDirection: "row", flexWrap: "wrap" }}>
+      <View style={{ backgroundColor: color + "22", borderTopRightRadius: 6, borderBottomLeftRadius: 6, borderBottomRightRadius: 6, padding: 4, flexDirection: "row", flexWrap: "wrap" }}>
         {words.map((w) => (
-          <Text key={w} style={{ ...t(9.4, 700), width: `${100 / cols}%` }}>
+          <Text key={w} style={{ ...t(9.2, 700), width: `${100 / cols}%` }}>
             {w}
           </Text>
         ))}
@@ -1586,301 +1746,287 @@ function VocabBank({ title, color, words, cols = 2 }: { title: string; color: st
     </View>
   );
 }
-
-function ExamTip({ title, sub, body }: { title: string; sub: string; body: string }) {
+function ExamTipArea({ box, src, title, sub, body }: { box: FBox; src: Src; title: string; sub: string; body: string }) {
   return (
-    <View style={{ marginLeft: 15, borderWidth: 1.2, borderColor: "#7E57C2", borderRadius: 8, padding: 6, paddingTop: 10, marginTop: 10, marginBottom: 4 }}>
-      <Text style={{ position: "absolute", right: 8, top: -10, fontFamily: "Baloo", fontWeight: 700, fontSize: 13, color: "#fff", backgroundColor: "#7E57C2", borderRadius: 5, paddingHorizontal: 6 }}>Exam TIP</Text>
-      <Text style={t(9.2, 700)}>{title}</Text>
-      <Text style={t(9.2, 700)}>({sub})</Text>
-      <Text style={t(9.2)}>{body}</Text>
-    </View>
+    <Area box={box} src={src} pad={[8, 10, 6, 12]}>
+      <Text style={{ position: "absolute", right: 0, top: -6, fontFamily: "Baloo", fontWeight: 700, fontSize: 13, color: "#fff", backgroundColor: "#7E57C2", borderRadius: 5, paddingHorizontal: 6 }}>Exam TIP</Text>
+      <Text style={t(9, 700)}>
+        {title} ({sub})
+      </Text>
+      <Text style={t(9)}>{body}</Text>
+    </Area>
   );
 }
 
 function P18() {
-  const items: [Src, string][] = [
-    [art.img("1c-cards-5"), "1"],
-    [art.img("1c-cards-7"), "2"],
-    [art.img("d-games-3"), "3"],
-    [art.img("1c-cards-1"), "4"],
+  const items: [Src, string, FBox][] = [
+    [art.img("1c-cards-5"), "1", [0.46, 0.475, 0.1, 0.07]],
+    [art.img("1c-cards-7"), "2", [0.59, 0.53, 0.1, 0.07]],
+    [art.img("d-games-3"), "3", [0.7, 0.47, 0.1, 0.07]],
+    [art.img("1c-cards-1"), "4", [0.8, 0.54, 0.1, 0.07]],
   ];
   return (
     <BookPage n={18}>
-      <View style={{ flexDirection: "row", gap: GAP }}>
-        <View style={{ width: COL - 40 }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 20, color: "#fff", backgroundColor: RED, alignSelf: "flex-start", paddingHorizontal: 12, borderBottomRightRadius: 12, marginLeft: -ML, paddingLeft: ML, marginTop: -8, marginBottom: 6 }}>SKILLS PRACTICE</Text>
-          <Text style={{ ...t(10.5, 700, "#fff"), backgroundColor: RED, alignSelf: "flex-start", borderRadius: 8, paddingHorizontal: 8, marginBottom: 5 }}>Vocabulary Bank</Text>
-          <VocabBank title="Things in a room" color="#E53935" words={["wardrobe", "desk lamp", "rug", "beanbag", "bookcase", "curtains"]} />
-          <VocabBank title="Household chores" color="#00897B" words={["do the laundry", "load the dishwasher", "take out the rubbish", "water the plants", "set the table", "vacuum the floor"]} cols={1} />
-          <VocabBank title="Free-time activities" color="#8E24AA" words={["go skateboarding", "play video games", "bake cakes", "draw comics", "take photos", "go swimming", "play the guitar", "play football"]} />
-          <VocabBank title="Personality adjectives" color="#1E88E5" words={["creative", "sporty", "sociable", "patient", "shy", "friendly"]} />
-          <VocabBank title="Other" color="#FB8C00" words={["decorate", "carry", "unpack", "costume", "mission", "explore", "potion", "tunnel"]} />
-          <VocabBank
-            title="Useful phrases"
-            color="#E91E63"
-            cols={1}
-            words={["It looks amazing!", "Who's hungry?", "Are you free on ...?", "Count me in!", "Sure, why not!", "I'd love to.", "Sorry, I can't.", "How often do you ...?", "I'm crazy about ...", "I can't stand ..."]}
-          />
-        </View>
-        <View style={{ width: COL + 40 }}>
-          <Section name="Listening Comprehension" icon="🎧" mt={0} />
-          <Text style={{ ...t(10.5, 700), marginBottom: 2 }}>Before listening</Text>
-          <Items ml={4} items={["What furniture is there in your bedroom?", "What do you usually do after school?", "Which chores do you do at home? Which do you hate?"]} />
-          <ExamTip title="Identifying location" sub="Multiple matching" body="Look at the items and the places in the picture. Say their names in English. Be careful! One place in the picture is extra." />
-          <Ex n="1" listen mt={4}>
-            You will hear a dialogue twice. Match each item (1-4) with its place (A-E) in the picture. Write the letter in the box. One place is extra.
-          </Ex>
-          <View style={{ flexDirection: "row", justifyContent: "space-around", marginLeft: 15, marginVertical: 6 }}>
-            {items.map(([s, n]) => (
-              <View key={n} style={{ alignItems: "center" }}>
-                <Pic src={s} w={64} h={58} fit="contain" r={0} />
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={t(10, 700)}>{n}. </Text>
-                  <Box s={16} />
-                </View>
-              </View>
-            ))}
-          </View>
-          <View style={{ marginLeft: 15, height: 196 }}>
-            <Pic src={A.scene1a} w={COL + 25} h={196} r={10} />
-            {[
-              ["A", 70, 150],
-              ["B", 140, 40],
-              ["C", 200, 120],
-              ["D", 236, 40],
-              ["E", 250, 150],
-            ].map(([L, x, y]) => (
-              <Text key={L as string} style={{ position: "absolute", left: x as number, top: y as number, ...t(11, 700, "#fff"), backgroundColor: RED, borderRadius: 3, paddingHorizontal: 4 }}>
-                {L as string}
-              </Text>
-            ))}
-          </View>
-        </View>
+      <View style={{ width: 0.4 * W - ML }}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 20, color: "#fff", backgroundColor: RED, alignSelf: "flex-start", paddingHorizontal: 12, borderBottomRightRadius: 12, marginLeft: -ML, paddingLeft: ML, marginTop: -8, marginBottom: 6 }}>SKILLS PRACTICE</Text>
+        <Text style={{ ...t(10.5, 700, "#fff"), backgroundColor: RED, alignSelf: "flex-start", borderRadius: 8, paddingHorizontal: 8, marginBottom: 5 }}>Vocabulary Bank</Text>
+        <VocabBank title="Things in a room" color="#E53935" words={["wardrobe", "desk lamp", "rug", "beanbag", "bookcase", "curtains"]} />
+        <VocabBank title="Household chores" color="#00897B" words={["do the laundry", "load the dishwasher", "take out the rubbish", "water the plants", "set the table", "vacuum the floor"]} cols={1} />
+        <VocabBank title="Free-time activities" color="#8E24AA" words={["go skateboarding", "play video games", "bake cakes", "draw comics", "take photos", "go swimming", "play the guitar", "play football"]} cols={1} />
+        <VocabBank title="Personality adjectives" color="#1E88E5" words={["creative", "sporty", "sociable", "patient", "shy", "friendly"]} />
+        <VocabBank title="Other" color="#FB8C00" words={["decorate", "carry", "unpack", "costume", "mission", "explore", "potion", "tunnel"]} />
+        <VocabBank title="Useful phrases" color="#E91E63" cols={1} words={["It looks amazing!", "Who's hungry?", "Are you free on ...?", "Count me in!", "Sure, why not! / I'd love to.", "How often do you ...?", "I'm crazy about ...", "I can't stand ..."]} />
       </View>
+      <At box={[0.44, 0.04, 0.53, 0.18]}>
+        <Section name="Listening Comprehension" icon="🎧" mt={0} />
+        <Text style={{ ...t(10.5, 700), marginBottom: 2 }}>Before listening</Text>
+        <Items ml={4} items={["What furniture is there in your bedroom?", "What do you usually do after school?", "Which chores do you do at home? Which do you hate?"]} />
+      </At>
+      <ExamTipArea box={[0.42, 0.22, 0.51, 0.12]} src={A.examTip18} title="Identifying location" sub="Multiple matching" body="Look at the items and the places in the picture. Say their names in English. Be careful! One place in the picture is extra." />
+      <At box={[0.44, 0.35, 0.52, 0.11]}>
+        <Ex n="1" listen mt={0}>
+          You will hear a dialogue twice. Match each item (1-4) with its place (A-E) in the picture. Write the letter in the box. One place is extra.
+        </Ex>
+      </At>
+      {items.map(([s, n, box]) => (
+        <React.Fragment key={n}>
+          <Area box={box} src={s} fit="contain" />
+          <At box={[box[0] + 0.02, box[1] + box[3], 0.08, 0.03]}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={t(10, 700)}>{n}. </Text>
+              <Box s={15} />
+            </View>
+          </At>
+        </React.Fragment>
+      ))}
+      <Area box={[0.45, 0.66, 0.45, 0.29]} src={A.scene1a} r={10}>
+        {[
+          ["A", 0.1, 0.75],
+          ["B", 0.35, 0.15],
+          ["C", 0.5, 0.6],
+          ["D", 0.62, 0.1],
+          ["E", 0.82, 0.62],
+        ].map(([L, x, y]) => (
+          <Text key={L as string} style={{ position: "absolute", left: (x as number) * 0.45 * W, top: (y as number) * 0.29 * H, ...t(11, 700, "#fff"), backgroundColor: RED, borderRadius: 3, paddingHorizontal: 4 }}>
+            {L as string}
+          </Text>
+        ))}
+      </Area>
     </BookPage>
   );
 }
 
 function P19() {
-  const fw = 78;
-  const fh = fw * (810 / 300);
+  const cb = SB([0.06, 0.12, 0.4, 0.5]);
   return (
     <BookPage n={19}>
-      <View style={{ flexDirection: "row", gap: GAP }}>
-        <View style={{ width: COL }}>
-          <Section name="Knowledge of Language Functions" icon="💬" mt={0} />
-          <Ex n="2">Fill in each conversation with the missing line. Write the letter A, B or C in each box.</Ex>
-          <View style={{ flexDirection: "row", marginTop: 2 }}>
-            <Pic src={A.talkFaces} w={fw} h={fh} fit="contain" r={0} />
-            <View style={{ flex: 1, marginLeft: 6 }}>
-              {[
-                ["When is the party?", ["On Friday evening.", "It's a space party.", "Count me in!"]],
-                ["Do you want to come skating?", ["Of course you can.", "Sure, why not?", "I'm skating now."]],
-                ["How often do you play chess?", ["It's great!", "Yes, I do.", "Hardly ever."]],
-              ].map(([q, os], i) => (
-                <View key={i} style={{ height: fh / 3, justifyContent: "center" }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                    <Text style={{ ...t(9.6), fontFamily: "Andika", backgroundColor: "#fff", borderWidth: 1, borderColor: INK, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2, flex: 1 }}>{q as string}</Text>
-                    <Text style={{ ...t(10, 700), marginLeft: 4 }}>{i + 1}. </Text>
-                    <Box s={15} />
-                  </View>
-                  {(os as string[]).map((o, k) => (
-                    <Text key={o} style={t(9.4)}>
-                      <B>{"ABC"[k]}.</B> {o}
-                    </Text>
-                  ))}
-                </View>
-              ))}
+      <At box={[0.07, 0.055, 0.38, 0.065]}>
+        <Section name="Knowledge of Language Functions" icon="💬" mt={0} />
+        <Ex n="2" mt={0}>Fill in each conversation with the missing line. Write A, B or C.</Ex>
+      </At>
+      <Area box={[0.06, 0.12, 0.4, 0.5]} src={A.talkBlock} pad={0}>
+        {[
+          ["When is the party?", ["On Friday evening.", "It's a space party.", "Count me in!"]],
+          ["Do you want to come skating?", ["Of course you can.", "Sure, why not?", "I'm skating now."]],
+          ["How often do you play chess?", ["It's great!", "Yes, I do.", "Hardly ever."]],
+        ].map(([q, os], i) => (
+          <View key={i} style={{ position: "absolute", left: cb.w * 0.3, top: (i * cb.h) / 3 + 10, width: cb.w * 0.66 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+              <Text style={{ ...t(9.6), fontFamily: "Andika", backgroundColor: "#fff", borderWidth: 1, borderColor: INK, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2, flex: 1 }}>{q as string}</Text>
+              <Text style={{ ...t(10, 700), marginLeft: 4 }}>{i + 1}. </Text>
+              <Box s={15} />
             </View>
-          </View>
-          <Section name="Knowledge of Language Means" icon="🔤" />
-          <Ex n="3">
-            Read the text. Out of the words given in the box, choose the ones which correctly fill gaps 1-3. Write the letter (A-F) next to each gap number. Careful! Three words are extra.
-          </Ex>
-          <View style={{ marginLeft: 15, flexDirection: "row", flexWrap: "wrap", borderWidth: 1, borderColor: "#B0BEC5", borderRadius: 4, padding: 4, marginVertical: 3 }}>
-            {["A. at", "B. enjoy", "C. on", "D. mind", "E. in", "F. hate"].map((x) => (
-              <Text key={x} style={{ ...t(9.6), width: "33%" }}>
-                {x}
+            {(os as string[]).map((o, k) => (
+              <Text key={o} style={t(9.4)}>
+                <B>{"ABC"[k]}.</B> {o}
               </Text>
             ))}
           </View>
-          <Text style={{ ...t(9.8), marginLeft: 15 }}>
-            My name is Daniel and I&apos;m thirteen. I live <B>1.</B> ____ a small flat in Leeds with my mum and my sister. I really <B>2.</B> ____ playing basketball, and I don&apos;t <B>3.</B> ____ helping at home - I usually set the table and take out the rubbish.
-          </Text>
-        </View>
-        <View style={{ width: COL }}>
-          <Section name="Reading Comprehension" icon="📖" mt={0} />
-          <ExamTip title="Identifying specific information" sub="Multiple choice" body="Read the questions first. Then read the text and find the answers. Be careful: all the options are in the text." />
-          <Ex n="4">
-            Read the text. Choose the correct answer. Write <Text style={{ fontFamily: "Sym" }}>✗</Text> in the box next to answer A, B or C.
-          </Ex>
-          <EmailBox head={["To: maya.reads@mailbox.com", "From: kai.jones@mailbox.com", "Subject: Hi from Kai!"]}>
-            <Text style={t(9.4)}>
-              Hi Maya,{"\n"}Thanks for your email. I&apos;m eleven, not twelve like you! I love music and I play the drums in a band with my friends. I&apos;m also crazy about cooking - I make pancakes every Sunday. My parents are having a barbecue on Saturday and they want us to help in the garden. My sister is watering the plants right now and I&apos;m cutting the grass. Do you help your parents at home?{"\n"}Write back,{"\n"}Kai
+        ))}
+      </Area>
+      <At box={[0.07, 0.63, 0.38, 0.3]}>
+        <Section name="Knowledge of Language Means" icon="🔤" mt={0} />
+        <Ex n="3" mt={0}>
+          Read the text. Out of the words in the box, choose the ones which fill gaps 1-3. Write the letter (A-F) next to each gap number. Three words are extra.
+        </Ex>
+        <View style={{ marginLeft: 15, flexDirection: "row", flexWrap: "wrap", borderWidth: 1, borderColor: "#B0BEC5", borderRadius: 4, padding: 3, marginVertical: 3 }}>
+          {["A. at", "B. enjoy", "C. on", "D. mind", "E. in", "F. hate"].map((x) => (
+            <Text key={x} style={{ ...t(9.6), width: "33%" }}>
+              {x}
             </Text>
-          </EmailBox>
-          <Items
-            rowGap={3}
-            items={[
-              ["How old is Kai?", ["10", "11", "12"], null],
-              ["What does Kai play?", ["🥁", "⚽", "🎮"], 1],
-              ["What is Kai doing now?", ["🌱", "🍳", "🧹"], 1],
-            ].map(([q, os, isEmoji]) => (
-              <View key={q as string}>
-                <Text style={t()}>{q as string}</Text>
-                <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 2 }}>
-                  {(os as string[]).map((o, k) => (
-                    <View key={o} style={{ alignItems: "center", flexDirection: "row" }}>
-                      {isEmoji ? <Ico e={o} s={34} /> : <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 24, color: ["#43A047", "#1E88E5", "#E53935"][k] }}>{o}</Text>}
-                      <Text style={{ ...t(9.6, 700), marginLeft: 3 }}>{"ABC"[k]}. </Text>
-                      <Box s={14} />
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ))}
-          />
+          ))}
         </View>
-      </View>
+        <Text style={{ ...t(9.6), marginLeft: 15 }}>
+          My name is Daniel and I&apos;m thirteen. I live <B>1.</B> ____ a small flat in Leeds with my mum and my sister. I really <B>2.</B> ____ playing basketball, and I don&apos;t <B>3.</B> ____ helping at home.
+        </Text>
+      </At>
+      <At box={[0.5, 0.055, 0.45, 0.04]}>
+        <Section name="Reading Comprehension" icon="📖" mt={0} />
+      </At>
+      <ExamTipArea box={[0.49, 0.105, 0.42, 0.12]} src={A.examTip19} title="Identifying specific information" sub="Multiple choice" body="Read the questions first. Then read the text and find the answers. All the options are in the text." />
+      <At box={[0.5, 0.2, 0.45, 0.045]}>
+        <Ex n="4" mt={0}>
+          Read the text. Choose the correct answer. Write <Text style={{ fontFamily: "Sym" }}>✗</Text> in the box next to A, B or C.
+        </Ex>
+      </At>
+      <Area box={[0.48, 0.25, 0.43, 0.37]} src={A.emailWin19} pad={[20, 10, 6, 12]}>
+        {["To: maya.reads@mailbox.com", "From: kai.jones@mailbox.com", "Subject: Hi from Kai!"].map((h) => (
+          <Text key={h} style={{ ...t(9), borderBottomWidth: 0.5, borderColor: "#CFD8DC", marginBottom: 1 }}>
+            {h}
+          </Text>
+        ))}
+        <Text style={t(9.4)}>
+          Hi Maya,{"\n"}Thanks for your email. I&apos;m eleven, not twelve like you! I love music and I play the drums in a band with my friends. I&apos;m also crazy about cooking - I make pancakes every Sunday. My parents are having a barbecue on Saturday and they want us to help in the garden. My sister is watering the plants right now and I&apos;m cutting the grass. Do you help at home?{"\n"}Write back, Kai
+        </Text>
+      </Area>
+      <At box={[0.5, 0.63, 0.46, 0.3]}>
+        <Items
+          rowGap={4}
+          items={[
+            ["How old is Kai?", ["10", "11", "12"], null],
+            ["What does Kai play?", ["🥁", "⚽", "🎮"], 1],
+            ["What is Kai doing now?", ["🌱", "🍳", "🧹"], 1],
+          ].map(([q, os, isEmoji]) => (
+            <View key={q as string}>
+              <Text style={t()}>{q as string}</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 2 }}>
+                {(os as string[]).map((o, k) => (
+                  <View key={o} style={{ alignItems: "center", flexDirection: "row" }}>
+                    {isEmoji ? <Ico e={o} s={40} /> : <Pic src={A.ageBadges[k]} w={44} h={30} fit="contain" r={0} />}
+                    <Text style={{ ...t(9.6, 700), marginLeft: 3 }}>{"ABC"[k]}. </Text>
+                    <Box s={14} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))}
+        />
+      </At>
     </BookPage>
   );
 }
 
-// =============================================================================
-// Bolt the Robot (comic, source p.22) and Fun Time (p.23)
-// =============================================================================
+// --- Bolt the Robot (comic, source p.22) and Fun Time (p.23) --------------------
 function P20() {
-  const ih = 650;
-  const iw = ih * (1024 / 1536);
-  const x0 = (CW - iw) / 2;
-  const pw = iw / 2;
-  const ph = ih / 3;
+  const box: FBox = [0.175, 0.02, 0.65, 0.92];
+  const b = SB(box);
+  const pw = b.w / 2;
+  const ph = b.h / 3;
   const panels: { n: number; bubbles: { dx: number; dy: number; w: number; text: string; tail?: "bl" | "br" | "tl" | "tr" }[] }[] = [
-    { n: 1, bubbles: [{ dx: 30, dy: 10, w: 110, text: "Bolt, you're always on that sofa! Find a hobby!", tail: "br" }, { dx: 8, dy: 150, w: 70, text: "But I'm bored ...", tail: "tr" }] },
-    { n: 2, bubbles: [{ dx: 10, dy: 12, w: 96, text: "Basketball? Easy!", tail: "bl" }, { dx: 120, dy: 170, w: 100, text: "Oops! I missed again.", tail: "tl" }] },
-    { n: 3, bubbles: [{ dx: 70, dy: 8, w: 150, text: "Bolt! What are you doing? That's my best paint!", tail: "bl" }, { dx: 150, dy: 180, w: 76, text: "It's art!", tail: "tl" }] },
-    { n: 4, bubbles: [{ dx: 10, dy: 10, w: 120, text: "Cooking is fun ... Hey, what's that smell?", tail: "bl" }] },
-    { n: 5, bubbles: [{ dx: 60, dy: 10, w: 150, text: "Look! They're dancing. They look so happy.", tail: "bl" }] },
-    { n: 6, bubbles: [{ dx: 8, dy: 10, w: 104, text: "Come in, Bolt! You're a great dancer!", tail: "br" }, { dx: 140, dy: 150, w: 86, text: "At last - a hobby I love!", tail: "tl" }] },
+    { n: 1, bubbles: [{ dx: 0.3, dy: 0.16, w: 0.6, text: "Bolt, you're always on that sofa! Why don't you find a hobby?", tail: "br" }, { dx: 0.04, dy: 0.66, w: 0.42, text: "But I'm bored ... and tired.", tail: "tr" }] },
+    { n: 2, bubbles: [{ dx: 0.04, dy: 0.04, w: 0.5, text: "Basketball? That's easy!", tail: "bl" }, { dx: 0.5, dy: 0.72, w: 0.46, text: "Oops! I missed again.", tail: "tl" }] },
+    { n: 3, bubbles: [{ dx: 0.3, dy: 0.04, w: 0.66, text: "Bolt! What are you doing? That's my best paint!", tail: "bl" }, { dx: 0.6, dy: 0.74, w: 0.36, text: "It's modern art!", tail: "tl" }] },
+    { n: 4, bubbles: [{ dx: 0.04, dy: 0.04, w: 0.56, text: "Cooking is fun ... Hey, what's that smell?", tail: "bl" }] },
+    { n: 5, bubbles: [{ dx: 0.24, dy: 0.04, w: 0.72, text: "Look! They're dancing. They look so happy.", tail: "bl" }] },
+    { n: 6, bubbles: [{ dx: 0.04, dy: 0.06, w: 0.5, text: "Come in, Bolt! You're a great dancer!", tail: "br" }, { dx: 0.56, dy: 0.66, w: 0.4, text: "At last - a hobby I love!", tail: "tl" }] },
   ];
   return (
-    <BookPage n={20} strip={false} bg="#FFFDE7">
-      <Abs l={x0} tp={34} w={iw} h={ih}>
-        <Pic src={A.comic} w={iw} h={ih} r={4} />
-        {panels.map((p) => {
-          const px = ((p.n - 1) % 2) * pw;
-          const py = Math.floor((p.n - 1) / 2) * ph;
-          return (
-            <React.Fragment key={p.n}>
-              <View style={{ position: "absolute", left: px + 6, top: py + ph - 30, width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", borderWidth: 1.5, borderColor: INK, alignItems: "center", justifyContent: "center" }}>
-                <Text style={t(BODY, 700)}>{p.n}</Text>
-              </View>
-              {p.bubbles.map((b, i) => (
-                <Bubble key={i} l={px + b.dx} tp={py + b.dy} w={b.w} tail={b.tail}>
-                  {b.text}
-                </Bubble>
-              ))}
-            </React.Fragment>
-          );
-        })}
-      </Abs>
-      <View style={{ flexDirection: "row", alignItems: "center", marginTop: -14 }}>
-        <Ico e="🤖" s={34} />
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 30, color: "#1565C0", marginLeft: 6 }}>Bolt the Robot</Text>
-      </View>
-      <Abs l={x0 - 30} tp={ih + 38} w={iw + 30}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <View style={{ width: 170 }}>
-            <Ex n="1" listen mt={0}>
-              a) Listen and read.
-            </Ex>
-          </View>
-          <Text style={t(10.5, 700, RED)}>b) Now, take roles and read again.</Text>
+    <BookPage n={20} strip={false}>
+      <Area box={box} src={A.comic} r={4} pos="50% 50%" />
+      {panels.map((p) => {
+        const px = b.l + ((p.n - 1) % 2) * pw;
+        const py = b.tp + Math.floor((p.n - 1) / 2) * ph;
+        return (
+          <React.Fragment key={p.n}>
+            <View style={{ position: "absolute", left: px + 6, top: py + ph - 30, width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", borderWidth: 1.5, borderColor: INK, alignItems: "center", justifyContent: "center" }}>
+              <Text style={t(BODY, 700)}>{p.n}</Text>
+            </View>
+            {p.bubbles.map((bb, i) => (
+              <Bubble key={i} l={px + bb.dx * pw} tp={py + bb.dy * ph + (p.n <= 2 ? 34 : 0)} w={bb.w * pw} tail={bb.tail}>
+                {bb.text}
+              </Bubble>
+            ))}
+          </React.Fragment>
+        );
+      })}
+      <At box={[0.19, 0.03, 0.6, 0.05]}>
+        <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#ffffffdd", borderRadius: 10, paddingHorizontal: 8, width: 250 }}>
+          <Ico e="🤖" s={30} />
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 28, color: "#1565C0", marginLeft: 6 }}>Bolt the Robot</Text>
         </View>
-      </Abs>
+      </At>
+      <At box={[0.19, 0.085, 0.3, 0.03]}>
+        <View style={{ backgroundColor: "#fff", borderRadius: 6, paddingHorizontal: 4, width: 150 }}>
+          <Ex n="1" listen mt={0}>
+            a) Listen and read.
+          </Ex>
+        </View>
+      </At>
+      <At box={[0.55, 0.935, 0.4, 0.03]}>
+        <Text style={{ ...t(10.5, 700, RED), textAlign: "right" }}>b) Now, take roles and read again.</Text>
+      </At>
     </BookPage>
   );
 }
 
 function P21() {
-  const lw = 268;
   const inventions: [number, string, string][] = [
     [0, "Mop ppsrleis", "Clean the floor while you walk around the house!"],
     [1, "An mbrlelua hat", "Keep your head dry and your hands free on rainy days."],
     [2, "A singing hottbhsuro", "It plays your favourite song for two minutes - the perfect time to brush!"],
   ];
+  const ib = SB([0.05, 0.14, 0.43, 0.48]);
   return (
-    <BookPage n={21} bg="#FFF8E1">
-      <Abs l={lw + 10} tp={-TOP} w={W - ML - lw - 10} h={H}>
-        <View style={{ flex: 1, backgroundColor: "#283593" }} />
+    <BookPage n={21} bg="#FCF389">
+      <Abs l={0.55 * W - ML} tp={-TOP} w={W - 0.55 * W} h={H}>
+        <View style={{ flex: 1, backgroundColor: "#3B2C85" }} />
       </Abs>
-      <View style={{ flexDirection: "row", gap: 20 }}>
-        <View style={{ width: lw }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 17, color: ORANGE }}>CRAZY BUT TRUE? HOME INVENTIONS!</Text>
-          <Text style={t(11, 700, RED)}>What are they? Unscramble the words and find out!</Text>
-          {inventions.map(([i, w, s]) => (
-            <View key={i} style={{ flexDirection: i % 2 ? "row-reverse" : "row", alignItems: "center", marginTop: 8 }}>
-              <View style={{ width: 98, height: 92, backgroundColor: "#fff", borderRadius: 46, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: ["#FFB74D", "#4FC3F7", "#AED581"][i] }}>
-                <Pic src={A.fun[i]} w={76} h={72} fit="contain" r={0} />
-              </View>
-              <View style={{ flex: 1, backgroundColor: "#fff", borderRadius: 10, padding: 6, marginHorizontal: 6, borderWidth: 1, borderColor: "#FFE082" }}>
-                <Text style={t(10)}>
-                  <B c={RED}>{i + 1} </B>
-                  <B>{w}</B>: {s}
-                </Text>
-              </View>
-            </View>
-          ))}
-          <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center" }}>
-            <Ico e="😂" s={34} />
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 24, color: GREEN, marginLeft: 6 }}>Ha ha ha!</Text>
-          </View>
-          <View style={{ backgroundColor: "#fff", borderRadius: 10, padding: 8, marginTop: 4, flexDirection: "row", alignItems: "center" }}>
-            <Ico e="🎹" s={44} />
-            <Text style={{ ...t(10.5), fontFamily: "Andika", flex: 1, marginLeft: 8 }}>
-              <B>Q:</B> What has lots of keys but can&apos;t open a single door?{"\n"}
-              <B>A:</B> A piano!
+      <At box={[0.06, 0.035, 0.44, 0.1]}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 17, color: "#E53935" }}>CRAZY BUT TRUE? HOME INVENTIONS!</Text>
+        <Text style={t(11, 700, PURPLE)}>What are they? Unscramble the words and find out!</Text>
+      </At>
+      <Area box={[0.05, 0.14, 0.43, 0.48]} src={A.inventions} pad={0}>
+        {inventions.map(([i, w, s]) => (
+          <View key={i} style={{ position: "absolute", left: i % 2 ? 6 : ib.w * 0.4, top: (i * ib.h) / 3 + 18, width: ib.w * 0.56, backgroundColor: "#ffffffee", borderRadius: 10, padding: 5 }}>
+            <Text style={t(9.6)}>
+              <B c={RED}>{i + 1} </B>
+              <B>{w}</B>: {s}
             </Text>
           </View>
-        </View>
-        <View style={{ flex: 1, paddingRight: 4 }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#fff", backgroundColor: GREEN, alignSelf: "flex-end", borderRadius: 8, paddingHorizontal: 10, transform: "rotate(3deg)" }}>Fun Time</Text>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 26, color: "#fff", marginTop: 6, lineHeight: 1 }}>I Want a</Text>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 40, color: "#FFEB3B", lineHeight: 1, marginBottom: 6 }}>HERO</Text>
-          {[
-            "I want a hero,\nSomeone brave and true,\nSomeone who can help me\nWhen I'm feeling blue.",
-            "She's quick and she's clever,\nShe never runs away,\nShe flies above the city\nTo save another day!",
-            "She's kind and she's funny,\nShe's always there for me,\nMy hero is my best friend,\nAs cool as cool can be!",
-          ].map((v, i) => (
-            <Text key={i} style={{ ...t(10.6, 700, "#FFF59D"), marginBottom: 6, marginLeft: i === 1 ? 24 : 0 }}>
-              {v}
-            </Text>
-          ))}
-          <Ex n="1" listen color="#fff">
-            Listen to the song. What&apos;s the singer&apos;s hero like?
-          </Ex>
-          <Ex
-            n="2"
-            color="#fff"
-            tag={<Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 10, color: "#fff", backgroundColor: ORANGE, paddingHorizontal: 4, marginRight: 4, borderRadius: 2 }}>THINK</Text>}
-          >
-            What&apos;s your hero like? Write your own version. Read it to the class.
-          </Ex>
-          <View style={{ alignItems: "center", marginTop: 2 }}>
-            <Pic src={A.fun[3]} w={180} h={170} fit="contain" r={0} />
-          </View>
-        </View>
-      </View>
+        ))}
+      </Area>
+      <Area box={[0.11, 0.63, 0.39, 0.25]} src={A.joke} pad={[10, 10, 10, 0.39 * W * 0.36]}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 22, color: GREEN }}>Ha ha ha!</Text>
+        <Text style={{ ...t(10.4), fontFamily: "Andika" }}>
+          <B>Q:</B> What has lots of keys but can&apos;t open a single door?{"\n"}
+          <B>A:</B> A piano!
+        </Text>
+      </Area>
+      <Area box={[0.73, 0.12, 0.25, 0.11]} src={A.funBadge} fit="contain" />
+      <At box={[0.58, 0.23, 0.4, 0.42]}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 24, color: "#fff", lineHeight: 1 }}>I Want a</Text>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 40, color: "#FFEB3B", lineHeight: 1, marginBottom: 6 }}>HERO</Text>
+        {[
+          "I want a hero,\nSomeone brave and true,\nSomeone who can help me\nWhen I'm feeling blue.",
+          "She's quick and she's clever,\nShe never runs away,\nShe flies above the city\nTo save another day!",
+          "She's kind and she's funny,\nShe's always there for me,\nMy hero is my best friend,\nAs cool as cool can be!",
+        ].map((v, i) => (
+          <Text key={i} style={{ ...t(10.4, 700, "#FFF59D"), marginBottom: 5, marginLeft: i === 1 ? 24 : 0 }}>
+            {v}
+          </Text>
+        ))}
+      </At>
+      <At box={[0.58, 0.66, 0.24, 0.27]}>
+        <Items
+          ml={0}
+          numColor="#FFEB3B"
+          rowGap={4}
+          items={[
+            <Text key="1" style={t(10.4, 700, "#fff")}>Listen to the song. What&apos;s the singer&apos;s hero like?</Text>,
+            <Text key="2" style={t(10.4, 700, "#fff")}>
+              <Text style={{ color: ORANGE }}>THINK </Text>What&apos;s your hero like? Write your own version. Read it to the class.
+            </Text>,
+          ]}
+        />
+      </At>
+      <Area box={[0.8, 0.62, 0.18, 0.33]} src={A.fun[3]} fit="contain" />
     </BookPage>
   );
 }
 
-// =============================================================================
-// Modular Revision 1 (source pp.24-25)
-// =============================================================================
+// --- Modular Revision 1 (source pp.24-25) ---------------------------------------
 const Marks = ({ n, total }: { n?: number; total: number }) => (
-  <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 2, marginBottom: 4 }}>
+  <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 1, marginBottom: 3 }}>
     <View style={{ width: 22, height: 15, borderWidth: 1, borderColor: "#90A4AE" }} />
     <Text style={{ ...t(9.6, 700), width: 22, textAlign: "center", borderWidth: 1, borderLeftWidth: 0, borderColor: "#90A4AE" }}>{n ?? total}</Text>
   </View>
@@ -1897,9 +2043,9 @@ function P22() {
           <WordBox words={["baking", "sleepover", "takes", "comics", "rubbish", "curtains"]} color={RED} />
           <Items
             start={0}
-            rowGap={2}
+            rowGap={1.5}
             items={[
-              <Text key="0" style={t()}>I love <Text style={{ color: BLUE, fontWeight: 700 }}>baking</Text> cakes with my grandma.</Text>,
+              <Text key="0" style={t()}>I love {g2("baking")} cakes with my grandma.</Text>,
               `Can you take out the ${GAPLINE}, please?`,
               `Zoe ${GAPLINE} photos of her cat every day.`,
               `I'm going to a ${GAPLINE} at Lily's on Friday.`,
@@ -1912,7 +2058,7 @@ function P22() {
           <Ex n="2">Write sentences. (10 marks)</Ex>
           <Items
             start={0}
-            rowGap={1}
+            rowGap={0.5}
             items={[
               <View key="0">
                 <Text style={t()}>never/Zoe/late/is</Text>
@@ -1921,7 +2067,7 @@ function P22() {
               ...["usually/Sam/at 7/gets up", "often/we/to the park/go", "always/Lily/her room/tidies", "hardly ever/Kenji/TV/watches", "sometimes/they/pizza/have"].map((s) => (
                 <View key={s}>
                   <Text style={t()}>{s}</Text>
-                  <View style={{ height: 10, borderBottomWidth: 0.8, borderColor: "#9E9E9E", marginBottom: 2 }} />
+                  <View style={{ height: 9, borderBottomWidth: 0.8, borderColor: "#9E9E9E", marginBottom: 2 }} />
                 </View>
               )),
             ]}
@@ -1930,7 +2076,7 @@ function P22() {
           <Ex n="3" mt={0}>Read and underline. (10 marks)</Ex>
           <Items
             start={0}
-            rowGap={0.5}
+            rowGap={0}
             size={9.6}
             items={[
               <Text key="0" style={t(9.6)}>Kenji <Text style={{ textDecoration: "underline" }}>usually plays</Text>/is playing football on Saturdays.</Text>,
@@ -1951,34 +2097,34 @@ function P22() {
         <View style={{ width: COL }}>
           <Section name="Knowledge of Language Means" icon="🔤" mt={0} />
           <Ex n="4">
-            In sentences 1-3, out of the given answers, choose the one which matches the picture. Write <Text style={{ fontFamily: "Sym" }}>✗</Text> in the box next to answer A, B or C. (15 marks)
+            In sentences 1-3, choose the answer which matches the picture. Write <Text style={{ fontFamily: "Sym" }}>✗</Text> in the box next to A, B or C. (15 marks)
           </Ex>
-          <View style={{ marginLeft: 15, marginVertical: 6 }}>
-            <Pic src={A.scene1b} w={COL - 15} h={(COL - 15) * 0.9} r={10} pos="60% 50%" />
-          </View>
-          <Items
-            rowGap={5}
-            items={[
-              ["The girl is", ["vacuuming the rug.", "setting the table.", "watering the plants."]],
-              ["The grandma is", ["cooking dinner.", "watering the plants.", "reading a book."]],
-              ["The cat is", ["sleeping on the sofa.", "playing with a ball.", "eating its food."]],
-            ].map(([q, os]) => (
-              <View key={q as string}>
-                <Text style={t()}>{q as string}</Text>
-                {(os as string[]).map((o, k) => (
-                  <View key={o} style={{ flexDirection: "row", justifyContent: "space-between", width: 200 }}>
-                    <Text style={t()}>
-                      <B>{"ABC"[k]}.</B> {o}
-                    </Text>
-                    <Box />
-                  </View>
-                ))}
-              </View>
-            ))}
-          />
-          <Marks total={15} />
         </View>
       </View>
+      <Area box={[0.57, 0.22, 0.36, 0.36]} src={A.scene1b} r={10} pos="62% 50%" />
+      <At box={[0.53, 0.6, 0.42, 0.33]}>
+        <Items
+          rowGap={5}
+          items={[
+            ["The girl is", ["vacuuming the rug.", "setting the table.", "watering the plants."]],
+            ["The grandma is", ["cooking dinner.", "watering the plants.", "reading a book."]],
+            ["The cat is", ["sleeping on the sofa.", "playing with a ball.", "eating its food."]],
+          ].map(([q, os]) => (
+            <View key={q as string}>
+              <Text style={t()}>{q as string}</Text>
+              {(os as string[]).map((o, k) => (
+                <View key={o} style={{ flexDirection: "row", justifyContent: "space-between", width: 200 }}>
+                  <Text style={t()}>
+                    <B>{"ABC"[k]}.</B> {o}
+                  </Text>
+                  <Box />
+                </View>
+              ))}
+            </View>
+          ))}
+        />
+        <Marks total={15} />
+      </At>
     </BookPage>
   );
 }
@@ -1986,13 +2132,13 @@ function P22() {
 function P23() {
   return (
     <BookPage n={23}>
-      <View style={{ flexDirection: "row", gap: GAP }}>
+      <View style={{ flexDirection: "row", gap: GAP, marginTop: 18 }}>
         <View style={{ width: COL }}>
           <Section name="Knowledge of Language Functions" icon="💬" mt={0} />
           <Ex n="5">Read and choose. (15 marks)</Ex>
           <Items
             start={0}
-            rowGap={2}
+            rowGap={1.5}
             items={[
               ["Can I borrow your pencil?", "Sure, here you are.", "No, I'm fine."],
               ["Hi, I'm Lucas.", "That's right.", "Nice to meet you."],
@@ -2018,41 +2164,30 @@ function P23() {
           </Ex>
           <Items
             start={0}
-            rowGap={1.5}
-            items={["The party is for Zoe's birthday.", "The party is on Saturday.", "It starts at 7 o'clock.", "It's at 12 Park Road.", "It's a pirate party.", "Kenji can't go to the party."].map((s, i) => (
+            rowGap={1}
+            items={["The party is for Zoe's birthday.", "The party is on Saturday.", "It starts at 7 o'clock.", "It's at 12 Park Road.", "It's a pirate party.", "Kenji can't go to the party."].map((s) => (
               <View key={s} style={{ flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={t()}>{s}</Text>
-                <Text style={t(9.6, 700)}>{i === 0 ? <Text style={{ borderWidth: 1 }}>True</Text> : "True"} / False</Text>
+                <Text style={t(9.6, 700)}>True / False</Text>
               </View>
             ))}
           />
           <Marks total={10} />
-          <View style={{ marginTop: 2 }}>
-            <Pic src={A.nowICan} w={200} h={48} fit="contain" r={0} />
-            <View style={{ borderWidth: 1.5, borderColor: RED, borderRadius: 8, padding: 6, marginTop: 2 }}>
-              {["talk about things in my room", "describe actions happening now", "make arrangements and invite friends", "talk about free-time activities", "read and write about video games"].map((x) => (
-                <Text key={x} style={t(9.8)}>
-                  <Text style={{ fontFamily: "Sym", color: RED }}>✓</Text> {x}
-                </Text>
-              ))}
-              <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: RED, textAlign: "right" }}>IN ENGLISH</Text>
-            </View>
-          </View>
         </View>
         <View style={{ width: COL }}>
           <Section name="Reading Comprehension" icon="📖" mt={0} />
           <Ex n="7">
             Read the email. Mark the sentences 1-5 <Text style={{ color: BLUE }}>T</Text> (True) or <Text style={{ color: RED }}>F</Text> (False). (10 marks)
           </Ex>
-          <EmailBox>
+          <View style={{ marginLeft: 15, backgroundColor: "#E6E6E6", borderWidth: 1, borderColor: "#BDBDBD", borderRadius: 6, padding: 6, marginBottom: 4 }}>
             <Text style={t(9.4)}>
               Dear Tom,{"\n"}Hi! How are you? My name&apos;s Ana and I&apos;m twelve. I live in Recife, a big city by the sea in Brazil. I&apos;d like a penfriend because I want to practise my English.{"\n"}I&apos;m quite sporty. I go surfing every weekend and I play volleyball on the beach with my cousins. I&apos;m also crazy about video games - my favourite is Spellbound Academy. I&apos;m in the castle tunnels now, looking for the thief!{"\n"}What do you like doing in your free time? Write soon!{"\n"}Ana
             </Text>
-          </EmailBox>
+          </View>
           <Items
             start={0}
-            rowGap={1}
-            items={["Ana lives in Brazil.", "Ana wants to practise her Spanish.", "Ana never goes surfing.", "Ana plays volleyball with her cousins.", "Ana doesn't like video games.", "Ana is playing Spellbound Academy at the moment."].map((s, i) => (
+            rowGap={0.5}
+            items={["Ana lives in Brazil.", "Ana wants to practise her Spanish.", "Ana never goes surfing.", "Ana plays volleyball with her cousins.", "Ana doesn't like video games.", "Ana is playing Spellbound Academy now."].map((s, i) => (
               <View key={s} style={{ flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={t()}>{s}</Text>
                 <Text style={t(10, 700, BLUE)}>{i === 0 ? "T" : "____"}</Text>
@@ -2060,29 +2195,39 @@ function P23() {
             ))}
           />
           <Marks total={10} />
-          <Section name="Writing" icon="📝" mt={0} />
-          <Ex n="8">Read Kai&apos;s notes below. Then, use his notes to write an email to a new penfriend. (20 marks)</Ex>
-          <View style={{ marginLeft: 15, backgroundColor: YELLOW, borderRadius: 4, padding: 7, transform: "rotate(-1deg)" }}>
-            {[
-              ["Name & age:", "Kai, eleven years old"],
-              ["Where you live:", "Cardiff, Wales"],
-              ["Reasons for writing:", "find a penfriend, practise Spanish"],
-              ["Free-time activities:", "play the drums, make pancakes, play basketball"],
-              ["Favourite video game:", "Star Rider - find the lost crystals and save the planet"],
-            ].map(([k, v]) => (
-              <Text key={k} style={{ ...t(9.6), fontFamily: "Andika" }}>
-                <B>{k}</B> {v}
-              </Text>
-            ))}
-          </View>
-          <Lines n={3} />
-          <Marks total={20} />
-          <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-            <Text style={{ ...t(10, 700), marginRight: 6 }}>Total</Text>
-            <Text style={{ ...t(10, 700), width: 34, textAlign: "center", borderWidth: 1, borderColor: "#90A4AE" }}>100</Text>
-          </View>
         </View>
       </View>
+      <View style={{ marginTop: 4 }}>
+        <Section name="Writing" icon="📝" mt={0} />
+        <Ex n="8">Read Kai&apos;s notes below. Then, use his notes to write an email to a new penfriend. (20 marks)</Ex>
+        <View style={{ marginLeft: 15, backgroundColor: "#FFFBEA", borderWidth: 1, borderColor: "#E9C93D", borderRadius: 4, padding: 6, flexDirection: "row", flexWrap: "wrap" }}>
+          {[
+            ["Name & age:", "Kai, eleven years old"],
+            ["Where you live:", "Cardiff, Wales"],
+            ["Reasons for writing:", "find a penfriend, practise Spanish"],
+            ["Free-time activities:", "play the drums, make pancakes, play basketball"],
+            ["Favourite video game:", "Star Rider - an exciting space adventure where you find the lost crystals and save the planet"],
+          ].map(([k, v], i) => (
+            <Text key={k} style={{ ...t(9.4), fontFamily: "Andika", width: i === 4 ? "100%" : "50%" }}>
+              <B>{k}</B> {v}
+            </Text>
+          ))}
+        </View>
+      </View>
+      <At box={[0.55, 0.86, 0.4, 0.06]}>
+        <Marks total={20} />
+        <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+          <Text style={{ ...t(10, 700), marginRight: 6 }}>Total</Text>
+          <Text style={{ ...t(10, 700), width: 34, textAlign: "center", borderWidth: 1, borderColor: "#90A4AE" }}>100</Text>
+        </View>
+      </At>
+      <Area box={[0.07, 0.8, 0.4, 0.12]} src={A.nowICanBox} pad={[0.12 * H * 0.36, 8, 4, 10]}>
+        {["talk about things in my room", "describe actions happening now", "make arrangements and invite friends", "talk about free time and video games"].map((x) => (
+          <Text key={x} style={t(9)}>
+            <Text style={{ fontFamily: "Sym", color: RED }}>✓</Text> {x}
+          </Text>
+        ))}
+      </Area>
     </BookPage>
   );
 }
@@ -2147,7 +2292,7 @@ function W1() {
   const cards = A.roomCards;
   const blanks = ["w _ _ d _ o _ e", "d _ s k   l _ _ p", "r _ g", "b _ _ n b _ g", "b _ o k c _ s e", "c _ r t _ _ n s"];
   return (
-    <WbPage n={4} code="1a" title="Moving day">
+    <WbPage n={2} code="1a" title="Moving day">
       <WbEx n="1">Look and complete the words.</WbEx>
       <Frame>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
@@ -2226,7 +2371,7 @@ function W2() {
   const chores = ["do the laundry", "load the dishwasher", "take out the rubbish", "water the plants", "set the table", "vacuum the floor"];
   const order = [3, 5, 0, 4, 1, 2];
   return (
-    <WbPage n={5} code="1b" title="Party night!">
+    <WbPage n={3} code="1b" title="Party night!">
       <WbEx n="1">Match the pictures (1-6) to the chores (a-f).</WbEx>
       <Frame>
         <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
@@ -2341,7 +2486,7 @@ function W3() {
   const cols = 8;
   const S = 30;
   return (
-    <WbPage n={6} code="1c" title="Free-time fun">
+    <WbPage n={4} code="1c" title="Free-time fun">
       <View style={{ flexDirection: "row", gap: GAP }}>
         <View style={{ width: COL }}>
           <WbEx n="1">Look at the pictures and complete the crossword.</WbEx>
@@ -2435,7 +2580,7 @@ function W3() {
 
 function W4() {
   return (
-    <WbPage n={7} code="1d" title="Skills work">
+    <WbPage n={5} code="1d" title="Skills work">
       <View style={{ flexDirection: "row", gap: GAP }}>
         <View style={{ width: COL }}>
           <WbEx n="1">Read the review and answer the questions.</WbEx>
@@ -2505,6 +2650,197 @@ function W4() {
   );
 }
 
+// =============================================================================
+// Covers, title page, contents (an original series: "Spark Up!", no logo)
+// =============================================================================
+const SERIES = "Spark Up!";
+function CoverArt({ kind, band }: { kind: string; band: string }) {
+  return (
+    <Page size={[W, H]} style={{ backgroundColor: "#4FC3F7" }}>
+      {/* eslint-disable-next-line jsx-a11y/alt-text */}
+      <Image src={png(A.cover)} style={{ position: "absolute", top: 0, left: 0, width: W, height: H - 2, objectFit: "cover" }} />
+      <View style={{ position: "absolute", top: 34, left: 36, right: 36 }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 78, color: "#fff", lineHeight: 1 }}>{SERIES}</Text>
+          <View style={{ width: 86, height: 86, borderRadius: 43, backgroundColor: RED, alignItems: "center", justifyContent: "center", marginLeft: 12, borderWidth: 5, borderColor: "#fff" }}>
+            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 60, color: "#fff", lineHeight: 1, marginTop: 8 }}>2</Text>
+          </View>
+        </View>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 500, fontSize: 18, color: "#0D47A1", marginTop: 14 }}>English for teenagers · CEFR A2</Text>
+        <View style={{ flexDirection: "row", marginTop: 12 }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 26, color: "#fff", backgroundColor: band, borderRadius: 12, paddingHorizontal: 16, paddingTop: 2 }}>{kind}</Text>
+        </View>
+      </View>
+      <View style={{ position: "absolute", right: 30, top: 220, width: 74, height: 74, borderRadius: 37, backgroundColor: "#FFEB3B", alignItems: "center", justifyContent: "center", transform: "rotate(10deg)" }}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 30, color: RED, lineHeight: 1, marginTop: 6 }}>A2</Text>
+      </View>
+    </Page>
+  );
+}
+const Cover = () => <CoverArt kind="Student's Book" band={RED} />;
+
+function Imprint() {
+  return (
+    <Page size={[W, H]} style={{ padding: 56, backgroundColor: "#fff" }}>
+      <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 40, color: RED }}>{SERIES} 2</Text>
+      <Text style={{ fontFamily: "Baloo", fontWeight: 500, fontSize: 20, color: INK, marginBottom: 30 }}>Student&apos;s Book · A2</Text>
+      <Text style={t(10, 700)}>Hand-made reference edition</Text>
+      <Text style={{ ...t(9.6), marginBottom: 14 }}>
+        A welcome module and Module 1 written and designed by hand to show what a published coursebook page looks like when it follows the structure of an existing A2 series with new content: new characters (Lily, Sam, Zoe and Kenji), new texts, new exercises.
+      </Text>
+      <Text style={t(10, 700)}>Credits</Text>
+      <Text style={t(9.6)}>Illustrations: generated with GPT Image 2.5 and composed by hand.</Text>
+      <Text style={t(9.6)}>Icons: Twemoji by Twitter, Inc. and other contributors, licensed under CC-BY 4.0.</Text>
+      <Text style={{ ...t(9.6), marginBottom: 14 }}>Typefaces: Noto Sans, Baloo 2 and Andika (SIL Open Font License).</Text>
+      <Text style={t(10, 700)}>Characters</Text>
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 6, marginBottom: 20 }}>
+        {[
+          ["Lily", "w-friends"],
+          ["Sam", "w-friends"],
+          ["Zoe", "w-friends"],
+          ["Kenji", "w-friends"],
+        ].map(([n], i) => (
+          <View key={n} style={{ alignItems: "center" }}>
+            <View style={{ width: 90, height: 90, borderRadius: 45, overflow: "hidden", borderWidth: 3, borderColor: [GREEN, ORANGE, PURPLE, BLUE][i] }}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text */}
+              <Image src={png(A.friends)} style={{ width: 360, height: 360, marginLeft: -i * 88 - 6, marginTop: -40 }} />
+            </View>
+            <Text style={t(10, 700)}>{n}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={{ ...t(8.6, 400, "#616161"), position: "absolute", bottom: 50, left: 56, right: 56 }}>
+        This reference book is not for sale. It is not affiliated with, and does not reproduce text from, any published coursebook. All rights in the new texts and pictures belong to their authors.
+      </Text>
+    </Page>
+  );
+}
+
+function Contents() {
+  const head = ["MODULE", "TOPIC", "VOCABULARY", "GRAMMAR", "READING", "SPEAKING & FUNCTIONS", "LISTENING", "WRITING"];
+  const widths = [0.1, 0.13, 0.14, 0.14, 0.13, 0.15, 0.11, 0.1];
+  const rows: { m: string; pp: string; color: string; cells: string[] }[] = [
+    {
+      m: "Welcome",
+      pp: "pp. 4-9",
+      color: "#7CB342",
+      cells: ["• Review", "• family • school subjects • numbers & ordinals • countries • rooms • prepositions of movement", "• pronouns & possessives • plurals • there is/are", "• a dialogue", "• greetings and introductions • talking about family and places • telling the time", "• listening for specific information", "• about you (ID file)"],
+    },
+    {
+      m: "1",
+      pp: "pp. 10-17",
+      color: RED,
+      cells: [
+        "• Moving day • Party night! • Free-time fun • Video games",
+        "• things in a room • household chores • free-time activities • personality adjectives",
+        "• Present Continuous • Present Continuous (future) • Present Simple, adverbs of frequency • -ing form",
+        "• a dialogue • notes and speech bubbles • a quiz • game reviews",
+        "• describing a room • making arrangements • inviting, accepting • talking about free time",
+        "• identifying key information • true/false",
+        "• about your room • an invitation • an email about a game",
+      ],
+    },
+  ];
+  const tw = W - 72;
+  return (
+    <Page size={[W, H]} style={{ paddingTop: 40, paddingHorizontal: 36, backgroundColor: "#fff" }}>
+      <Puzzle l={20} tp={14} c="#F06292" s={46} rot={-12} />
+      <Puzzle l={W - 80} tp={10} c="#FFD54F" s={50} rot={14} />
+      <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 38, color: RED, textAlign: "center", marginBottom: 10 }}>Contents</Text>
+      <View style={{ flexDirection: "row", backgroundColor: RED }}>
+        {head.map((h, i) => (
+          <Text key={h} style={{ ...t(8.4, 700, "#fff"), width: widths[i] * tw, padding: 4, textAlign: "center", borderRightWidth: 0.8, borderColor: "#fff" }}>
+            {h}
+          </Text>
+        ))}
+      </View>
+      {rows.map((r) => (
+        <View key={r.m} style={{ flexDirection: "row", borderBottomWidth: 1, borderColor: r.color, backgroundColor: r.color + "18" }}>
+          <View style={{ width: widths[0] * tw, backgroundColor: r.color, alignItems: "center", justifyContent: "center", padding: 3 }}>
+            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: r.m.length > 2 ? 14 : 34, color: "#fff", lineHeight: 1 }}>{r.m}</Text>
+            <Text style={t(8, 700, "#fff")}>{r.pp}</Text>
+          </View>
+          {r.cells.map((c, i) => (
+            <Text key={i} style={{ ...t(9.2), width: widths[i + 1] * tw, padding: 4, borderRightWidth: 0.6, borderColor: "#E0E0E0" }}>
+              {c}
+            </Text>
+          ))}
+        </View>
+      ))}
+      <View style={{ backgroundColor: "#FFEBEE", padding: 4, borderBottomWidth: 1, borderColor: RED, flexDirection: "row", flexWrap: "wrap" }}>
+        {[
+          ["Rooms, chores, free time", "pp. 18-19", "Skills Practice"],
+          ["", "p. 20", "Bolt the Robot (story)"],
+          ["", "p. 21", "Fun Time"],
+          ["", "pp. 22-23", "Modular Revision 1"],
+        ].map(([a, p, b]) => (
+          <Text key={p} style={{ ...t(8.6), marginRight: 16 }}>
+            {a ? `${a}  ` : ""}
+            <B c={RED}>{p}</B> {b}
+          </Text>
+        ))}
+      </View>
+      <View style={{ marginTop: 22, flexDirection: "row", gap: 14 }}>
+        <View style={{ flex: 1, backgroundColor: YELLOW, borderRadius: 10, padding: 10 }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 16, color: RED }}>How this book works</Text>
+          {["Each lesson is two pages: a reading or story page and a practice page.", "The red numbers go on across the two pages of a lesson.", "Look for the headphones: you listen to the recording.", "Check these words: learn the new words of the lesson.", "Workbook: more practice for every lesson."].map((x) => (
+            <Text key={x} style={t(9.4)}>
+              • {x}
+            </Text>
+          ))}
+        </View>
+        <View style={{ width: 170 }}>
+          <Pic src={A.friends} w={170} h={170} r={14} />
+        </View>
+      </View>
+    </Page>
+  );
+}
+
+function BackCover() {
+  return (
+    <Page size={[W, H]} style={{ backgroundColor: "#29B6F6", padding: 46 }}>
+      <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 0.42 * H }}>
+        {/* eslint-disable-next-line jsx-a11y/alt-text */}
+        <Image src={png(A.cover)} style={{ width: W, height: 0.42 * H, objectFit: "cover", objectPosition: "50% 80%" }} />
+      </View>
+      <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 44, color: "#fff" }}>{SERIES} 2</Text>
+      <Text style={{ ...t(13, 700, "#0D47A1"), marginBottom: 16 }}>A2 · Student&apos;s Book</Text>
+      <View style={{ backgroundColor: "#ffffffee", borderRadius: 14, padding: 14, width: 360 }}>
+        <Text style={{ ...t(11), marginBottom: 6 }}>
+          {SERIES} is a course for teenagers who want to talk about their own world in English - their rooms, their families, their plans and the things they love doing.
+        </Text>
+        {["Two-page lessons with a reading or a story and clear practice", "Grammar boxes, Check these words and Everyday English", "Skills Practice in exam format and a revision test in every module", "A story page and a Fun Time page in every module", "Workbook with practice for every lesson"].map((x) => (
+          <Text key={x} style={t(10.4)}>
+            <Text style={{ color: RED, fontWeight: 700 }}>✓ </Text>
+            {x}
+          </Text>
+        ))}
+      </View>
+      <View style={{ position: "absolute", right: 46, top: 50, width: 90, height: 90, borderRadius: 45, backgroundColor: "#FFEB3B", alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 34, color: RED, lineHeight: 1, marginTop: 8 }}>A2</Text>
+        <Text style={t(8, 700, RED)}>CEFR</Text>
+      </View>
+    </Page>
+  );
+}
+
+const WbCover = () => <CoverArt kind="Workbook" band="#0277BD" />;
+function WbBack() {
+  return (
+    <Page size={[W, H]} style={{ backgroundColor: "#0277BD", padding: 46 }}>
+      <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 40, color: "#fff" }}>{SERIES} 2 · Workbook</Text>
+      <Text style={{ ...t(12, 400, "#E1F5FE"), width: 380, marginTop: 10 }}>
+        One page of practice for every Student&apos;s Book lesson: vocabulary with pictures, word puzzles, grammar practice, short reading and a portfolio writing task.
+      </Text>
+      <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 0.45 * H }}>
+        {/* eslint-disable-next-line jsx-a11y/alt-text */}
+        <Image src={png(A.cover)} style={{ width: W, height: 0.45 * H, objectFit: "cover", objectPosition: "50% 75%" }} />
+      </View>
+    </Page>
+  );
+}
+
 async function main() {
   A = await loadAssets();
   const missing = EMOJI.filter((e) => !A.emoji[e]);
@@ -2512,8 +2848,8 @@ async function main() {
   const out = path.join(process.cwd(), ".handmade");
   // PAGES=P4,W1 renders only those pages (to .handmade/test.pdf) while designing.
   const only = process.env.PAGES?.split(",");
-  const book = { P4, P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, P15, P16, P17, P18, P19, P20, P21, P22, P23 };
-  const workbook = { W1, W2, W3, W4 };
+  const book = { Cover, Imprint, Contents, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, P15, P16, P17, P18, P19, P20, P21, P22, P23, BackCover };
+  const workbook = { WbCover, W1, W2, W3, W4, WbBack };
   if (only) {
     const all: Record<string, () => React.ReactElement> = { ...book, ...workbook };
     const buf = await renderToBuffer(<Document>{only.map((k) => React.createElement(all[k], { key: k }))}</Document>);

@@ -160,33 +160,39 @@ export function chalkboard() {
   });
 }
 
-export const LANDMARK_TILES = [
-  { x: 40, y: 150, w: 420, h: 330, rot: -4 },
-  { x: 500, y: 60, w: 470, h: 330, rot: 3 },
-  { x: 1010, y: 140, w: 430, h: 330, rot: -2 },
-  { x: 60, y: 560, w: 430, h: 320, rot: 3 },
-  { x: 530, y: 520, w: 430, h: 330, rot: -3 },
-  { x: 1000, y: 560, w: 440, h: 320, rot: 2 },
+// Source p.8: the collage fills 0.95 x 0.61 of the page from the top edge,
+// title and first exercise printed over its top-left corner - so the
+// top-left of the ground stays free of tiles.
+export const LANDMARK_TILES2 = [
+  { x: 40, y: 380, w: 440, h: 330, rot: -4 },
+  { x: 700, y: 40, w: 440, h: 320, rot: 3 },
+  { x: 1040, y: 380, w: 410, h: 320, rot: -2 },
+  { x: 110, y: 800, w: 420, h: 320, rot: 3 },
+  { x: 560, y: 450, w: 440, h: 330, rot: -3 },
+  { x: 1010, y: 800, w: 430, h: 330, rot: 2 },
 ];
 export function landmarkCollage() {
-  return cached("landmarks", async () => {
+  return cached("landmarks2", async () => {
     const W = 1480;
-    const H = 960;
+    const H = 1210;
     const layers: Layer[] = [
       {
         input: svg(
           W,
           H,
-          `<path d="M-20 520 C 300 300, 700 760, 1500 380 L 1500 600 C 800 960, 300 520, -20 760 Z" fill="#1565C0" opacity="0.9"/>
-           <path d="M-20 560 C 300 360, 700 800, 1500 430" stroke="#fff" stroke-width="10" stroke-dasharray="30 26" fill="none" opacity="0.8"/>
-           <path d="M-20 720 C 300 480, 700 900, 1500 560" stroke="#fff" stroke-width="10" stroke-dasharray="30 26" fill="none" opacity="0.8"/>`,
+          `<defs><linearGradient id="sky" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="#E3F4FD"/><stop offset="1" stop-color="#90CAF9"/></linearGradient></defs>
+           <rect width="${W}" height="${H}" fill="url(#sky)"/>
+           <path d="M-20 700 C 300 480, 700 980, 1500 560 L 1500 800 C 800 1200, 300 720, -20 980 Z" fill="#1565C0" opacity="0.9"/>
+           <path d="M-20 740 C 300 520, 700 1020, 1500 610" stroke="#fff" stroke-width="10" stroke-dasharray="30 26" fill="none" opacity="0.8"/>
+           <path d="M-20 940 C 300 680, 700 1140, 1500 760" stroke="#fff" stroke-width="10" stroke-dasharray="30 26" fill="none" opacity="0.8"/>
+           <rect x="20" y="20" width="640" height="330" rx="30" fill="#fff" opacity="0.85"/>`,
         ),
         left: 0,
         top: 0,
       },
     ];
-    for (let i = 0; i < LANDMARK_TILES.length; i++) {
-      const t = LANDMARK_TILES[i];
+    for (let i = 0; i < LANDMARK_TILES2.length; i++) {
+      const t = LANDMARK_TILES2[i];
       const photo = await rounded(img(`w-landmarks-${i + 1}`), t.w - 20, t.h - 20, 10, "contain", ["#E3F2FD", "#FFF8E1", "#E8F5E9", "#FCE4EC", "#EDE7F6", "#FFF3E0"][i]);
       const framed = await canvas(t.w, t.h, [{ input: svg(t.w, t.h, `<rect width="${t.w}" height="${t.h}" rx="14" fill="#fff"/>`), left: 0, top: 0 }, { input: photo, left: 10, top: 10 }]);
       const rot = await sharp(framed).rotate(t.rot, { background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
@@ -313,4 +319,77 @@ export async function likeScale(icons: Buffer[]) {
     for (let i = 0; i < icons.length; i++) layers.push({ input: await contain(icons[i], 96, 96), left: 6, top: i * rowH + 10 });
     return canvas(W, icons.length * rowH, layers);
   });
+}
+
+// --- generic picture areas (round 2) -----------------------------------------
+// A picture area as a publisher builds one: a drawn ground (SVG) with
+// pictures placed on it; the PDF prints the text over it. The source's
+// panels (the U-file card, the e-mail window, the exam-tip box) are such
+// artwork too, so the analyzer measures them as pictures on both books.
+export type Placed = { buf: Buffer; x: number; y: number; w: number; h: number; fit?: "contain" | "cover"; round?: number; circle?: boolean; ring?: string; knock?: boolean };
+export async function compose(name: string, w: number, h: number, ground: string, items: Placed[] = []) {
+  return cached(name, async () => {
+    const layers: Layer[] = [{ input: svg(w, h, ground), left: 0, top: 0 }];
+    for (const p of items) {
+      let b: Buffer;
+      if (p.circle) b = await circle(p.buf, Math.round(Math.min(p.w, p.h)), p.ring ?? "#fff", 8);
+      else if (p.fit === "cover") b = await rounded(p.buf, Math.round(p.w), Math.round(p.h), p.round ?? 0, "cover");
+      else b = await contain(p.knock ? await knockout(p.buf) : p.buf, p.w, p.h);
+      layers.push({ input: b, left: p.x, top: p.y });
+    }
+    return canvas(w, h, layers);
+  });
+}
+
+// Part of a picture (fractions), e.g. comic panels cut from one scene.
+export async function crop(buf: Buffer, x: number, y: number, w: number, h: number) {
+  const m = await sharp(buf).metadata();
+  const W = m.width ?? 1;
+  const H = m.height ?? 1;
+  return sharp(buf)
+    .extract({ left: Math.round(x * W), top: Math.round(y * H), width: Math.round(w * W), height: Math.round(h * H) })
+    .png()
+    .toBuffer();
+}
+
+// A comic page's white gutters filled with a warm stipple, as printed comic
+// pages often frame their panels (and so the page reads as one artwork, the
+// way the source's comic page measures as one picture).
+export async function stippleGutters(name: string, buf: Buffer) {
+  return cached(name, async () => {
+    const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const C = info.channels;
+    for (let y = 0; y < info.height; y++) {
+      for (let x = 0; x < info.width; x++) {
+        const i = (y * info.width + x) * C;
+        if (Math.min(data[i], data[i + 1], data[i + 2]) < 244) continue;
+        const dot = (x % 6 < 3) !== (y % 6 < 3);
+        data[i] = dot ? 230 : 255;
+        data[i + 1] = dot ? 40 : 235;
+        data[i + 2] = dot ? 40 : 59;
+      }
+    }
+    return sharp(data, { raw: info }).png().toBuffer();
+  });
+}
+
+// The same picture printed a little more saturated (the source's artwork is
+// brighter than the generated pictures on some pages).
+export async function vivid(name: string, buf: Buffer, saturation = 1.35) {
+  return cached(name, async () => sharp(buf).modulate({ saturation }).png().toBuffer());
+}
+
+// A number on a tilted coloured tile, as artwork (source p.7's number tiles are pictures, not text).
+export function numberBadge(n: string, color: string, rot: number) {
+  return cached(`badge-${n}-${color.slice(1)}`, async () =>
+    sharp(
+      svg(
+        130,
+        90,
+        `<g transform="rotate(${rot} 65 45)"><rect x="12" y="10" width="106" height="70" rx="14" fill="${color}"/><text x="65" y="64" font-family="Arial Black, Arial" font-weight="bold" font-size="46" fill="#fff" text-anchor="middle">${n}</text></g>`,
+      ),
+    )
+      .png()
+      .toBuffer(),
+  );
 }

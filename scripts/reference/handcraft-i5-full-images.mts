@@ -18,10 +18,17 @@ const STYLE =
   "Bright 2D cartoon illustration for a teenage English coursebook, clean bold outlines, flat cheerful colours, light cel shading, expressive faces, no text, no letters, no numbers, no logos.";
 const CAST =
   "Characters (draw exactly so): LILY, 12-year-old girl, curly red hair in a ponytail, freckles, green hoodie, jeans; SAM, 12-year-old boy, short black hair, round glasses, orange T-shirt; ZOE, 12-year-old girl, dark brown skin, long braids, purple top; KENJI, 12-year-old boy, spiky brown hair, blue striped shirt.";
-const MAX_CALLS = 10; // hard budget for this reference (<= $0.15)
+// Hard budget: 8 calls in round 1 ($0.103) + at most 6 in round 2 (<= $0.12).
+const MAX_CALLS = 14;
 
-type Job = { name: string; prompt: string; size: "1536x1024" | "1024x1536" | "1024x1024"; cards?: string[] };
+type Job = { name: string; prompt: string; size: "1536x1024" | "1024x1536" | "1024x1024"; cards?: string[]; quality?: "medium" | "high" };
 const jobs: Job[] = [
+  {
+    name: "cover",
+    size: "1024x1536",
+    quality: "high",
+    prompt: `${CAST} Front cover artwork for a teenage English coursebook. LILY, SAM, ZOE and KENJI jump and laugh together in the lower half of the picture, in front of a big bright collage of their world: a giant colourful jigsaw of puzzle pieces, a bedroom window, a skateboard, a guitar, a video game controller, a party balloon and a small round blue robot waving. Clear sky-blue and lime-green background with plenty of empty space in the top third for the title. Dynamic, joyful, high detail.`,
+  },
   {
     name: "w-friends",
     size: "1024x1024",
@@ -120,7 +127,7 @@ async function main() {
     const prompt = job.cards ? `${cardSheetItemsPrompt(job.cards)}\n\n${cardSheetStyle(job.cards.length, STYLE)}` : `${job.prompt}\n\n${STYLE}`;
     const size = grid ? cardSheetSize(grid) : job.size;
     calls++;
-    const res = await generateImage({ model: MODEL, prompt, size, providerOptions: { openai: { quality: "medium" } } });
+    const res = await generateImage({ model: MODEL, prompt, size, providerOptions: { openai: { quality: job.quality ?? "medium" } } });
     const cost = imageCostFromUsage(MODEL, res.usage) ?? 0;
     total += cost;
     fs.appendFileSync(log, `${new Date().toISOString()}\t${job.name}\t${size}\t$${cost.toFixed(4)}\t${JSON.stringify(res.usage ?? {})}\n`);
