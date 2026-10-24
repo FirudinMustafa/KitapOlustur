@@ -20,17 +20,19 @@ import { audioTrackMap, audioTracks } from "@/lib/listening";
 import { blocksForRender, clampLayoutToPage } from "@/lib/layout-merge";
 import { itemText } from "@/lib/item-text";
 import { DESIGN_THEMES, resolveDesignTheme, type DesignThemeId } from "@/lib/design/themes";
-import { DENSE_LINE, MAX_PICTURE_ASPECT, panelledExercises, resolvePageTemplate } from "@/lib/design/layouts";
+import { DENSE_LINE, MAX_PICTURE_ASPECT, isExerciseBlock, panelledExercises, resolvePageTemplate } from "@/lib/design/layouts";
 import { BlockCard, GlossaryGrid, centredFigure, makeLook, type Look } from "./blocks";
 import { TemplatedPageBody, EDGE_TO_EDGE_TEMPLATES } from "./templates";
 import { LabelOverlay } from "./label-overlay";
 import { BubbleOverlay } from "./bubble-overlay";
 import { pageBubbles, withoutBubbledDialogue } from "@/lib/ai/page-bubbles";
-import { pictureSlotAspects, shapeAspect } from "@/lib/design/zones";
+import { pictureSlotAspects, shapeAspect, type ZonePlan } from "@/lib/design/zones";
 import { CoursebookCover } from "./CoursebookCover";
 import { TWEMOJI_CREDIT } from "@/lib/activities";
 import { applySourceType, type SourceType } from "@/lib/design/source-theme";
-import type { TopBand } from "@/lib/design/page-furniture";
+import { legibleGround, type TopBand } from "@/lib/design/page-furniture";
+import { planLessons, withSectionHeads } from "@/lib/lesson-furniture";
+import { LessonPointers } from "./lesson-furniture";
 
 registerBookFonts();
 
@@ -288,10 +290,24 @@ function topBandHeight(band: TopBand | undefined, pageHeight: number): number {
   return band.tab ? Math.max(h + 2, band.tab.heightRatio * pageHeight) : h;
 }
 
+// The colour the source page is printed on (zonePlan.ground): all over, a
+// band across the top or foot, or a panel down one side - drawn first, under
+// everything else, and into the bleed where it reaches the page edge.
+function GroundLayer({ ground, bleed = 0, pageSize }: { ground: NonNullable<ZonePlan["ground"]>; bleed?: number; pageSize: { width: number; height: number } }) {
+  const { box } = ground;
+  const x0 = box.x <= 0 ? 0 : bleed + box.x * pageSize.width;
+  const y0 = box.y <= 0 ? 0 : bleed + box.y * pageSize.height;
+  const x1 = box.x + box.w >= 1 ? pageSize.width + 2 * bleed : bleed + (box.x + box.w) * pageSize.width;
+  const y1 = box.y + box.h >= 1 ? pageSize.height + 2 * bleed : bleed + (box.y + box.h) * pageSize.height;
+  // fixed: an absolute box reaching the page foot is otherwise laid out as
+  // flow that runs over, and the page breaks onto a second sheet.
+  return <View fixed style={{ position: "absolute", left: x0, top: y0, width: x1 - x0, height: y1 - y0, backgroundColor: legibleGround(ground.color) }} />;
+}
+
 // The footer of a book mirroring a source: the page's topic on a pill and
 // the folio in a ring, at the outer bottom corner - where coursebooks put
 // them - instead of the "title · book type" running line.
-function TopicFooter({ topic, look, bleed = 0 }: { topic?: string; look: Look; bleed?: number }) {
+function TopicFooter({ topic, look, bleed = 0, pointers }: { topic?: string; look: Look; bleed?: number; pointers?: string[] }) {
   const ring = look.furniture?.numberBadge?.color ?? look.palette.primary;
   return (
     <View
@@ -313,8 +329,11 @@ function TopicFooter({ topic, look, bleed = 0 }: { topic?: string; look: Look; b
           </View>
         );
         return (
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: recto ? "flex-end" : "flex-start" }}>
-            {recto ? [pill, folio] : [folio, pill]}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: pointers?.length ? "space-between" : recto ? "flex-end" : "flex-start" }}>
+            {/* a lesson's pointers to its review and workbook pages, toward the spine */}
+            {pointers?.length && recto ? <LessonPointers key="pointers" pointers={pointers} look={look} /> : null}
+            <View style={{ flexDirection: "row", alignItems: "center" }}>{recto ? [pill, folio] : [folio, pill]}</View>
+            {pointers?.length && !recto ? <LessonPointers key="pointers" pointers={pointers} look={look} /> : null}
           </View>
         );
       }}
@@ -720,6 +739,10 @@ export function BookDocument({
   // A book mirroring a source prints its page furniture: the topic footer
   // always, the top band when the source has one.
   const mirrorsSource = !!sourceStyle?.type && !isPictureBook;
+  // Lesson tabs, section heads, word boxes and pointers where the source
+  // prints them (lesson-furniture.ts) - a teen coursebook, not a young
+  // learners' one.
+  const lessonsOn = mirrorsSource && !!look.furniture?.lessons;
   // Audio scripts at the back (2026-10-21): every track in the Teacher's
   // Book; in the other books the tracks of their own exercises - a pupil's
   // book prints no scripts, as in published courses.
@@ -792,8 +815,14 @@ export function BookDocument({
         />
       )}
 
-      {units.flatMap((unit) =>
-        withUnitGlossary(unit, pagesForVariant(unit, variant), variant).map((stored, idx) => {
+      {units.flatMap((unit) => {
+        const unitPages = withUnitGlossary(unit, pagesForVariant(unit, variant), variant);
+        // Lesson furniture through the unit's pages (lesson-furniture.ts).
+        const lessons = lessonsOn ? planLessons(unitPages, unit) : [];
+        return unitPages.map((sourced, idx) => {
+          // Section heads only where the source page prints them.
+          const stored = lessonsOn ? { ...sourced, blocks: withSectionHeads(sourced.blocks, sourced.sourceShape?.lesson?.sections, isExerciseBlock) } : sourced;
+          const lesson = lessons[idx] ?? {};
           const imageSrc = resolvePageImageUrl(stored, pageImages);
           const imageSrcs = resolvePageImageUrls(stored, pageImages);
           // "Picture 4: the door" on a page whose picture 4 failed to generate.
@@ -829,7 +858,8 @@ export function BookDocument({
           const template = forcePlain?.has(`${unit.unitNumber}:${idx}`)
             ? "standard"
             : resolvePageTemplate(page, !!imageSrc, {
-                isUnitFirstPage: idx === 0,
+                // a lesson tab takes a unit heading's room
+                isUnitFirstPage: idx === 0 || (!!page.zonePlan && !!lesson.tab),
                 pictureCount: imageSrcs.length,
                 tight: isCompact,
                 metrics: { width: pageSize.width, height: pageSize.height, bodySize: theme.bodySize },
@@ -882,6 +912,9 @@ export function BookDocument({
           // In a mirrored book the section label moves to the footer pill.
           const sectionKicker = page.sectionLabel && !mirrorsSource ? upperFor(page.sectionLabel, contentLanguage) : undefined;
           const topBand = mirrorsSource && (scene || !edgeToEdge) ? look.furniture?.topBand : undefined;
+          // The source page's coloured ground, under a page set in its zones
+          // or type template (a scene's picture covers the page anyway).
+          const ground = mirrorsSource && !scene && !edgeToEdge && !worksheet ? page.zonePlan?.ground : undefined;
           const runningHeader = (
             <View style={styles.runningHeader}>
               <Text style={[styles.runningHeaderText, { color: palette.primary }]}>
@@ -898,6 +931,7 @@ export function BookDocument({
               wrap
             >
               <PageMarker id={pageKey} onPageStart={onPageStart} />
+              {ground ? <GroundLayer ground={ground} bleed={bleed} pageSize={pageSize} /> : null}
               {scene && imageSrc ? (
                 <ScenePicture
                   src={imageSrc}
@@ -917,7 +951,7 @@ export function BookDocument({
               ) : null}
               {topBand ? <TopEdgeBand band={topBand} bleed={bleed} pageSize={pageSize} /> : null}
               {/* Under the source's top band there is no running header line (Super Minds) - the band and footer pill carry the page. */}
-              {!edgeToEdge && !(mirrorsSource && look.furniture?.topBand) && runningHeader}
+              {!edgeToEdge && !(mirrorsSource && look.furniture?.topBand) && (lessonsOn ? <View style={{ height: 20 }} /> : runningHeader)}
 
               {worksheet ? (
                 <WorksheetPageBody
@@ -978,19 +1012,20 @@ export function BookDocument({
                   unitKicker={unitKicker(unit.unitNumber)}
                   bleed={bleed}
                   sectionKicker={sectionKicker}
+                  lesson={template === "source-zones" ? lesson : undefined}
                 />
               )}
 
               {template !== "full-bleed-illustration" &&
                 (mirrorsSource ? (
-                  <TopicFooter topic={footerTopic(page.sectionLabel || unit.title)} look={look} bleed={bleed} />
+                  <TopicFooter topic={footerTopic(page.sectionLabel || unit.title)} look={look} bleed={bleed} pointers={lesson.pointers} />
                 ) : (
                   <Footer bookTitle={bookTitle} variantLabel={variantLabel} bleed={bleed} />
                 ))}
             </Page>
           );
-        }),
-      )}
+        });
+      })}
 
       {showAnswerKey && units.some((u) => pagesForVariant(u, variant).some((pg) => pg.blocks.some((b) => b.answerKey?.length))) && (
         <Page size={sheetSize} style={pageStyle} wrap>

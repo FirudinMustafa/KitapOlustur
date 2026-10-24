@@ -10,7 +10,7 @@ import {
   type StextBlock,
   type VectorPath,
 } from "@/lib/source-layout";
-import { measureNumberMarks, measureTopBand } from "@/lib/design/page-furniture";
+import { measureNumberMarks, measurePageGround, measureTopBand } from "@/lib/design/page-furniture";
 
 const RASTER_WIDTH_PX = 600; // enough to see a gutter between comic panels
 const COLOUR_WIDTH_PX = 120; // design colours need no detail (Faz G1)
@@ -73,10 +73,14 @@ export async function analyzeSourceLayout(pdf: Uint8Array): Promise<SourcePageLa
       // The band is the page's frame, not its palette (it lives in furniture):
       // left in, a yellow edge strip outvoted the red of every heading badge.
       const band = topBand ? [{ x: 0, y: 0, w: 1, h: Math.max(topBand.heightRatio, topBand.tab?.heightRatio ?? 0) + 0.005 }] : [];
-      layout.designColors = designColors(
-        { width: small.getWidth(), height: small.getHeight(), channels: small.getNumberOfComponents(), data: small.getPixels() },
-        [...layout.images, ...band],
-      );
+      const smallRaster = { width: small.getWidth(), height: small.getHeight(), channels: small.getNumberOfComponents(), data: small.getPixels() };
+      layout.designColors = designColors(smallRaster, [...layout.images, ...band]);
+      // The colour the page is printed on, or its side panel.
+      const ground = measurePageGround(smallRaster, layout.images);
+      if (ground) {
+        layout.furniture = { ...layout.furniture, ground };
+        if (layout.textColumns === 1 && panelSplitsText(sp, ground.box)) layout.textColumns = 2;
+      }
       small.destroy();
       out.push(layout);
       page.destroy();
@@ -85,6 +89,29 @@ export async function analyzeSourceLayout(pdf: Uint8Array): Promise<SourcePageLa
   } finally {
     doc.destroy();
   }
+}
+
+// A panel down one side with text on it and text beside it is a column of
+// its own (i5 p.10: exercise 3 on the purple half). The word-mass gutter
+// test (countColumns) missed it - the paper half's picture captions fill
+// the gutter.
+function panelSplitsText(page: { width: number; height: number; blocks: StextBlock[] }, panel: { x: number; y: number; w: number; h: number }): boolean {
+  if (panel.y > 0 || panel.y + panel.h < 1 || panel.w < 0.3 || panel.w > 0.7 || (panel.x > 0 && panel.x + panel.w < 1)) return false;
+  const edge = panel.x > 0 ? panel.x : panel.w;
+  let inside = 0;
+  let beside = 0;
+  for (const b of page.blocks) {
+    if (b.type !== "text") continue;
+    const words = b.lines.reduce((n, l) => n + l.text.split(/\s+/).filter(Boolean).length, 0);
+    const x0 = b.bbox.x / page.width;
+    const x1 = (b.bbox.x + b.bbox.w) / page.width;
+    const onPanel = panel.x > 0 ? x0 >= edge - 0.02 : x1 <= edge + 0.02;
+    const offPanel = panel.x > 0 ? x1 <= edge + 0.02 : x0 >= edge - 0.02;
+    if (onPanel) inside += words;
+    else if (offPanel) beside += words;
+  }
+  const total = inside + beside;
+  return total > 0 && inside >= total * 0.15 && beside >= total * 0.15;
 }
 
 type Mupdf = typeof import("mupdf");

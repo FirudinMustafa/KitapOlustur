@@ -5,6 +5,40 @@
 
 ---
 
+## 000. Ders mobilyası, zeminler, büyük resimler (2026-10-24, branch `lessonfurniture`)
+
+Elle yapılan i5 kitabının sistemde eksik olanları (aşağıda 00, madde 3–5) eklendi. AI çağrısı yok, 0 $.
+
+| | Yapı | Görünüm | ink | inkMap | palette | pictureArea |
+|---|---|---|---|---|---|---|
+| KIYAS-11 yeniden dizim, önce | %87 | %56 | 44 | 41 | 56 | 35 |
+| KIYAS-11 yeniden dizim, sonra | **%89** | **%68** | 81 | 65 | 50 | 37 |
+| KIYAS-14 (Super Minds), önce → sonra | %68 → %71 | %71 → %74 | | | | |
+| KIYAS-13, önce → sonra | %52 → %51 | %66 → %67 | | | | |
+
+1. **Sayfa zemini ve yan panel** (`measurePageGround`, `page-furniture.ts`). Resim dışındaki 20×26 hücrenin düz renkleri kümeleniyor; rengin kapladığı alan en az üç kenara değiyorsa zemin sayılıyor: tam sayfa, üstte/altta bant ya da yanda panel. Ölçülenler: i5 s.6 limon bandı (üst %42), s.10 mor sağ yarı, s.23 lacivert sağ yarı.
+   - `zonePlan.ground` olarak saklanıyor; `GroundLayer` en alta, kenara değen yerde taşmaya kadar basıyor. Koyu zemin, siyah metin okunacak kadar açılıyor (`legibleGround`).
+   - Yan panelli sayfa iki sütuna dizilir; panel dış sütunu alır, kenarı oluğa denk gelir. Önce tek sütun metin panelin kenarından geçiyordu.
+   - Analizör, metni panelin iki yanında olan sayfayı artık iki sütun ölçüyor (`panelSplitsText`). Kaynak s.10 gerçekten iki sütunlu.
+2. **Büyük resimler.** Resim satırı sınırı %50 → %62, toplam sınırı %60 → %72; metne yer gerekirse `planZones` resimleri yine küçültüyor. Kaynakta iki yan kenara değen satır (s.8, 0,95 genişlik) kenardan kenara basılıyor (`bleed`).
+   - Ölçülen boşluğa büyürken taşan sayfa önce boşluğun yarısını deniyor (`render-fitted.tsx`). Önce boşluğun tamamı atılıyordu, KIYAS-11 s.8 yarı boş kalıyordu.
+3. **Beyaz zeminli resimler renkli karoda.** Zon sayfalarındaki resimlerin kenara bağlı beyaz zemini, resmin kendi ana renginin açık tonuyla çarpılarak basılıyor (`picture-ground.ts`): mavi küre açık mavi karoda, turuncu masa açık turuncuda. Elle kitap da nesneleri renkli karoya koymuştu.
+   - Kenarına kadar renkli sahneye dokunulmuyor. Tipli sayfalara (sahne/kart/panel) ve ayna olmayan kitaplara da dokunulmuyor. Çıktı aynı boyutta JPEG, baskı PDF'i büyümüyor.
+   - ink 63 → 81 ve inkMap 50 → 65 artışının çoğu bundan geliyor.
+4. **Ders mobilyası** (`src/lib/lesson-furniture.ts`, `src/lib/pdf/lesson-furniture.tsx`).
+   - Analizör ölçüyor: ders sekmesi (sayfa üstünde gövdenin 1,8 katı başlık, "1a" kodlu ya da kodsuz), bölüm başlıkları (kapalı liste), "Check these words" kutusu (üstte madde işaretli satırlar), alt göndermeler ("Workbook:" satırı).
+   - Kitap düzeyinde ancak en az iki sayfada ders kodu ya da bölüm başlığı varsa açılıyor. Super Minds'ta yalnız sayfa başlığı var, açılmıyor; KIYAS-14 değişmedi.
+   - Basılanlar: kod diski ve başlık (kodsuzsa kaynak rengiyle başlık: "Let's Start!" gibi), anahtar kelime kutusu, değişen her bölümün önünde başlık, ders sonunda "Student's Book: Language Review 1a • Workbook: 1a".
+   - Yazar şeması (hepsi isteğe bağlı): sayfada `lessonCode`, `lessonTitle`, `lessonWords`; blokta `section`. Blueprint'e `lesson`, `sections`, `wordBox` ve yönergeler eklendi.
+   - Yazar doldurmazsa: kod ünite numarası + harf, başlık `sectionLabel` ya da ünite adı, kelimeler ünite sözlüğünden dersin metninde geçenler, bölüm yönergeden çıkarılıyor ("Listen and repeat" + kelime listesi → Vocabulary, "Read" → Reading, tablo → Grammar, "Talk/Ask/Write about" → Speaking and Writing).
+   - KIYAS-11'in sayfaları karşılama modülü olduğu için yalnız sekme görünüyor. Kalanlar, Modül 1 düzenine (s.12–17) eşlenen bir deneme dizimiyle görülerek doğrulandı.
+   - **Canlı yazarla doğrulanmadı** (ücretli çalıştırma gerekiyor).
+5. Sayfanın ilk alıştırması %6'nın üstünde kalsın diye, ders kitabında kaldırılan koşu başlığının yeri boş bırakılıyor.
+
+**Açık kalanlar:** palette 56 → 50 (açık karolar kaynağın foto renklerini tutturmuyor). pictureArea %37: kaynak resim kutuları ile ölçülen çerçeveler hâlâ farklı; s.10–11'in çok sayıda küçük resmi ölçülmüyor ve s.11'i sözlük dolduruyor. Paneller resim olarak basılmıyor (spec madde 3). Kart grupları tek parça resim olmuyor (spec madde 2). Üst kenara taşma yok, yalnız yanlara var. KIYAS-13 s.2'nin zon sınıfı, resim 0,59 genişlikte ölçülüp 0,6 eşiğinin altında kaldığı için değişti (yapı −1).
+
+---
+
 ## 00. Elle yapılmış kıyas: i5 Team 2 karşılama modülü + Modül 1 (2026-10-24)
 
 Branch `handmade-i5`. Sistemin KIYAS-15'te ürettiği kaynak sayfaları (s.6–25) bir tasarımcı/yazar gibi elle yeniden yapıldı: özgün karakterler, metinler ve alıştırmalar. Kaynağın ders yapısı, iki sütunlu yoğunluğu, sayfa mobilyası ve alıştırma türleri korundu. Buna 4 sayfalık Modül 1 çalışma kitabı eklendi.

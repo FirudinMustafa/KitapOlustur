@@ -58,11 +58,31 @@ describe("buildZonePlan", () => {
     expect(zonePictureCount(plan)).toBe(3);
   });
 
-  it("keeps pictures to at most 60% of the page height", () => {
+  it("keeps pictures to at most 72% of the page height", () => {
     const plan = buildZonePlan(layout([{ x: 0, y: 0.05, w: 0.9, h: 0.45 }, { x: 0, y: 0.52, w: 0.9, h: 0.45 }]))!;
     const pictures = plan.bands.reduce((n, b) => n + (b.kind === "pictures" || b.kind === "split" ? b.height : 0), 0);
-    expect(pictures).toBeLessThanOrEqual(0.6 + 1e-9);
+    expect(pictures).toBeLessThanOrEqual(0.72 + 1e-9);
     expect(plan.bands.some((b) => b.kind === "text")).toBe(true);
+  });
+
+  it("keeps a big source picture at its height and bleeds a row that runs off both side edges (i5 p.8)", () => {
+    const plan = buildZonePlan(layout([{ x: 0.03, y: 0.02, w: 0.95, h: 0.61 }], 2))!;
+    const row = plan.bands.find((b) => b.kind === "pictures")!;
+    expect(row).toMatchObject({ kind: "pictures", height: 0.61, bleed: true });
+    // laid out, the row keeps its bleed
+    const laid = layoutZones(plan, [], 1, () => 0).find((b) => b.kind === "pictures")!;
+    expect(laid).toMatchObject({ bleed: true });
+  });
+
+  it("carries the source's ground and sets a page with a side panel in two columns, the panel on the outer one", () => {
+    const base = layout([]);
+    const plan = buildZonePlan({ ...base, furniture: { ground: { color: "#7677b2", box: { x: 0.55, y: 0, w: 0.45, h: 1 } } } })!;
+    expect(plan.ground).toEqual({ color: "#7677b2", box: { x: 0.5, y: 0, w: 0.5, h: 1 } });
+    expect(plan.bands).toEqual([{ kind: "text", columns: 2, weight: 1 }]);
+    // a band across the top keeps its measured box and the page its columns
+    const band = buildZonePlan({ ...base, furniture: { ground: { color: "#bfd72f", box: { x: 0, y: 0, w: 1, h: 0.42 } } } })!;
+    expect(band.ground?.box).toEqual({ x: 0, y: 0, w: 1, h: 0.42 });
+    expect(band.bands).toEqual([{ kind: "text", columns: 1, weight: 1 }]);
   });
 });
 

@@ -3,6 +3,7 @@ import type { SourcePageLayout } from "@/lib/source-layout";
 import { wordBudget } from "@/lib/source-shape";
 import { buildZonePlan, zonePictureCount } from "@/lib/design/zones";
 import { classifyPageType, typedPictureCount } from "@/lib/design/page-types";
+import { hasLessonFurniture, lessonShape, type LessonShape } from "@/lib/lesson-furniture";
 
 // Faz B2: what the writer is told about each source page it mirrors. The
 // measured shape (pictures, exercises, columns, density, exercise formats)
@@ -22,6 +23,10 @@ export function measuredWords(layout: Pick<SourcePageLayout, "wordCount">): numb
 // working out the limit, the writer still wrote 2-4 times the source's words
 // on Pre-A1 pages. Each page now also carries its limit as a number.
 export function writerBlueprint(pages: SourcePage[], options: { youngLearners?: boolean } = {}) {
+  // Lesson furniture only where these pages show the book has lessons
+  // (codes or section heads on two pages) - a young learners' page title is
+  // not a lesson tab.
+  const lessons = hasLessonFurniture(pages.map((p) => p.layout));
   return pages.map((p) => {
     const plan = p.layout ? buildZonePlan(p.layout) : null;
     const design = p.layout ? classifyPageType(p.layout) : "mixed";
@@ -44,6 +49,9 @@ export function writerBlueprint(pages: SourcePage[], options: { youngLearners?: 
               wordLimit: options.youngLearners && words !== undefined ? `at most ${wordBudget(words)} words on this page` : undefined,
               exerciseFormats: p.layout.exerciseRubrics.length ? p.layout.exerciseRubrics : undefined,
               listeningExercises: p.layout.listeningCount || undefined,
+              ...(lessons && p.layout.lessonHead ? { lesson: p.layout.lessonHead.coded ? "opens (coded)" : "opens (titled)" } : {}),
+              ...(lessons && p.layout.sectionHeads?.length ? { sections: p.layout.sectionHeads } : {}),
+              ...(lessons && p.layout.wordBox ? { wordBox: true } : {}),
             },
           }
         : { layoutZone: p.visualStyle?.layoutZone }),
@@ -61,6 +69,9 @@ export const BLUEPRINT_INSTRUCTIONS = [
   "- words: the printed page's whole text (headings, instructions, items, speech). A hard limit: at most 1.5 times this (or this + 20, whichever is more) - a page over it is sent back. For young learners' pages the pictures carry the exercise: one short instruction, items of a word or two.",
   "- wordLimit: that page's word limit, worked out for you - count the page's words (headings, instructions, items, speech, word banks, callout boxes except \"tip\") and stay under it. Leave out explanations and extra boxes; a teacher's note goes in a \"tip\" callout, which the pupil's book doesn't print.",
   "- textColumns: 2 means short, parallel blocks rather than one long block.",
+  "- lesson: the page opens a new lesson - set lessonTitle (the lesson's own short title, 1-4 words) and, for \"opens (coded)\", lessonCode (unit number + letter in order through the unit: \"1a\", \"1b\"...). They print on the lesson's tab; do not repeat them as a block.",
+  "- sections: the section heads the source prints on this page, in order (Reading, Vocabulary, Grammar...). Group the page's exercises the same way and set each exercise's \"section\" to its group's name; the heads are printed for you - never write them as blocks or into headings.",
+  "- wordBox: set lessonWords to the lesson's 6-10 key words and phrases (the new vocabulary its texts and exercises use); they print in a \"Check these words\" box beside the lesson tab.",
   "- design: the page is built from its pictures, not from text. Follow it exactly - it overrides \"pictures\" above where they differ:",
   "  - \"scene\": one full-page picture. imagePrompt is the whole scene (a place full of things and people to talk about). The first exercise's items are 4-8 single words naming things clearly visible in that scene (they are printed as labels on the picture), e.g. \"window\", \"door\", \"chair\" - every word must be something drawn in the imagePrompt. Keep any other text to one short line.",
   "  - \"cards\": a grid of numbered picture cards. The first exercise has one item per card - a single word or number each (e.g. \"red\", \"3\", \"pencil\"). extraImagePrompts: one simple object per card in the same order as the items (one object, centred, plain white background, no text), as many as there are cards (at most 10). imagePrompt is the page's other picture (the scene of a later exercise), or a picture of the cards' topic.",
@@ -71,6 +82,13 @@ export const BLUEPRINT_INSTRUCTIONS = [
 // of the page before (numbered above 1) - sourceShape.firstExercise.
 export function continuesLesson(layout: Pick<SourcePageLayout, "firstExerciseNumber">): { firstExercise?: number } {
   return layout.firstExerciseNumber && layout.firstExerciseNumber > 1 ? { firstExercise: layout.firstExerciseNumber } : {};
+}
+
+// The source page's lesson furniture (lesson tab, section heads, word box,
+// pointers - src/lib/lesson-furniture.ts), as sourceShape.lesson.
+export function lessonOf(layout: Pick<SourcePageLayout, "lessonHead" | "sectionHeads" | "wordBox" | "pointers">): { lesson?: LessonShape } {
+  const lesson = lessonShape(layout);
+  return lesson ? { lesson } : {};
 }
 
 // Deterministic follow-up to the writer: each mirrored page gets its source
@@ -95,6 +113,7 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
       ...(measuredWords(layout) !== undefined ? { words: layout.wordCount } : {}),
       pageType,
       ...continuesLesson(layout),
+      ...lessonOf(layout),
     };
     if (!plan) return { ...page, sourceShape };
     const extraSlots = Math.max(0, pictures - 1);

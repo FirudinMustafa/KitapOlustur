@@ -1,6 +1,7 @@
 import type { DesignColor, SourcePageLayout } from "@/lib/source-layout";
 import type { DesignTheme, FontRole } from "@/lib/design/themes";
 import { deriveFurniture, type PageFurniture } from "@/lib/design/page-furniture";
+import { hasLessonFurniture } from "@/lib/lesson-furniture";
 
 // Faz G1 "Kaynağın görünümü": the source book's own colours and type,
 // measured (src/lib/source-layout.ts) instead of guessed. The page-map model
@@ -126,7 +127,9 @@ export function deriveSourceTheme(layouts: (SourcePageLayout | null | undefined)
   const sizes = measured.flatMap(({ l }) => (l.bodyFontPt ? [l.bodyFontPt / l.heightPt] : []));
   const ratio = mostCommon(sizes.map((s) => Math.round(s * 4000) / 4000));
 
-  const furniture = deriveFurniture(measured.map(({ l }) => l));
+  const derived = deriveFurniture(measured.map(({ l }) => l));
+  // Lesson tabs, section heads, word boxes, pointers (lesson-furniture.ts).
+  const furniture = hasLessonFurniture(measured.map(({ l }) => l)) ? { ...derived, lessons: true } : derived;
 
   return {
     colors,

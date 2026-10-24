@@ -5,6 +5,7 @@ import { MAP_MAX_COLS, MAP_MAX_ROWS, PREPOSITIONS } from "@/lib/diagrams";
 import { LAYOUT_TEMPLATE_IDS } from "@/lib/design/layouts";
 import { MAX_TYPE_PICTURES, PAGE_LAYOUT_TYPES } from "@/lib/design/page-types";
 import { TEXT_STYLES } from "@/lib/text-style";
+import { LESSON_SECTIONS } from "@/lib/lesson-furniture";
 
 // ---- Source page map ----
 // A page-by-page blueprint of the uploaded source PDF. This is what lets the
@@ -267,6 +268,12 @@ export const contentBlockSchema = z.object({
     .describe("Not set by the writer - leave unset. Only ever filled in later by the layout editor's save flow."),
   // Faz 1 "Tasarım sistemi": optional presentation fields - all additive, so
   // every block generated before they existed renders exactly as before.
+  section: z
+    .enum(LESSON_SECTIONS)
+    .optional()
+    .describe(
+      'Only on pages whose blueprint has "sections": the coursebook section this exercise belongs to (its group is printed under that section head). Set it on every exercise of such a page.',
+    ),
   callout: z
     .enum(["tip", "did_you_know", "remember", "grammar"])
     .optional()
@@ -387,7 +394,14 @@ const zoneColumnItemSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), weight: z.number() }),
 ]);
 const zoneBandSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("pictures"), height: z.number(), widths: z.array(z.number()) }),
+  z.object({
+    kind: z.literal("pictures"),
+    height: z.number(),
+    widths: z.array(z.number()),
+    left: z.number().optional(),
+    span: z.number().optional(),
+    bleed: z.boolean().optional(),
+  }),
   z.object({ kind: z.literal("split"), side: z.enum(["left", "right"]), imageWidth: z.number(), height: z.number(), pictures: z.number() }),
   z.object({ kind: z.literal("text"), columns: z.union([z.literal(1), z.literal(2)]), weight: z.number() }),
   z.object({
@@ -395,7 +409,11 @@ const zoneBandSchema = z.discriminatedUnion("kind", [
     columns: z.tuple([z.array(zoneColumnItemSchema), z.array(zoneColumnItemSchema)]),
   }),
 ]);
-export const zonePlanSchema = z.object({ bands: z.array(zoneBandSchema) });
+export const zonePlanSchema = z.object({
+  bands: z.array(zoneBandSchema),
+  // The source page's coloured ground (measurePageGround, zones.ts).
+  ground: z.object({ color: z.string(), box: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }) }).optional(),
+});
 
 export const generatedPageSchema = z.object({
   sourcePageNumber: z.number(),
@@ -464,6 +482,20 @@ export const generatedPageSchema = z.object({
     .enum(LAYOUT_TEMPLATE_IDS)
     .optional()
     .describe("The page design template for this page - pick from the catalogue given in the instructions."),
+  // Lesson furniture (src/lib/lesson-furniture.ts): only where the blueprint
+  // says the source page opens a lesson. Unset, they are worked out.
+  lessonCode: z
+    .string()
+    .optional()
+    .describe('Only on a page whose blueprint "lesson" is "opens (coded)": the lesson code printed on its tab, e.g. "1a", "1b" (unit number + letter, in order through the unit).'),
+  lessonTitle: z
+    .string()
+    .optional()
+    .describe('Only on a page whose blueprint "lesson" opens a lesson: the lesson\'s short title printed on its tab, 1-4 words (e.g. "Moving day", "Party time!").'),
+  lessonWords: z
+    .array(z.string())
+    .optional()
+    .describe('Only on a page whose blueprint has "wordBox": the lesson\'s 6-10 key words and phrases (the new vocabulary its texts and exercises use), printed in a "Check these words" box.'),
 });
 // What is stored and edited: the writer's page plus fields only the system
 // sets. Faz B2's zonePlan (copied from the source page's measured layout)
@@ -492,6 +524,15 @@ export const storedPageSchema = generatedPageSchema.extend({
       // on with the previous page's lesson, so its exercises go on with that
       // page's numbering (numberUnitExercises).
       firstExercise: z.number().optional(),
+      // The source page's lesson furniture (lesson-furniture.ts lessonShape).
+      lesson: z
+        .object({
+          head: z.enum(["coded", "titled"]).optional(),
+          sections: z.number().optional(),
+          wordBox: z.boolean().optional(),
+          pointers: z.boolean().optional(),
+        })
+        .optional(),
     })
     .optional(),
   // Plan step 4: words printed on a scene's main picture (source p.7's
