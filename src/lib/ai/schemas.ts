@@ -6,6 +6,7 @@ import { LAYOUT_TEMPLATE_IDS } from "@/lib/design/layouts";
 import { MAX_TYPE_PICTURES, PAGE_LAYOUT_TYPES } from "@/lib/design/page-types";
 import { TEXT_STYLES } from "@/lib/text-style";
 import { LESSON_SECTIONS } from "@/lib/lesson-furniture";
+import { pageLayoutSpecSchema } from "@/lib/design/page-layout-spec";
 
 // ---- Source page map ----
 // A page-by-page blueprint of the uploaded source PDF. This is what lets the
@@ -546,6 +547,11 @@ export const storedPageSchema = generatedPageSchema.extend({
   // picture's height (the bubble keeps clear of the face). Set by
   // locateSpeakers after the picture is made, never by the writer.
   bubbles: z.array(z.object({ speaker: z.string(), line: z.string(), x: z.number(), y: z.number(), r: z.number().optional() })).optional(),
+  // The agent designer's layout for this page (src/lib/design/agent-designer.ts,
+  // AGENT_DESIGNER=1): set by designPageWithAgent after the pictures, never
+  // by the writer. A page with one prints from it (spec-page.tsx); unset,
+  // the page prints by its template as before.
+  designSpec: pageLayoutSpecSchema.optional(),
 });
 export type GeneratedPage = z.infer<typeof storedPageSchema>;
 

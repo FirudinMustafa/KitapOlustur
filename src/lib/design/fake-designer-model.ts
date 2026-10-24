@@ -93,10 +93,7 @@ function usage(input: number, output: number) {
   };
 }
 
-/** The usual script for a hand-written spec: render it, look, hand it in. */
-export function replaySpec(spec: PageLayoutSpec): FakeTurn[] {
-  return [
-    { tool: "render", spec },
-    { tool: "finish", spec },
-  ];
+/** The usual script for a hand-written spec: render it (`renders` times), look, hand it in. */
+export function replaySpec(spec: PageLayoutSpec, renders = 1): FakeTurn[] {
+  return [...Array.from({ length: renders }, () => ({ tool: "render" as const, spec })), { tool: "finish", spec }];
 }

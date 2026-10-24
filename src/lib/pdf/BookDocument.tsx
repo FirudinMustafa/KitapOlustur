@@ -34,6 +34,7 @@ import { planLessons, withSectionHeads } from "@/lib/lesson-furniture";
 import { GroundLayer, PageMarker, TopEdgeBand, TopicFooter, sheetKey, topBandHeight, type PageStartListener } from "./page-chrome";
 export { sheetKey, type PageStartListener } from "./page-chrome";
 import { FramedImage, pictureGround, pictureRect } from "./picture-frame";
+import { POINT_AT_PICTURE, SpecPage, usableSpec } from "./spec-page";
 import type { PictureInfo } from "./picture-fit";
 
 registerBookFonts();
@@ -226,10 +227,6 @@ function Footer({ bookTitle, variantLabel, bleed = 0 }: { bookTitle: string; var
 
 // A topic short enough for the footer pill: the page's section label (or
 // the unit title), cut at a word.
-// An exercise done by pointing at the page's picture ("Listen and point",
-// "Point and say", "Look and find") - see the young learners' page filter.
-const POINT_AT_PICTURE = /\b(listen and point|point and say|look and find|listen and find)\b/i;
-
 export function footerTopic(label: string | undefined | null): string | undefined {
   // The writer's section labels carry book and unit prefixes ("Workbook:
   // Commands, numbers...", "Unit 0: Hello, Friends!") - the pill is the topic.
@@ -710,6 +707,30 @@ export function BookDocument({
           const lesson = lessons[idx] ?? {};
           const imageSrc = resolvePageImageUrl(stored, pageImages);
           const imageSrcs = resolvePageImageUrls(stored, pageImages);
+          // The agent designer's layout (AGENT_DESIGNER=1), when the page has
+          // one that still fits it: the page is drawn from it, furniture and
+          // all (spec-page.tsx). Every other page prints as before.
+          const designed = isPictureBook ? null : usableSpec({ page: sourced, pictures: imageSrcs, look, lessonsOn });
+          if (designed) {
+            return (
+              <SpecPage
+                key={`${unit.unitNumber}-${sourced.sourcePageNumber}-${idx}`}
+                spec={designed}
+                page={sourced}
+                unit={unit}
+                pictures={imageSrcs}
+                look={look}
+                pageSize={pageSize}
+                bleed={bleed}
+                lesson={lesson}
+                lessonsOn={lessonsOn}
+                showAnswerKey={inlineAnswers}
+                topic={footerTopic(sourced.sectionLabel || unit.title)}
+                onPageStart={onPageStart}
+                pageKey={`${unit.unitNumber}:${idx}`}
+              />
+            );
+          }
           // "Picture 4: the door" on a page whose picture 4 failed to generate.
           const referenced = dropMissingPictureRefs(stored, imageSrcs.length);
           // A young learners' pupil book prints no teacher notes (KIYAS-14: the

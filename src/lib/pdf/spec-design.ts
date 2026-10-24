@@ -4,24 +4,26 @@ import { pageBubbles } from "@/lib/ai/page-bubbles";
 import { extraImageKey, resolvePageImageUrl } from "@/lib/page-image";
 import type { PageLayoutSpec } from "@/lib/design/page-layout-spec";
 import type { PageLook } from "@/lib/page-look";
-import type { DesignRender } from "@/lib/design/agent-designer";
-import { printedBlocks, renderSpecPage, specLookHints, type SpecPageContext, type SpecRender } from "./spec-page";
+import { designPage, type DesignRender, type DesignResult, type DesignerInput as Input, type DesignerOptions } from "@/lib/design/agent-designer";
+import { measurePageLook } from "@/lib/page-look";
+import { printedBlocks, renderSpecPage, specDesignable, specLookHints, type SpecPageContext, type SpecRender } from "./spec-page";
 import sharp from "sharp";
 import { tintGround, whiteGroundMask, type Rgb } from "./picture-ground";
 import { measurePictures } from "./picture-info";
+import type { GeneratedUnit } from "@/lib/ai/schemas";
+import type { SourceType } from "@/lib/design/source-theme";
+import { audioTrackMap } from "@/lib/listening";
+import { planLessons } from "@/lib/lesson-furniture";
+import { resolvePageImageUrls } from "@/lib/page-image";
+import { withUnitGlossary } from "@/lib/unit-glossary";
+import { activityEmojis, loadEmojiIcons } from "./emoji-icons";
+import { footerTopic } from "./BookDocument";
+import { specLook } from "./spec-page";
+import { TRIM_SIZES, type TrimSizeId } from "./page-geometry";
 
 // The agent designer's view of one page (agent-designer.ts DesignerInput),
 // from the page as the book prints it - shared by the workflow step and
 // scripts/agent-designer.mts.
-
-// A page the designer can take over: not hand-positioned in Dizilim, and
-// printing nothing a spec has no place for (a glossary grid).
-export function specDesignable(ctx: Pick<SpecPageContext, "page" | "look">): boolean {
-  const { page, look } = ctx;
-  if (page.imageLayout || page.blocks.some((b) => b.layout)) return false;
-  if (page.glossary?.length && !look.noGlossary) return false;
-  return page.blocks.length > 0;
-}
 
 // What each of the page's pictures shows (its prompt), in the order
 // resolvePageImageUrls lists them - a picture that failed is not listed.
@@ -110,13 +112,18 @@ export async function tintSpecPictures(spec: PageLayoutSpec, pictures: string[])
   return out;
 }
 
-// renderSpecPage with the spec's picture tints applied (and the tinted
-// pictures measured), as the book will print the page.
-export async function renderDesign(spec: PageLayoutSpec, ctx: SpecPageContext & { topic?: string }, options?: { dpi?: number }): Promise<SpecRender> {
+// The page context with the spec's picture tints applied and the tinted
+// pictures measured, as the book will print the page.
+export async function withSpecTints<C extends SpecPageContext>(spec: PageLayoutSpec, ctx: C): Promise<C> {
   const pictures = await tintSpecPictures(spec, ctx.pictures);
   const fresh = pictures.filter((src, i) => src !== ctx.pictures[i]);
-  const look = fresh.length ? { ...ctx.look, pictures: { ...ctx.look.pictures, ...(await measurePictures(fresh)) } } : ctx.look;
-  return renderSpecPage(spec, { ...ctx, pictures, look }, options);
+  if (!fresh.length) return ctx;
+  return { ...ctx, pictures, look: { ...ctx.look, pictures: { ...ctx.look.pictures, ...(await measurePictures(fresh)) } } };
+}
+
+// renderSpecPage as the book will print the page (picture tints applied).
+export async function renderDesign(spec: PageLayoutSpec, ctx: SpecPageContext & { topic?: string }, options?: { dpi?: number }): Promise<SpecRender> {
+  return renderSpecPage(spec, await withSpecTints(spec, ctx), options);
 }
 
 // The designer's render tool: the page drawn, with look hints against the source.
@@ -126,4 +133,84 @@ export function designRenderer(ctx: SpecPageContext & { topic?: string }, source
     onRender?.(drawn);
     return { ...drawn, look: await specLookHints(drawn.png, source, spec) };
   };
+}
+
+// One mirrored page as the book prints it, ready for the designer or for
+// renderSpecPage: its look (the book's theme in the source's type and
+// colours, its pictures measured), pictures, lesson furniture and footer
+// topic - as BookDocument works them out.
+export async function bookSpecContext({
+  units,
+  unitNumber,
+  pageIndex,
+  field = "studentBookPages",
+  pageImages,
+  sourceType,
+  dominantColors,
+  designTheme,
+  trimSize = "a4",
+  level,
+}: {
+  units: GeneratedUnit[];
+  unitNumber: number;
+  pageIndex: number;
+  field?: "studentBookPages" | "workbookPages";
+  pageImages: Record<number, string>;
+  sourceType?: SourceType | null;
+  dominantColors?: string[] | null;
+  designTheme?: string | null;
+  trimSize?: TrimSizeId;
+  level: string;
+}): Promise<(SpecPageContext & { topic?: string }) | null> {
+  const unit = units.find((u) => u.unitNumber === unitNumber);
+  if (!unit) return null;
+  const variant = field === "workbookPages" ? "workbook" : "student_book";
+  const unitPages = withUnitGlossary(unit, unit[field] ?? [], variant);
+  const page = unitPages[pageIndex];
+  if (!page) return null;
+  const pictures = resolvePageImageUrls(page, pageImages);
+  const look = {
+    ...specLook({
+      designTheme,
+      sourceType,
+      dominantColors,
+      trimSize,
+      variant,
+      level,
+      pictures: await measurePictures(pictures),
+      pictureSrc: await loadEmojiIcons(activityEmojis([unit])),
+    }),
+    tracks: audioTrackMap(units),
+  };
+  const lessonsOn = !!sourceType && !!look.furniture?.lessons;
+  return {
+    page,
+    unit,
+    pictures,
+    look,
+    pageSize: { width: TRIM_SIZES[trimSize].widthPt, height: TRIM_SIZES[trimSize].heightPt },
+    lesson: lessonsOn ? planLessons(unitPages, unit)[pageIndex] : undefined,
+    lessonsOn,
+    topic: footerTopic(page.sectionLabel || unit.title),
+  };
+}
+
+// The look of a page image (page-look.ts, at the width fidelity measures).
+export async function pngLook(png: Uint8Array): Promise<PageLook> {
+  const { data, info } = await sharp(Buffer.from(png)).resize({ width: 150 }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  return measurePageLook({ width: info.width, height: info.height, channels: info.channels, data });
+}
+
+// The designer on one page: its input from the page as printed and the
+// source page (image and measured layout), the render tool drawing the
+// page as the book will. Null when the page is not one the designer takes.
+export async function designBookPage(
+  ctx: SpecPageContext & { topic?: string },
+  source: { png: Uint8Array; layout: SourcePageLayout; pageImages?: Record<number, string> },
+  options: Omit<DesignerOptions, "render"> & { onRender?: (render: SpecRender) => void },
+): Promise<{ input: Input; result: DesignResult } | null> {
+  const input = designerInputFor(ctx, { sourcePng: source.png, sourceLayout: source.layout }, source.pageImages);
+  if (!input) return null;
+  const render = designRenderer(ctx, { look: await pngLook(source.png), images: source.layout.images }, options.onRender);
+  return { input, result: await designPage(input, { ...options, render }) };
 }

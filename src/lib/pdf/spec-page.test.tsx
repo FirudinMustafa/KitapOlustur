@@ -3,7 +3,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { GeneratedPage } from "@/lib/ai/schemas";
 import type { PageLayoutSpec } from "@/lib/design/page-layout-spec";
-import { placeholderImage } from "./__fixtures__/sample-book";
+import { renderToBuffer } from "@react-pdf/renderer";
+import sharp from "sharp";
+import { placeholderImage, sampleContents } from "./__fixtures__/sample-book";
+import { BookDocument } from "./BookDocument";
+import { extraImageKey } from "@/lib/page-image";
+import { rasterizePdf } from "./rasterize";
 import { measurePictures } from "./picture-info";
 import { countPdfPages } from "./rasterize";
 import { printedBlocks, renderSpecPage, specLook, specLookHints, type SpecPageContext } from "./spec-page";
@@ -108,5 +113,39 @@ describe("renderSpecPage", () => {
     const hints = await specLookHints(out.png, { look: blank, images: [{ x: 0.06, y: 0.1, w: 0.88, h: 0.38 }] }, spec);
     expect(hints.pictureArea).toBeGreaterThan(0.3);
     expect(hints.ink).toBeLessThan(0.5);
+  }, 60_000);
+});
+
+// The colour at a point of a page image (fractions of the page).
+async function colourAt(png: Uint8Array, x: number, y: number): Promise<number[]> {
+  const { data, info } = await sharp(Buffer.from(png)).raw().toBuffer({ resolveWithObject: true });
+  const i = (Math.round(y * (info.height - 1)) * info.width + Math.round(x * (info.width - 1))) * info.channels;
+  return [data[i], data[i + 1], data[i + 2]];
+}
+
+describe("BookDocument with a stored design spec", () => {
+  it("draws a page from its spec, and a page whose spec no longer fits by its template", async () => {
+    const pageImages = { 2: await placeholderImage("scene", 30), [extraImageKey(2, 1)]: await placeholderImage("photo", 200, 1024, 1024) };
+    // a ground no template prints: pale green over the page's lower tenth
+    const designed = { ...page, designSpec: { ...spec, grounds: [{ box: { x: 0, y: 0.9, w: 1, h: 0.1 }, color: "#c8f0c8" }], regions: [spec.regions[0], { ...spec.regions[1], box: { x: 0.06, y: 0.49, w: 0.88, h: 0.06 } }] } };
+    // the same spec on a page that has gained a block since
+    const stale = { ...designed, sourcePageNumber: 3, blocks: [...page.blocks, { kind: "practice" as const, heading: "3 Draw", body: "Draw a friend." }] };
+    const render = async (p: GeneratedPage) =>
+      renderToBuffer(
+        <BookDocument
+          bookTitle="Spec"
+          variant="student_book"
+          units={[{ unitNumber: 0, title: "Hello", glossary: [], workbookPages: [], studentBookPages: [p] }]}
+          level="CEFR Pre-A1"
+          contentsUnits={sampleContents}
+          pageImages={{ ...pageImages, 3: pageImages[2], [extraImageKey(3, 1)]: pageImages[extraImageKey(2, 1)] }}
+          includeCover={false}
+          trimSize="220x280"
+        />,
+      );
+    const [, , drawn] = await rasterizePdf(new Uint8Array(await render(designed)), { dpi: 30 });
+    expect(await colourAt(drawn.png, 0.3, 0.95)).toEqual([200, 240, 200]);
+    const [, , fallback] = await rasterizePdf(new Uint8Array(await render(stale)), { dpi: 30 });
+    expect(await colourAt(fallback.png, 0.3, 0.95)).not.toEqual([200, 240, 200]);
   }, 60_000);
 });

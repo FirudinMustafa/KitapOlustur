@@ -7,19 +7,35 @@
 // --zones-from rebuilds every mirrored page's zone plan from the source as
 // it is measured today, as a fresh run would, and sets the book in the
 // source's measured colours and type (see stored-run.mts). --no-style keeps
-// the run's own palette and theme type.
+// the run's own palette and theme type. --specs-from <dir> gives every
+// Student Book page that has a design spec there (<runId-prefix>-p<source
+// page>.json, as scripts/agent-designer.mts writes them and its fixtures
+// are) that spec, as the workflow's agent designer would store it.
 //
 // Then score it: npx tsx scripts/fidelity.mts <source.pdf> <out.pdf> ...
 import fs from "node:fs";
+import path from "node:path";
+import type { GeneratedPage } from "../src/lib/ai/schemas";
+import { parseSpec } from "../src/lib/design/page-layout-spec";
 import { renderBookFitted } from "../src/lib/pdf/render-fitted";
 import { resolveTrimSize } from "../src/lib/pdf/page-geometry";
 import type { Variant } from "../src/lib/pdf/BookDocument";
 import { loadStoredBook } from "./stored-run.mjs";
 
+function withSpec(page: GeneratedPage, dir: string, prefix: string): GeneratedPage {
+  const file = path.join(dir, `${prefix}-p${page.sourcePageNumber}.json`);
+  if (!fs.existsSync(file)) return page;
+  const parsed = parseSpec(JSON.parse(fs.readFileSync(file, "utf8")));
+  if (!parsed.spec) throw new Error(`${file}: ${parsed.issues.join("; ")}`);
+  return { ...page, designSpec: parsed.spec };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const zonesAt = args.indexOf("--zones-from");
   const zonesFrom = zonesAt >= 0 ? args.splice(zonesAt, 2)[1] : null;
+  const specsAt = args.indexOf("--specs-from");
+  const specsFrom = specsAt >= 0 ? args.splice(specsAt, 2)[1] : null;
   const noStyleAt = args.indexOf("--no-style");
   const noStyle = noStyleAt >= 0 && !!args.splice(noStyleAt, 1).length;
   const [prefix, outPath, variant = "student_book"] = args;
@@ -27,7 +43,9 @@ async function main() {
     console.error("usage: npx tsx --env-file=.env.local scripts/relayout.mts <runId-prefix> <out.pdf> [variant]");
     process.exit(1);
   }
-  const { run, project, outline, units, measured, paletteColors, trimmed } = await loadStoredBook(prefix, { zonesFrom, noStyle });
+  const book = await loadStoredBook(prefix, { zonesFrom, noStyle });
+  const { run, project, outline, measured, paletteColors, trimmed } = book;
+  const units = specsFrom ? book.units.map((u) => ({ ...u, studentBookPages: u.studentBookPages.map((p) => withSpec(p, specsFrom, prefix)) })) : book.units;
 
   const started = Date.now();
   const { pdf, flattened, compacted } = await renderBookFitted({

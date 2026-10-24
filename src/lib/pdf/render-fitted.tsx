@@ -14,6 +14,7 @@ import { pageLayoutType } from "@/lib/design/page-types";
 import { resolvePageImageUrls } from "@/lib/page-image";
 import { measurePictures } from "./picture-info";
 import { pagesForVariant } from "@/lib/content-html";
+import { tintSpecPictures } from "./spec-design";
 
 type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forcePlain" | "compact">;
 
@@ -32,7 +33,10 @@ type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forc
 // lost the source's layout on 5 of its 6 pages that way.
 export async function renderBookFitted(input: BookProps & { tintPictures?: boolean }): Promise<{ pdf: Buffer; flattened: string[]; compacted: string[] }> {
   const { tintPictures = true, ...rest } = input;
-  const pageImages = tintPictures ? await tintZonedPictures(rest) : rest.pageImages;
+  const zoned = tintPictures ? await tintZonedPictures(rest) : rest.pageImages;
+  // Pages laid out by the agent designer print their pictures' grounds in
+  // the colours their specs ask for.
+  const pageImages = await tintDesignedPictures(rest.units, rest.variant, zoned);
   // Activity pictures are drawn from Twemoji; fetched once per book.
   const props = {
     ...rest,
@@ -128,12 +132,32 @@ async function tintZonedPictures(props: BookProps): Promise<BookProps["pageImage
   const pageImages = props.pageImages;
   if (!pageImages || !props.sourceStyle?.type || props.bookKind === "picturebook") return pageImages;
   const pages = props.units.flatMap((u) => [...u.studentBookPages, ...u.workbookPages, ...(u.teacherBookPages ?? []), ...(u.testBookletPages ?? [])]);
-  const srcs = pages.filter((p) => p.zonePlan && pageLayoutType(p) === "mixed").flatMap((p) => resolvePageImageUrls(p, pageImages));
+  // (a page with a design spec tints its pictures as the spec says, below)
+  const srcs = pages.filter((p) => p.zonePlan && !p.designSpec && pageLayoutType(p) === "mixed").flatMap((p) => resolvePageImageUrls(p, pageImages));
   if (!srcs.length) return pageImages;
   const palette = derivePaletteFromColors(props.sourceStyle.dominantColors) ?? resolveDesignTheme(props.designTheme).palettes[props.variant];
   const tinted = await tintPictureGrounds(srcs, pictureGroundTints(palette));
   if (!tinted.size) return pageImages;
   return Object.fromEntries(Object.entries(pageImages).map(([k, src]) => [k, tinted.get(src) ?? src]));
+}
+
+// A page with a design spec (agent designer): the pictures whose spec box
+// has a ground colour print their white ground in it (tintSpecPictures).
+// Without such pages the map is returned as it came.
+async function tintDesignedPictures(units: BookProps["units"], variant: BookProps["variant"], pageImages: BookProps["pageImages"]): Promise<BookProps["pageImages"]> {
+  if (!pageImages) return pageImages;
+  const designed = units.flatMap((u) => pagesForVariant(u, variant)).filter((p) => p.designSpec?.pictures.some((pic) => pic.ground));
+  if (!designed.length) return pageImages;
+  const out = { ...pageImages };
+  for (const page of designed) {
+    const srcs = resolvePageImageUrls(page, pageImages);
+    const tinted = await tintSpecPictures(page.designSpec!, srcs);
+    tinted.forEach((src, i) => {
+      if (src === srcs[i]) return;
+      for (const [key, url] of Object.entries(pageImages)) if (url === srcs[i]) out[Number(key)] = src;
+    });
+  }
+  return out;
 }
 
 // Every picture the book's pages print, main pictures and extras.

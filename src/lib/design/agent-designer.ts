@@ -237,6 +237,10 @@ export async function designPage(input: DesignerInput, options: DesignerOptions)
 
   const done: StopCondition<typeof tools> = () => accepted !== null;
   const broke: StopCondition<typeof tools> = () => spent >= maxCost;
+  // An accounting failure (the run's spend cap) stops the loop and is the
+  // caller's to handle - it must not pass for a design that gave up.
+  let accountingError: unknown = null;
+  const unaccounted: StopCondition<typeof tools> = () => accountingError !== null;
   let turns = 0;
   try {
     await generateText({
@@ -252,7 +256,7 @@ export async function designPage(input: DesignerInput, options: DesignerOptions)
         },
       ],
       tools,
-      stopWhen: [stepCountIs(maxTurns), done, broke],
+      stopWhen: [stepCountIs(maxTurns), done, broke, unaccounted],
       // The last turn may only hand in.
       prepareStep: ({ stepNumber, messages }) => ({
         messages: dropOldRenderImages(messages),
@@ -263,12 +267,17 @@ export async function designPage(input: DesignerInput, options: DesignerOptions)
         usage.inputTokens += step.usage.inputTokens ?? 0;
         usage.outputTokens += step.usage.outputTokens ?? 0;
         spent += textCostUsd(pricing, step.usage) ?? 0;
-        await options.onUsage?.(step.usage);
+        try {
+          await options.onUsage?.(step.usage);
+        } catch (err) {
+          accountingError ??= err;
+        }
       },
     });
   } catch (err) {
     log.push(`error: ${err instanceof Error ? err.message : String(err)}`);
   }
+  if (accountingError) throw accountingError;
   const stopped = accepted ? "finished" : spent >= maxCost ? "budget" : turns >= maxTurns ? "turns" : "gave-up";
   return { spec: accepted, turns, renders, usage, costUsd: spent, stopped, log };
 }

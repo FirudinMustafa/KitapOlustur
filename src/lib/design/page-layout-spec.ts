@@ -36,7 +36,7 @@ export const specPictureSchema = z.object({
   focus: z
     .object({ x: fraction, y: fraction })
     .optional()
-    .describe("Where a cropped picture is anchored (0,0 = keep its top-left; default x 0.5, y 0.3). A picture of one object on a plain ground is always centred on its object."),
+    .describe("Where a cropped scene is anchored (0,0 = keep its top-left; default x 0.5, y 0.3). For a picture of one object on a plain ground: where the object's centre goes in the box (default the middle)."),
   radius: z.number().min(0).max(30).optional(),
   badge: z.string().min(1).max(3).optional().describe("A small number disc on the picture's top-left corner (numbered picture cards)."),
   labels: z.boolean().optional().describe("Print the page's located vocabulary labels on this picture (main picture only)."),
@@ -125,7 +125,8 @@ export function specIssues(spec: PageLayoutSpec): string[] {
   }
   const textBoxes = [
     ...spec.regions.map((r, i) => ({ name: `region ${i}`, box: r.box, over: !!r.over })),
-    ...(spec.furniture?.lessonTab ? [{ name: "lesson tab", box: spec.furniture.lessonTab, over: false }] : []),
+    // a lesson tab may sit over a picture, as a coursebook's title does over its opening collage
+    ...(spec.furniture?.lessonTab ? [{ name: "lesson tab", box: spec.furniture.lessonTab, over: true }] : []),
   ];
   for (let i = 0; i < textBoxes.length; i++) {
     const a = textBoxes[i];

@@ -1,7 +1,7 @@
 import { Document, Page, Text, View, Image, renderToBuffer } from "@react-pdf/renderer";
 import type { ContentBlock, GeneratedPage } from "@/lib/ai/schemas";
 import type { PageLayoutSpec, SpecBox, SpecPicture, SpecRegion } from "@/lib/design/page-layout-spec";
-import { touches } from "@/lib/design/page-layout-spec";
+import { specContentIssues, specIssues, touches } from "@/lib/design/page-layout-spec";
 import { DENSE_LINE, PANEL_PAD, isExerciseBlock } from "@/lib/design/layouts";
 import { legibleGround } from "@/lib/design/page-furniture";
 import { pageLayoutType } from "@/lib/design/page-types";
@@ -21,7 +21,7 @@ import { LabelOverlay } from "./label-overlay";
 import { BubbleOverlay } from "./bubble-overlay";
 import { LessonTab } from "./lesson-furniture";
 import { FramedImage, pictureGround, pictureRect } from "./picture-frame";
-import type { PictureInfo } from "./picture-fit";
+import type { PictureInfo, PictureRect } from "./picture-fit";
 import { PageMarker, TopEdgeBand, TopicFooter, type PageStartListener } from "./page-chrome";
 import { TitleTab } from "./type-templates";
 import { TRIM_SIZES, type TrimSizeId } from "./page-geometry";
@@ -73,6 +73,24 @@ export function printedBlocks(ctx: Pick<SpecPageContext, "page" | "pictures" | "
       : referenced;
   const shown = bubbled ? withoutBubbledDialogue(listed) : listed;
   return shown.blocks.map((b) => (look.wordList && (b.callout === "tip" || (!!page.zonePlan && !!b.callout)) ? null : b));
+}
+
+// A page the designer can take over: not hand-positioned in Dizilim, and
+// printing nothing a spec has no place for (a glossary grid).
+export function specDesignable(ctx: Pick<SpecPageContext, "page" | "look">): boolean {
+  const { page, look } = ctx;
+  if (page.imageLayout || page.blocks.some((b) => b.layout)) return false;
+  if (page.glossary?.length && !look.noGlossary) return false;
+  return page.blocks.length > 0;
+}
+
+// The page's stored design spec when it still fits the page: the page has
+// not been hand-positioned since, nor its blocks or pictures changed (a
+// Dizilim edit, a rewrite). Null = print the page by its template.
+export function usableSpec(ctx: Pick<SpecPageContext, "page" | "pictures" | "look" | "lessonsOn">): PageLayoutSpec | null {
+  const spec = ctx.page.designSpec;
+  if (!spec || !specDesignable(ctx) || specIssues(spec).length) return null;
+  return specContentIssues(spec, { blocks: printedBlocks(ctx, { bubbled: drawsBubbles(spec, ctx.page) }), pictureCount: ctx.pictures.length }).length ? null : spec;
 }
 
 /** True when the spec draws the page's speech bubbles (and the page has a complete set). */
@@ -165,13 +183,23 @@ function SpecRegionView({ region, blocks, look, pageSize, bleed, showAnswerKey }
   );
 }
 
+// A picture of one object on a plain ground is centred on its object
+// (picture-fit.ts); with a focus the object's centre goes there instead -
+// a collage's object to one side, the ground (tinted to the page) around.
+function focusedRect(rect: PictureRect | null, info: PictureInfo | undefined, focus: SpecPicture["focus"], frame: { width: number; height: number }): PictureRect | null {
+  if (!rect || !focus || !info?.subject) return rect;
+  const cx = (info.subject.x0 + info.subject.x1) / 2;
+  const cy = (info.subject.y0 + info.subject.y1) / 2;
+  return { ...rect, left: focus.x * frame.width - cx * rect.width, top: focus.y * frame.height - cy * rect.height };
+}
+
 function SpecPictureView({ item, src, page, look, pageSize, bleed }: { item: SpecPicture; src: string; page: GeneratedPage; look: Look; pageSize: { width: number; height: number }; bleed: number }) {
   const at = placeBox(item.box, pageSize, bleed, !!item.bleed);
   const t = touches(item.box);
   const square = item.bleed && (t.left || t.right || t.top || t.bottom);
   const radius = square ? 0 : (item.radius ?? look.theme.radius);
   const anchors = { fit: item.fit ?? "cover", anchorX: item.focus?.x ?? 0.5, anchorY: item.focus?.y ?? 0.3 } as const;
-  const rect = pictureRect(look, src, at.width, at.height, anchors);
+  const rect = focusedRect(pictureRect(look, src, at.width, at.height, anchors), look.pictures?.[src], item.focus, at);
   const ground = item.ground ?? pictureGround(look, src, rect, at.width, at.height);
   const placement = rect ? { crop: rect } : { fit: anchors.fit, positionY: anchors.anchorY };
   const bubbles = item.bubbles && item.picture === 0 ? pageBubbles(page) : [];

@@ -125,6 +125,15 @@ describe("designPage", () => {
     expect(out.turns).toBe(1);
   });
 
+  it("passes on an accounting failure (the run's spend cap) after stopping", async () => {
+    const model = scriptedDesignerModel(replaySpec(good));
+    const onUsage = vi.fn(async () => {
+      throw new Error("spend cap passed");
+    });
+    await expect(designPage(input, { model, render: renderer(), onUsage })).rejects.toThrow("spend cap passed");
+    expect(model.doGenerateCalls).toHaveLength(1);
+  });
+
   it("survives a model call that fails", async () => {
     const model = scriptedDesignerModel(replaySpec(good));
     model.doGenerate = async () => {
