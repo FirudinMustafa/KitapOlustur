@@ -126,7 +126,7 @@ import { applyListeningScripts, findListeningGaps } from "@/lib/listening";
 import { applyPictures, findPictureGaps } from "@/lib/activity-repair";
 import { fixMapAnswers } from "@/lib/map-answers";
 import { renumberSidePages } from "@/lib/page-numbers";
-import { numberExercises } from "@/lib/exercise-numbers";
+import { numberExercises, numberUnitExercises } from "@/lib/exercise-numbers";
 import { titleCopiesSource } from "@/lib/title-guard";
 import { fillZonePictures, pageWordBudget, pageWordCount, shapeIssues } from "@/lib/source-shape";
 import { trimPageToBudget, trimUnitToBudget, unitTrimOptions } from "@/lib/word-trim";
@@ -2979,12 +2979,17 @@ export function applyFallbackImagePrompts(unit: GeneratedUnit): GeneratedUnit {
 // repeated on the same page (dropRepeatedBlocks), and "Picture N" pointers
 // at pictures the page does not have (dropMissingPictureRefs).
 export function applyDiagramFixes(unit: GeneratedUnit): GeneratedUnit {
+  // Numbered per unit: a page going on with its source lesson goes on with
+  // the page before's numbers (numberUnitExercises).
   const fix = (pages?: GeneratedPage[]) =>
-    pages?.map((page) =>
-      dropMissingPictureRefs(fillZonePictures(
-        numberExercises(fixMapAnswers(dropRepeatedBlocks({ ...dropWriterLayouts(page), blocks: dropWriterLayouts(page).blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) })).page),
-        (p) => fallbackImagePrompt(p, []),
-      )),
+    pages &&
+    numberUnitExercises(
+      pages.map((page) =>
+        dropMissingPictureRefs(fillZonePictures(
+          fixMapAnswers(dropRepeatedBlocks({ ...dropWriterLayouts(page), blocks: dropWriterLayouts(page).blocks.map((b) => dropLeakingTable(repairPuzzle(reconcileWordBank(fixPrepositionItems(b))))) })).page,
+          (p) => fallbackImagePrompt(p, []),
+        )),
+      ),
     );
   return {
     ...unit,

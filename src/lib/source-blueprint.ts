@@ -56,7 +56,7 @@ export const BLUEPRINT_INSTRUCTIONS = [
   "- pictures: give the generated page exactly that many pictures - imagePrompt for the first, extraImagePrompts for the rest (each a simple, separate subject that reads in a small frame, e.g. one vocabulary item each). 0 means no imagePrompt.",
   "- numberedExercises: write the same number of exercise blocks (each with items and a matching answerKey), with about itemsPerExercise items each.",
   "- itemsPerExercise 0: the source's exercises have no written items - learners point at, colour, stick or count things in the pictures. Keep each item to the single word or number the picture shows (e.g. \"chair\", \"3\", \"blue\"), never a sentence describing a picture; a list of numbers or colour words prints as coloured cards.",
-  "- exerciseFormats: the source's exercise instructions, in order. Reproduce each exercise's FORMAT (circle, match, complete, listen and number, write, ask and answer...) with entirely new content and your own wording - never copy the instruction text.",
+  "- exerciseFormats: the source's exercise instructions, in order. Reproduce each exercise's FORMAT (circle, match, complete, listen and number, write, ask and answer...) with entirely new content and your own wording - never copy the instruction text. An exercise's heading IS its instruction, as a coursebook prints it (e.g. \"Read again and circle a or b.\", \"Listen and repeat. Which of these do you do?\") - never a title or label in front of it (not \"Geography Quiz\", \"Peer-Interview\", \"Quick-Check: Family Members\"). A second instruction sentence may go in body.",
   "- listeningExercises: that many of the page's exercises are done with a recording (listen and point / number / tick, listen and sing / chant, watch and listen to the story). Write each as a listening exercise and add a listeningAudio entry for every one: blockRef = that exercise block's exact heading, script = exactly what the recording says (the words or sentences to point at in item order, the full song or chant lyrics, the story's dialogue with dialogueLines per speaker).",
   "- words: the printed page's whole text (headings, instructions, items, speech). A hard limit: at most 1.5 times this (or this + 20, whichever is more) - a page over it is sent back. For young learners' pages the pictures carry the exercise: one short instruction, items of a word or two.",
   "- wordLimit: that page's word limit, worked out for you - count the page's words (headings, instructions, items, speech, word banks, callout boxes except \"tip\") and stay under it. Leave out explanations and extra boxes; a teacher's note goes in a \"tip\" callout, which the pupil's book doesn't print.",
@@ -66,6 +66,12 @@ export const BLUEPRINT_INSTRUCTIONS = [
   "  - \"cards\": a grid of numbered picture cards. The first exercise has one item per card - a single word or number each (e.g. \"red\", \"3\", \"pencil\"). extraImagePrompts: one simple object per card in the same order as the items (one object, centred, plain white background, no text), as many as there are cards (at most 10). imagePrompt is the page's other picture (the scene of a later exercise), or a picture of the cards' topic.",
   "  - \"panels\": a numbered story-panel grid. One picture per panel in story order - imagePrompt is panel 1, extraImagePrompts panels 2, 3... (the same characters and place in every panel). The story exercise has one item per panel: that panel's short speech line (a few words, e.g. \"Hello, I'm Leo!\").",
 ].join("\n");
+
+// The source page's first exercise number when it goes on with the lesson
+// of the page before (numbered above 1) - sourceShape.firstExercise.
+export function continuesLesson(layout: Pick<SourcePageLayout, "firstExerciseNumber">): { firstExercise?: number } {
+  return layout.firstExerciseNumber && layout.firstExerciseNumber > 1 ? { firstExercise: layout.firstExerciseNumber } : {};
+}
 
 // Deterministic follow-up to the writer: each mirrored page gets its source
 // page's zone plan, and its picture prompts are trimmed to the plan's slots
@@ -88,6 +94,7 @@ export function applyZonePlans(pages: GeneratedPage[], sourcePages: SourcePage[]
       // 20 would send every unit back to be rewritten and crush its text.
       ...(measuredWords(layout) !== undefined ? { words: layout.wordCount } : {}),
       pageType,
+      ...continuesLesson(layout),
     };
     if (!plan) return { ...page, sourceShape };
     const extraSlots = Math.max(0, pictures - 1);

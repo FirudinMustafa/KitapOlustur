@@ -30,7 +30,8 @@ import { dropLeakingTable } from "../src/lib/answer-leak";
 import { dropWriterLayouts } from "../src/lib/writer-layout";
 import { dropRepeatedBlocks } from "../src/lib/dedupe-blocks";
 import { dropMissingPictureRefs } from "../src/lib/picture-refs";
-import { measuredWords } from "../src/lib/source-blueprint";
+import { continuesLesson, measuredWords } from "../src/lib/source-blueprint";
+import { numberUnitExercises } from "../src/lib/exercise-numbers";
 import { trimUnitToBudget } from "../src/lib/word-trim";
 
 async function main() {
@@ -76,9 +77,10 @@ async function main() {
       const shape = clean.sourceShape ?? { exercises: layout.exerciseCount, pictures: zonePlan ? zonePictureCount(zonePlan) : 0 };
       // The word budget as the source measures today (older runs stored none).
       const words = measuredWords(layout);
-      return { ...clean, zonePlan, sourceShape: { ...shape, pageType, words }, blocks: clean.blocks.map(dropLeakingTable) };
+      return { ...clean, zonePlan, sourceShape: { ...shape, pageType, words, ...continuesLesson(layout) }, blocks: clean.blocks.map(dropLeakingTable) };
     };
-    units = units.map((u) => ({ ...u, studentBookPages: u.studentBookPages.map(rezone) }));
+    // Exercise numbers go on across a lesson's pages, as a fresh run numbers them.
+    units = units.map((u) => ({ ...u, studentBookPages: numberUnitExercises(u.studentBookPages.map(rezone)) }));
   }
   // A fresh run trims a page still over its word budget (trimUnitToBudget).
   let trimmed = 0;

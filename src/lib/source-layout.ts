@@ -36,6 +36,11 @@ export type SourcePageLayout = {
   // The instruction line of each exercise heading, in reading order - input
   // for classifying exercise formats, never printed.
   exerciseRubrics: string[];
+  // The number printed on the page's first exercise. Above 1, the page goes
+  // on with the lesson begun on the page before (i5 Team 2 p.7 opens with
+  // exercise 3, p.15 with 4): a coursebook numbers a lesson's exercises
+  // across its pages. Optional: page maps stored before 2026-10-24 lack it.
+  firstExerciseNumber?: number;
   // Exercises done with the recording (isListeningRubric), and the audio
   // track numbers printed next to them. Optional: page maps stored before
   // 2026-10-21 lack them.
@@ -210,6 +215,10 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
   const itemCount = numbered.length - headings.length;
   const trackNumbers = headings.flatMap((h) => (h.track ? [h.track] : []));
   const exerciseRubrics = headings.map((h) => h.rubric);
+  // The lowest number - mupdf lists a two-column page's lines in drawing
+  // order, not reading order.
+  const headingNumbers = headings.map((h) => Number(/^\d+/.exec(h.line.text.trim())?.[0] ?? 0)).filter((n) => n > 0);
+  const firstExerciseNumber = headingNumbers.length ? Math.min(...headingNumbers) : undefined;
   const listeningCount = exerciseRubrics.filter(isListeningRubric).length;
 
   function readRubric(l: (typeof lines)[number]): { rubric: string; track: string | null } {
@@ -244,6 +253,7 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
     exerciseCount,
     itemCount,
     exerciseRubrics,
+    ...(firstExerciseNumber ? { firstExerciseNumber } : {}),
     listeningCount,
     ...(trackNumbers.length ? { trackNumbers } : {}),
     exerciseNumbers: headings.map((h) => ({
