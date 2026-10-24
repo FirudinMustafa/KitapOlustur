@@ -98,7 +98,7 @@ const NUMBERED = /^(\d{1,2})[.)]?\s+(.*)$/;
 
 // An exercise's rubric on a white pill over a picture (Super Minds p.1,
 // p.9): number disc, track badge, heading and a short rubric.
-function RubricPill({ block, look, maxWidth }: { block: ContentBlock; look: Look; maxWidth: number }) {
+export function RubricPill({ block, look, maxWidth }: { block: ContentBlock; look: Look; maxWidth: number }) {
   const size = look.theme.bodySize * 1.2; // the source sets the rubric over a scene larger than its body text
   const numbered = NUMBERED.exec(block.heading ?? "");
   const track = trackOf(look.tracks, block);
@@ -119,7 +119,7 @@ function RubricPill({ block, look, maxWidth }: { block: ContentBlock; look: Look
 // unit opener prints it over its scene (Super Minds p.1 "Say Hello!").
 // The page's own short title when it has one ("Say Hello!", not the unit's
 // long name) - the hand-set reference and the source print that.
-function TitleTab({ unit, title, look, top, bleed }: { unit: { unitNumber: number; title: string }; title?: string; look: Look; top: number; bleed: number }) {
+export function TitleTab({ unit, title, look, top, bleed }: { unit: { unitNumber: number; title: string }; title?: string; look: Look; top: number; bleed: number }) {
   return (
     <View
       style={{

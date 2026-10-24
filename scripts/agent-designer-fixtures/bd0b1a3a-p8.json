@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "grounds": [
+    {
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 0.63
+      },
+      "color": "#e3f1fb"
+    }
+  ],
+  "pictures": [
+    {
+      "picture": 0,
+      "box": {
+        "x": 0.03,
+        "y": 0.2,
+        "w": 0.94,
+        "h": 0.41
+      },
+      "ground": "#e3f1fb"
+    }
+  ],
+  "regions": [
+    {
+      "box": {
+        "x": 0.51,
+        "y": 0.065,
+        "w": 0.42,
+        "h": 0.13
+      },
+      "blocks": [
+        0
+      ],
+      "panel": {
+        "tint": "#ffffff",
+        "radius": 12
+      }
+    },
+    {
+      "box": {
+        "x": 0.07,
+        "y": 0.66,
+        "w": 0.4,
+        "h": 0.17
+      },
+      "blocks": [
+        1
+      ],
+      "panel": {
+        "tint": "#fce3dc",
+        "border": "#f4a582",
+        "radius": 12
+      }
+    },
+    {
+      "box": {
+        "x": 0.51,
+        "y": 0.66,
+        "w": 0.42,
+        "h": 0.17
+      },
+      "blocks": [
+        2
+      ]
+    }
+  ],
+  "headings": {
+    "style": "numeral"
+  },
+  "furniture": {
+    "lessonTab": {
+      "x": 0.06,
+      "y": 0.04,
+      "w": 0.42,
+      "h": 0.08
+    },
+    "footer": true
+  }
+}
