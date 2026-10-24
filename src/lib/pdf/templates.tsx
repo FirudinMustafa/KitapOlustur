@@ -20,6 +20,8 @@ import { shapeAspect } from "@/lib/design/zones";
 import type { PageLabel } from "@/lib/ai/page-labels";
 import { BubbleOverlay } from "./bubble-overlay";
 import type { PageBubble } from "@/lib/ai/page-bubbles";
+import type { PageLesson } from "@/lib/lesson-furniture";
+import { LessonTab } from "./lesson-furniture";
 
 // Faz 1 "Tasarım sistemi": PDF renderers for each layout template in
 // src/lib/design/layouts.ts. BookDocument.tsx decides WHICH template a page
@@ -42,6 +44,8 @@ export type TemplateProps = {
   sectionKicker?: string;
   /** Faz 4: print bleed - edge-to-edge art extends into it. */
   bleed?: number;
+  /** Lesson furniture: the tab (and key-word box) a lesson's first page opens with - in place of the unit heading. */
+  lesson?: PageLesson;
 };
 
 // Templates that paint to the page edge and draw their own header area.
@@ -184,8 +188,12 @@ function SectionKicker({ text, look }: { text?: string; look: Look }) {
 }
 
 export function TemplatedPageBody(props: TemplateProps) {
-  const { template, page, unit, isUnitFirstPage, imageSrc, imageSrcs, look, showAnswerKey, pageSize, unitKicker, sectionKicker, bleed = 0 } = props;
-  const heading = isUnitFirstPage && !EDGE_TO_EDGE_TEMPLATES.includes(template) ? <UnitHeading unit={unit} look={look} kicker={unitKicker} /> : null;
+  const { template, page, unit, isUnitFirstPage, imageSrc, imageSrcs, look, showAnswerKey, pageSize, unitKicker, sectionKicker, bleed = 0, lesson } = props;
+  const heading = EDGE_TO_EDGE_TEMPLATES.includes(template) ? null : lesson?.tab ? (
+    <LessonTab lesson={lesson} look={look} />
+  ) : isUnitFirstPage ? (
+    <UnitHeading unit={unit} look={look} kicker={unitKicker} />
+  ) : null;
   const contentWidth = pageSize.width - 88;
 
   switch (template) {
@@ -227,13 +235,16 @@ export function TemplatedPageBody(props: TemplateProps) {
               // scaled as a whole, never wider than MAX_PICTURE_ASPECT
               // (zoneRowFrames).
               const row = zoneRowFrames(band, contentWidth, pageSize.height, pictureScale);
-              const slotWidth = (k: number) => (row.width - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k];
+              // An edge-to-edge row also covers the print bleed, square-cornered.
+              const out = row.bleed ? bleed : 0;
+              const rowLook = row.bleed ? { ...look, theme: { ...look.theme, radius: 0 } } : look;
+              const slotWidth = (k: number) => (row.width - ZONE_GAP * (band.pictures.length - 1)) * band.widths[k] + (band.pictures.length === 1 ? 2 * out : 0);
               return (
-                <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom, marginLeft: row.left, width: row.width }} wrap={false}>
+                <View key={i} style={{ flexDirection: "row", gap: ZONE_GAP, marginBottom, marginLeft: row.left - out, width: row.width + 2 * out }} wrap={false}>
                   {band.pictures.map((p, k) => (
                     <View key={k} style={{ width: slotWidth(k), alignItems: "center" }}>
-                      <View style={{ width: row.frames[k] }}>
-                        <Illustration src={pictures[p]} height={row.height} look={look} gap={0} labels={labelsOn(p)} bubbles={bubblesOn(p)} width={row.frames[k]} />
+                      <View style={{ width: row.bleed ? slotWidth(k) : row.frames[k] }}>
+                        <Illustration src={pictures[p]} height={row.height} look={rowLook} gap={0} labels={labelsOn(p)} bubbles={bubblesOn(p)} width={row.bleed ? slotWidth(k) : row.frames[k]} />
                       </View>
                     </View>
                   ))}

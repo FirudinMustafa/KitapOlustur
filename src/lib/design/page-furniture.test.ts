@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveFurniture, measureNumberMarks, measureTopBand, type PageFurniture } from "./page-furniture";
+import { deriveFurniture, legibleGround, measureNumberMarks, measurePageGround, measureTopBand, type PageFurniture } from "./page-furniture";
 import type { Raster } from "@/lib/source-layout";
 
 const YELLOW: [number, number, number] = [255, 219, 0];
@@ -80,5 +80,46 @@ describe("deriveFurniture", () => {
     const f = deriveFurniture([page({ topBand: band }), page(), page(), page()]);
     expect(f?.topBand).toBeUndefined();
     expect(deriveFurniture([page(), page()])).toBeNull();
+  });
+});
+
+describe("measurePageGround", () => {
+  // i5 Team 2, measured at 120 px: p.6 on a lime band over its top half, p.10
+  // with a purple panel down its right half (white boxes on it), a page of
+  // text on paper.
+  const LIME: [number, number, number] = [191, 215, 47];
+  const PURPLE: [number, number, number] = [119, 120, 179];
+
+  it("finds a band across the top, edge to edge", () => {
+    const { raster, fill } = paper(120, 156);
+    fill(0, 0, 120, 66, LIME);
+    fill(20, 20, 70, 30, [30, 30, 30]); // text on it
+    const ground = measurePageGround(raster, [])!;
+    expect(ground.color).toBe("#bfd72f");
+    expect(ground.box).toMatchObject({ x: 0, y: 0, w: 1 });
+    expect(ground.box.h).toBeGreaterThan(0.38);
+    expect(ground.box.h).toBeLessThan(0.48);
+  });
+
+  it("finds a panel down one side, white boxes and all", () => {
+    const { raster, fill } = paper(120, 156);
+    fill(64, 0, 120, 156, PURPLE);
+    fill(74, 40, 110, 70, [255, 255, 255]);
+    const ground = measurePageGround(raster, [])!;
+    expect(ground.box).toMatchObject({ y: 0, h: 1 });
+    expect(ground.box.x).toBeGreaterThan(0.45);
+    expect(ground.box.x + ground.box.w).toBe(1);
+  });
+
+  it("is no ground on a paper page, nor for a picture's colour", () => {
+    expect(measurePageGround(paper(120, 156).raster, [])).toBeNull();
+    const { raster, fill } = paper(120, 156);
+    fill(0, 0, 120, 100, [40, 90, 220]);
+    expect(measurePageGround(raster, [{ x: 0, y: 0, w: 1, h: 0.66 }])).toBeNull();
+  });
+
+  it("lifts a dark ground until black text reads on it", () => {
+    expect(legibleGround("#bfd72f")).toBe("#bfd72f");
+    expect(legibleGround("#282874")).not.toBe("#282874");
   });
 });

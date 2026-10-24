@@ -7,6 +7,11 @@ import { MARGIN_BOTTOM } from "@/lib/design/layouts";
 import { buildPageSpans } from "@/lib/design/page-review";
 import { activityEmojis, loadEmojiIcons } from "./emoji-icons";
 import type { CourseUnitSummary } from "./ContentsDocument";
+import { pictureGroundTints, tintPictureGrounds } from "./picture-ground";
+import { derivePaletteFromColors } from "./derive-palette";
+import { resolveDesignTheme } from "@/lib/design/themes";
+import { pageLayoutType } from "@/lib/design/page-types";
+import { resolvePageImageUrls } from "@/lib/page-image";
 
 type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forcePlain" | "compact">;
 
@@ -23,9 +28,14 @@ type BookProps = Omit<ComponentProps<typeof BookDocument>, "onPageStart" | "forc
 // (planZones `tight`). Only what still runs over then goes to plain flow
 // (still tight). Plain flow used to come first, and a measured KIYAS-7
 // lost the source's layout on 5 of its 6 pages that way.
-export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer; flattened: string[]; compacted: string[] }> {
+export async function renderBookFitted(input: BookProps & { tintPictures?: boolean }): Promise<{ pdf: Buffer; flattened: string[]; compacted: string[] }> {
+  const { tintPictures = true, ...rest } = input;
   // Activity pictures are drawn from Twemoji; fetched once per book.
-  const props = { ...input, pictureSrc: input.pictureSrc ?? (await loadEmojiIcons(activityEmojis(input.units))) };
+  const props = {
+    ...rest,
+    pictureSrc: input.pictureSrc ?? (await loadEmojiIcons(activityEmojis(input.units))),
+    pageImages: tintPictures ? await tintZonedPictures(rest) : rest.pageImages,
+  };
 
   async function render(forcePlain?: Set<string>, compact?: Set<string>, slack?: Map<string, number>) {
     const starts: Record<string, number> = {};
@@ -69,7 +79,14 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
   let slack = await measureSlack(result.pdf, result.starts, flowing, props.bleed ?? 0);
   let final: { pdf: Buffer; starts: Record<string, number>; spills: string[] } = result;
   if (slack.size) {
-    const grown = await render(plain, tight, slack);
+    let grown = await render(plain, tight, slack);
+    // A page that grew too far gets half its slack first (KIYAS-11 p.8:
+    // 140 pt measured, grown past its foot, and dropped back to a page
+    // half empty); only one that still runs over goes back.
+    if (overrun(grown.spills).length) {
+      for (const key of [...slack.keys()]) if (grown.spills.includes(pageOf(key))) slack.set(key, slack.get(key)! / 2);
+      grown = await render(plain, tight, slack);
+    }
     if (overrun(grown.spills).length) {
       for (const key of [...slack.keys()]) if (grown.spills.includes(pageOf(key))) slack.delete(key);
       final = slack.size ? await render(plain, tight, slack) : result;
@@ -97,6 +114,21 @@ export async function renderBookFitted(input: BookProps): Promise<{ pdf: Buffer;
 // still running over (plain flow) are left alone.
 const SLACK_MARGIN = 14;
 const MIN_SLACK = 30;
+
+// A book mirroring a source: the pictures in its zoned pages' frames get
+// their white ground printed in the panel tint (picture-ground.ts). Typed
+// pages (scene, cards, panels) and other books keep their pictures as drawn.
+async function tintZonedPictures(props: BookProps): Promise<BookProps["pageImages"]> {
+  const pageImages = props.pageImages;
+  if (!pageImages || !props.sourceStyle?.type || props.bookKind === "picturebook") return pageImages;
+  const pages = props.units.flatMap((u) => [...u.studentBookPages, ...u.workbookPages, ...(u.teacherBookPages ?? []), ...(u.testBookletPages ?? [])]);
+  const srcs = pages.filter((p) => p.zonePlan && pageLayoutType(p) === "mixed").flatMap((p) => resolvePageImageUrls(p, pageImages));
+  if (!srcs.length) return pageImages;
+  const palette = derivePaletteFromColors(props.sourceStyle.dominantColors) ?? resolveDesignTheme(props.designTheme).palettes[props.variant];
+  const tinted = await tintPictureGrounds(srcs, pictureGroundTints(palette));
+  if (!tinted.size) return pageImages;
+  return Object.fromEntries(Object.entries(pageImages).map(([k, src]) => [k, tinted.get(src) ?? src]));
+}
 
 // "<unit>:<page>" or a later sheet of it, "<unit>:<page>/<k>" (BookDocument sheetKey).
 const SHEET_KEY = /^\d+:\d+(\/\d+)?$/;

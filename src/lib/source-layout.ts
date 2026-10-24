@@ -8,6 +8,7 @@
 // and never reproduce the source's literal coordinates.
 
 import type { NumberMark, PageFurniture } from "@/lib/design/page-furniture";
+import { sectionHeadOf, type LessonSection } from "@/lib/lesson-furniture";
 
 export type Box = { x: number; y: number; w: number; h: number };
 
@@ -62,6 +63,17 @@ export type SourcePageLayout = {
   // page maps stored before 2026-10-21 lack them.
   exerciseNumbers?: NumberMark[];
   furniture?: PageFurniture;
+  // Lesson furniture (2026-10-24, src/lib/lesson-furniture.ts): a teen
+  // coursebook opens each lesson with a tab at the page top ("1a A new
+  // room", or a title alone - i5's "Let's Start!"), heads its exercise
+  // groups with section labels (Reading, Vocabulary, Grammar...), lists the
+  // lesson's key words in a box beside the tab, and points to the lesson's
+  // review and workbook pages in the footer. What this page prints of it;
+  // never its text. Optional: page maps stored before it lack them.
+  lessonHead?: { coded: boolean };
+  sectionHeads?: LessonSection[];
+  wordBox?: boolean;
+  pointers?: boolean;
 };
 
 export type DesignColor = { hex: string; share: number };
@@ -243,6 +255,7 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
   }
 
   const textColumns = countColumns(textBlocks.map((b) => ({ box: norm(b.bbox), words: wordsOf(b.lines.map((l) => l.text).join(" ")) })));
+  const lesson = lessonFurniture(lines, H, W, bodyFontPt);
 
   return {
     widthPt: Math.round(W),
@@ -266,6 +279,47 @@ export function analyzeStextPage(page: StextPage): SourcePageLayout {
     bodyFontName,
     headingFontName,
     zone: classifyZone(images, textColumns),
+    ...lesson,
+  };
+}
+
+// Lesson furniture on a page (SourcePageLayout.lessonHead...). i5 Team 2:
+// the tab title at 26 pt and its "1a" at 45 pt in the top 6% (body 10 pt),
+// section labels at 14 pt, the key-word box as three or more bulleted lines
+// of short phrases near the top, the pointers as a "Workbook: 1a" line at
+// the foot. A young learners' book prints a page title too (Super Minds'
+// "Say Hello!" at 35 pt), but no lesson codes or section labels - the book
+// level (deriveFurniture) decides whether the book has lessons at all.
+const LESSON_TOP = 0.08;
+const LESSON_TITLE = 1.8; // a tab title is this many times the body size
+const LESSON_CODE = /^\d{1,2}[a-f]$/i;
+const WORD_BOX_TOP = 0.22;
+
+function lessonFurniture(
+  lines: { text: string; bbox?: Box; font?: StextLine["font"]; block: { bbox: Box } }[],
+  H: number,
+  W: number,
+  bodyFontPt: number | null,
+): Pick<SourcePageLayout, "lessonHead" | "sectionHeads" | "wordBox" | "pointers"> {
+  if (!bodyFontPt) return {};
+  const at = (l: (typeof lines)[number]) => l.bbox ?? l.block.bbox;
+  const big = lines.filter((l) => at(l).y / H < LESSON_TOP && (l.font?.size ?? 0) >= bodyFontPt * LESSON_TITLE && /\w/.test(l.text));
+  const coded = big.some((l) => LESSON_CODE.test(l.text.trim()));
+  const sections = lines
+    .filter((l) => (l.font?.size ?? 0) >= bodyFontPt * 1.1)
+    .map((l) => ({ name: sectionHeadOf(l.text), y: at(l).y, x: at(l).x }))
+    .filter((s): s is { name: LessonSection; y: number; x: number } => !!s.name)
+    // reading order: down the left column, then the right
+    .sort((a, b) => (a.x < W / 2) === (b.x < W / 2) ? a.y - b.y : a.x - b.x)
+    .map((s) => s.name);
+  const bulleted = lines.filter((l) => at(l).y / H < WORD_BOX_TOP && (l.text.match(/•/g)?.length ?? 0) >= 2);
+  const wordBox = bulleted.length >= 3 && new Set(bulleted.map((l) => l.block)).size <= 2;
+  const pointers = lines.some((l) => at(l).y / H > 0.9 && /\bworkbook\b/i.test(l.text));
+  return {
+    ...(big.length ? { lessonHead: { coded } } : {}),
+    ...(sections.length ? { sectionHeads: sections } : {}),
+    ...(wordBox ? { wordBox } : {}),
+    ...(pointers ? { pointers } : {}),
   };
 }
 

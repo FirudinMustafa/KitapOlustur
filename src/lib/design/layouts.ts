@@ -107,6 +107,8 @@ type BlockLike = {
   layout?: unknown;
   activity?: Activity;
   diagram?: Diagram;
+  /** Lesson furniture: set only where a section head prints before the block (withSectionHeads). */
+  section?: string;
 };
 
 type PageLike = {
@@ -156,6 +158,11 @@ const MARGIN_TOP = 44;
 export const MARGIN_BOTTOM = 56;
 const RUNNING_HEADER = 22;
 const UNIT_HEADING = 52;
+// Lesson furniture (src/lib/pdf/lesson-furniture.tsx): the lesson tab takes
+// a unit heading's room (a page with one is measured as headed), a section
+// head this much above its exercise.
+export const LESSON_TAB_HEIGHT = UNIT_HEADING;
+export const SECTION_HEAD_HEIGHT = 20;
 const LINE = 1.45;
 // Line height of the body text on a mirrored page, set explicitly in pt by
 // the PDF renderer (templates.tsx) - a coursebook's tight setting.
@@ -265,12 +272,12 @@ export function estimateBlockHeight(b: BlockLike, width: number, size: number, f
   const th = (text: string, w: number, s: number) => textHeight(text, w, s, line);
   const artefact = resolveTextStyle(b);
   const bodyH = artefact ? artefactHeight(artefact, b, inner, size, th) : th(b.body, inner, size);
-  let h = frameless
+  let h = (frameless && b.section ? SECTION_HEAD_HEIGHT : 0) + (frameless
     ? 8 +
       (inlineRubric(b)
         ? textHeight(`${b.heading} ${b.body}`, inner, size * 1.1, HEADING_LINE / 1.1) + 3
         : (b.heading ? textHeight(b.heading, inner, size * 1.1, HEADING_LINE / 1.1) + 3 : 0) + bodyH)
-    : 30 + (b.heading ? size * 1.9 : 0) + bodyH;
+    : 30 + (b.heading ? size * 1.9 : 0) + bodyH);
   if (b.dialogue?.length) {
     // avatar row: speaker label + padding + border ≈ 33pt over the text itself
     for (const d of b.dialogue) h += Math.max(30, th(d.line, inner * 0.78 - 20, size) + 33) + 8;
@@ -381,6 +388,9 @@ export const MAX_PICTURE_ASPECT = 1.6;
 // at least this share of the drawn picture's shape, so object-fit "cover"
 // never crops more than a fifth of it away.
 const MIN_FRAME_SHARE = 0.8;
+// An edge-to-edge frame no wider than this (width / height) - a 3:2 picture
+// cropped to it keeps three quarters of its height.
+const MAX_BLEED_ASPECT = 2;
 // A split band's picture column never takes more of the width than this.
 const MAX_SPLIT_WIDTH = 0.55;
 
@@ -392,14 +402,24 @@ const MAX_SPLIT_WIDTH = 0.55;
 // its picture deeper than MIN_FRAME_SHARE. Shared by the fit estimate and
 // the PDF renderer so they agree.
 export function zoneRowFrames(
-  band: { height: number; widths: number[]; left?: number; span?: number },
+  band: { height: number; widths: number[]; left?: number; span?: number; bleed?: boolean },
   contentWidth: number,
   pageHeight: number,
   scale: number,
-): { left: number; width: number; height: number; frames: number[] } {
+): { left: number; width: number; height: number; frames: number[]; bleed?: boolean } {
   const sourceSpan = band.span ?? 1;
   const gaps = ZONE_GAP * (band.widths.length - 1);
   const base = band.height * pageHeight;
+  if (band.bleed) {
+    // Edge to edge (2026-10-24): the row takes the page's whole width, its
+    // frames filled to the edge (cropped, not boxed at MAX_PICTURE_ASPECT) -
+    // unless they would crop a picture to a strip; then it is set as usual.
+    const width = contentWidth + 2 * MARGIN_X;
+    const slots = band.widths.map((w) => (width - gaps) * w);
+    const deepest = Math.min(...slots.map((s, k) => s / (MIN_FRAME_SHARE * shapeAspect((band.widths[k] * PAGE_ASPECT) / band.height))));
+    const height = Math.round(scale <= 1 ? base * scale : Math.max(base, Math.min(base * scale, deepest)));
+    if (slots.every((s) => s / height <= MAX_BLEED_ASPECT)) return { left: -MARGIN_X, width, height, frames: slots, bleed: true };
+  }
   if (scale <= 1) {
     const width = contentWidth * sourceSpan;
     const height = Math.round(base * scale);

@@ -13,7 +13,9 @@ export type ZoneBand =
   // A row of pictures; widths are fractions of the row. Faz G3: the row
   // sits where the source's does - `left` and `span` are fractions of the
   // content width (unset = the full width, as plans stored before G3).
-  | { kind: "pictures"; height: number; widths: number[]; left?: number; span?: number }
+  // `bleed` (2026-10-24): the source's row runs off both side edges (i5
+  // p.8's landmark collage, 0.95 of the width) - printed edge to edge.
+  | { kind: "pictures"; height: number; widths: number[]; left?: number; span?: number; bleed?: boolean }
   // Pictures stacked in a side column, text flowing beside them.
   | { kind: "split"; side: "left" | "right"; imageWidth: number; height: number; pictures: number }
   // Text only; `weight` is the band's share of the source page's text area.
@@ -25,13 +27,23 @@ export type ZoneBand =
 
 export type ColumnItem = { kind: "picture"; height: number } | { kind: "text"; weight: number };
 
-export type ZonePlan = { bands: ZoneBand[] };
+// `ground` (2026-10-24): the colour the source page is printed on and where
+// - all over, a band across the top or foot, a panel down one side
+// (measurePageGround). Optional: plans built before it lack it.
+export type ZonePlan = { bands: ZoneBand[]; ground?: { color: string; box: Box } };
 
 export const MAX_ZONE_PICTURES = 6;
 
 const ROW_OVERLAP = 0.4; // vertical overlap (of the smaller box) that puts two pictures in one row
 const MIN_TEXT_GAP = 0.06; // a vertical gap smaller than this between pictures carries no text band
 const MIN_ROW_SHARE = 0.15; // a picture narrower than this share of its row is a sliver, not a frame
+// How tall one picture row may be, and all of them together, as a share of
+// the page. They were 0.5 and 0.6 (Faz B2, so text kept room); the hand-set
+// i5 pages print the source's big pictures at their size (p.8: 0.61 tall),
+// and planZones still shrinks pictures when a page's text needs the room.
+const MAX_PICTURE_HEIGHT = 0.62;
+const MAX_PICTURES_TOTAL = 0.72;
+const BLEED_EDGE = 0.05; // a row starting and ending this close to the side edges runs off them
 
 type Box = SourcePageLayout["images"][number];
 
@@ -49,6 +61,28 @@ export function zonePictureCount(plan: ZonePlan): number {
 // 2026-10-12: such pages went to the framed templates, ran over and came
 // out as two half-empty sheets each.
 export function buildZonePlan(layout: SourcePageLayout): ZonePlan | null {
+  const measured = layout.furniture?.ground;
+  const panel = measured ? sidePanel(measured.box) : null;
+  // A panel down one side holds a column of its own (i5 p.10: exercise 3 on
+  // the purple half). Set in one column, our text ran across the panel's
+  // edge; the page goes in two columns and the panel takes the outer one,
+  // its edge in the gutter.
+  const plan = buildBandPlan(panel && layout.textColumns < 2 ? { ...layout, textColumns: 2 } : layout);
+  if (!plan || !measured) return plan;
+  const box = panel === "left" ? { x: 0, y: 0, w: 0.5, h: 1 } : panel === "right" ? { x: 0.5, y: 0, w: 0.5, h: 1 } : measured.box;
+  return { ...plan, ground: { color: measured.color, box } };
+}
+
+const PANEL_WIDTH = [0.3, 0.7] as const;
+
+function sidePanel(b: Box): "left" | "right" | null {
+  if (b.y > 0 || b.y + b.h < 1 || b.w < PANEL_WIDTH[0] || b.w > PANEL_WIDTH[1]) return null;
+  if (b.x <= 0 && b.x + b.w < 1) return "left";
+  if (b.x > 0 && b.x + b.w >= 1) return "right";
+  return null;
+}
+
+function buildBandPlan(layout: SourcePageLayout): ZonePlan | null {
   const images = layout.images.slice(0, MAX_ZONE_PICTURES);
   if (!images.length) return { bands: [{ kind: "text", columns: layout.textColumns >= 2 ? 2 : 1, weight: 1 }] };
   if (layout.textColumns >= 2) return buildColumnPlan(images);
@@ -81,7 +115,7 @@ export function buildZonePlan(layout: SourcePageLayout): ZonePlan | null {
     const bottom = Math.max(...row.map((b) => b.y + b.h));
     const left = Math.min(...row.map((b) => b.x));
     const right = Math.max(...row.map((b) => b.x + b.w));
-    const height = clamp(bottom - top, 0.1, 0.5);
+    const height = clamp(bottom - top, 0.1, MAX_PICTURE_HEIGHT);
     pushText(cursor, top);
     if (right - left >= 0.55) {
       const total = row.reduce((n, b) => n + b.w, 0);
@@ -100,10 +134,10 @@ export function buildZonePlan(layout: SourcePageLayout): ZonePlan | null {
   pushText(cursor, 1);
 
   // Pictures may not crowd out the page's text: scale them down so they
-  // take at most 60% of the height.
+  // take at most MAX_PICTURES_TOTAL of the height.
   const pictureHeight = bands.reduce((n, b) => n + (b.kind === "pictures" || b.kind === "split" ? b.height : 0), 0);
-  if (pictureHeight > 0.6) {
-    const k = 0.6 / pictureHeight;
+  if (pictureHeight > MAX_PICTURES_TOTAL) {
+    const k = MAX_PICTURES_TOTAL / pictureHeight;
     for (const b of bands) if (b.kind === "pictures" || b.kind === "split") b.height = Math.round(b.height * k * 1000) / 1000;
   }
   // Text must have somewhere to go.
@@ -126,7 +160,7 @@ function buildColumnPlan(images: Box[]): ZonePlan {
       let cursor = from;
       for (const b of inside.filter((i) => (i.x + i.w / 2 < 0.5 ? 0 : 1) === side).sort((a, c) => a.y - c.y)) {
         if (b.y - cursor >= MIN_TEXT_GAP) cols[side].push({ kind: "text", weight: b.y - cursor });
-        cols[side].push({ kind: "picture", height: clamp(b.h, 0.1, 0.5) });
+        cols[side].push({ kind: "picture", height: clamp(b.h, 0.1, MAX_PICTURE_HEIGHT) });
         cursor = Math.max(cursor, b.y + b.h);
       }
       if (to - cursor >= MIN_TEXT_GAP) cols[side].push({ kind: "text", weight: to - cursor });
@@ -137,19 +171,19 @@ function buildColumnPlan(images: Box[]): ZonePlan {
   let cursor = 0;
   for (const b of spanning) {
     columnsBetween(cursor, b.y);
-    bands.push({ kind: "pictures", height: clamp(b.h, 0.1, 0.5), widths: [1], ...rowSpan(b.x, b.x + b.w) });
+    bands.push({ kind: "pictures", height: clamp(b.h, 0.1, MAX_PICTURE_HEIGHT), widths: [1], ...rowSpan(b.x, b.x + b.w) });
     cursor = Math.max(cursor, b.y + b.h);
   }
   columnsBetween(cursor, 1);
 
-  // Same 60% cap as the row plan, measured down the fuller column.
+  // Same cap as the row plan, measured down the fuller column.
   const full = bands.reduce((n, b) => n + (b.kind === "pictures" ? b.height : 0), 0);
   const perColumn = [0, 1].map((side) =>
     bands.reduce((n, b) => n + (b.kind === "columns" ? b.columns[side].reduce((m, i) => m + (i.kind === "picture" ? i.height : 0), 0) : 0), 0),
   );
   const tallest = full + Math.max(...perColumn);
-  if (tallest > 0.6) {
-    const k = 0.6 / tallest;
+  if (tallest > MAX_PICTURES_TOTAL) {
+    const k = MAX_PICTURES_TOTAL / tallest;
     for (const b of bands) {
       if (b.kind === "pictures") b.height = Math.round(b.height * k * 1000) / 1000;
       if (b.kind === "columns") for (const col of b.columns) for (const i of col) if (i.kind === "picture") i.height = Math.round(i.height * k * 1000) / 1000;
@@ -160,9 +194,11 @@ function buildColumnPlan(images: Box[]): ZonePlan {
 }
 
 // The row's horizontal extent; a row that (nearly) fills the page width is
-// left at the full content width.
-function rowSpan(left: number, right: number): { left?: number; span?: number } {
+// left at the full content width, and one that runs off both side edges is
+// printed edge to edge.
+function rowSpan(left: number, right: number): { left?: number; span?: number; bleed?: boolean } {
   const span = Math.min(1, right - left);
+  if (left <= BLEED_EDGE && right >= 1 - BLEED_EDGE) return { bleed: true };
   if (span >= 0.9) return {};
   return { left: Math.round(clamp(left, 0, 1 - span) * 1000) / 1000, span: Math.round(span * 1000) / 1000 };
 }
@@ -180,14 +216,14 @@ function clamp(v: number, lo: number, hi: number): number {
 export type ZonedItem<B> = { kind: "picture"; height: number; picture: number } | { kind: "text"; blocks: B[] };
 
 export type ZonedBand<B> =
-  | { kind: "pictures"; height: number; widths: number[]; pictures: number[]; left?: number; span?: number }
+  | { kind: "pictures"; height: number; widths: number[]; pictures: number[]; left?: number; span?: number; bleed?: boolean }
   | { kind: "split"; side: "left" | "right"; imageWidth: number; height: number; pictures: number[]; blocks: B[] }
   | { kind: "text"; columns: 1 | 2; blocks: B[] }
   | { kind: "columns"; columns: [ZonedItem<B>[], ZonedItem<B>[]] };
 
 type SlottedItem = { kind: "picture"; height: number; picture: number } | { kind: "text"; text: number };
 type Slotted =
-  | { kind: "pictures"; height: number; widths: number[]; pictures: number[]; left?: number; span?: number }
+  | { kind: "pictures"; height: number; widths: number[]; pictures: number[]; left?: number; span?: number; bleed?: boolean }
   | { kind: "split"; side: "left" | "right"; imageWidth: number; height: number; pictures: number[]; text: number }
   | { kind: "text"; columns: 1 | 2; text: number }
   | { kind: "columns"; columns: SlottedItem[][] };
@@ -231,7 +267,7 @@ export function layoutZones<B>(plan: ZonePlan, blocks: B[], pictureCount: number
       const pictures = take(band.widths.length);
       const widths = band.widths.slice(0, pictures.length);
       const sum = widths.reduce((a, b) => a + b, 0) || 1;
-      return { kind: "pictures", height: band.height, widths: widths.map((w) => w / sum), pictures, left: band.left, span: band.span };
+      return { kind: "pictures", height: band.height, widths: widths.map((w) => w / sum), pictures, left: band.left, span: band.span, ...(band.bleed ? { bleed: true } : {}) };
     }
     if (band.kind === "split") {
       const pictures = take(band.pictures);

@@ -23,6 +23,10 @@ export type PageFurniture = {
   numberBadge?: { color: string; filled: boolean };
   /** The audio track pill's colour. */
   trackColor?: string;
+  /** Page level only (deriveFurniture leaves it out): the colour the page is printed on, or its side panel. */
+  ground?: PageGround;
+  /** Book level: the source prints lesson furniture (lesson-furniture.ts hasLessonFurniture). */
+  lessons?: boolean;
 };
 
 type Rgb = [number, number, number];
@@ -219,4 +223,138 @@ export function deriveFurniture(layouts: Pick<SourcePageLayout, "furniture" | "e
 function median(values: number[]): number {
   const s = [...values].sort((a, b) => a - b);
   return s[Math.floor(s.length / 2)];
+}
+
+// The ground as printed under our text: the book's body text is near-black,
+// so a dark ground (i5 p.23's navy panel, which the source fills with white
+// boxes and white type) is lifted toward white until black text keeps a
+// 4.5:1 contrast on it. Lighter grounds print as measured.
+const MIN_GROUND_LUMINANCE = 0.18;
+
+function luminance([r, g, b]: Rgb): number {
+  const lin = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+export function legibleGround(color: string): string {
+  const rgb = rgbOf(color);
+  for (let t = 0; t <= 1; t += 0.05) {
+    const mixed = rgb.map((v) => v + (255 - v) * t) as Rgb;
+    if (luminance(mixed) >= MIN_GROUND_LUMINANCE) return hex(mixed);
+  }
+  return "#ffffff";
+}
+
+// ---- Page ground and side panel (2026-10-24, hand-made i5 comparison) ----
+//
+// Teen coursebooks print most pages on colour: i5 Team 2 p.6 sits on a lime
+// ground, p.10 has a purple panel down its right half. Ours printed white,
+// so ink and palette scored 44% / 56% against the source while a hand-set
+// version of the same pages scored 82% / 67%. Measured on a grid of cells
+// outside the pictures: a cell whose pixels are mostly one colour shows that
+// colour (text and art make busy cells, which do not vote). An earlier try
+// sampled a ring at the page edge and missed a gradient ground and a
+// half-page panel.
+
+export type PageGround = {
+  color: string;
+  /**
+   * Where the colour is printed, as fractions of the page; an edge within
+   * GROUND_EDGE of the page's is snapped to it (the colour bleeds off).
+   * {0,0,1,1} is a page printed on colour all over.
+   */
+  box: Box;
+};
+
+const GROUND_CELLS = { cols: 20, rows: 26 } as const;
+const CELL_SOLID = 0.55; // share of a cell's pixels near its commonest colour for the cell to show a colour
+const GROUND_NEAR = 56; // one ground: a gradient or a printed pattern stays within this distance
+const GROUND_MIN_CELLS = 0.08; // the colour shows in at least this share of the page's cells
+const GROUND_TRIM = 0.02; // stray cells (a picture's edge) left out of the colour's extent on each side
+const GROUND_FILL = 0.3; // the colour's share of the solid cells inside its extent
+const GROUND_OUTSIDE = 0.1; // ...and at most this share of the solid cells outside it
+const GROUND_EDGE = 0.1; // an extent this close to the page edge reaches it
+const GROUND_MIN_SIDE = 0.25; // a panel narrower or shorter than this is a box, not a ground
+
+const paperLike = ([r, g, b]: Rgb) => r > 235 && g > 235 && b > 235;
+
+type GroundCell = { cx: number; cy: number; color: Rgb | null };
+
+export function groundCells(raster: Raster, pictures: Box[]): GroundCell[] {
+  const { width: W, height: H } = raster;
+  const { cols, rows } = GROUND_CELLS;
+  const cells: GroundCell[] = [];
+  for (let gy = 0; gy < rows; gy++) {
+    for (let gx = 0; gx < cols; gx++) {
+      const cx = (gx + 0.5) / cols;
+      const cy = (gy + 0.5) / rows;
+      if (pictures.some((p) => cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h)) continue;
+      const px: Rgb[] = [];
+      for (let y = Math.floor((gy / rows) * H); y < Math.floor(((gy + 1) / rows) * H); y++)
+        for (let x = Math.floor((gx / cols) * W); x < Math.floor(((gx + 1) / cols) * W); x++) px.push(pixel(raster, x, y));
+      if (!px.length) continue;
+      const bins = new Map<number, { n: number; r: number; g: number; b: number }>();
+      for (const p of px) {
+        const key = ((p[0] >> 4) << 8) | ((p[1] >> 4) << 4) | (p[2] >> 4);
+        const e = bins.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+        e.n++;
+        e.r += p[0];
+        e.g += p[1];
+        e.b += p[2];
+        bins.set(key, e);
+      }
+      const top = [...bins.values()].sort((a, b) => b.n - a.n)[0];
+      const mean: Rgb = [top.r / top.n, top.g / top.n, top.b / top.n];
+      // Pixels near the commonest colour, not only in its bin: a bin edge splits a flat tint.
+      const near = px.filter((p) => distance(p, mean) < 24).length;
+      cells.push({ cx, cy, color: near / px.length >= CELL_SOLID ? mean : null });
+    }
+  }
+  return cells;
+}
+
+export function measurePageGround(raster: Raster, pictures: Box[]): PageGround | null {
+  const { cols, rows } = GROUND_CELLS;
+  const minCells = cols * rows * GROUND_MIN_CELLS;
+  const cells = groundCells(raster, pictures);
+  const inked = cells.flatMap((c) => (c.color && !paperLike(c.color) ? [c.color] : []));
+  // The printed colours among the solid cells, commonest first.
+  const clusters: Rgb[][] = [];
+  for (const c of inked) {
+    const near = clusters.find((k) => distance(k[0], c) < GROUND_NEAR);
+    if (near) near.push(c);
+    else clusters.push([c]);
+  }
+  clusters.sort((a, b) => b.length - a.length);
+  const solid = cells.filter((c) => !!c.color);
+  const at = (v: number[], q: number) => v[Math.min(v.length - 1, Math.max(0, Math.floor(q * v.length)))];
+  const snap = (v: number, edge: number) => (Math.abs(v - edge) <= GROUND_EDGE ? edge : v);
+  for (const cluster of clusters.slice(0, 3)) {
+    if (cluster.length < minCells) break;
+    const color = [0, 1, 2].map((k) => cluster.reduce((n, c) => n + c[k], 0) / cluster.length) as Rgb;
+    const isGround = (c: GroundCell) => !!c.color && !paperLike(c.color) && distance(c.color, color) < GROUND_NEAR;
+    const mine = cells.filter(isGround);
+    if (mine.length < minCells) continue;
+    // The colour's extent, without the few cells furthest out on each side.
+    const xs = mine.map((c) => c.cx).sort((a, b) => a - b);
+    const ys = mine.map((c) => c.cy).sort((a, b) => a - b);
+    const x0 = snap(at(xs, GROUND_TRIM) - 0.5 / cols, 0);
+    const x1 = snap(at(xs, 1 - GROUND_TRIM) + 0.5 / cols, 1);
+    const y0 = snap(at(ys, GROUND_TRIM) - 0.5 / rows, 0);
+    const y1 = snap(at(ys, 1 - GROUND_TRIM) + 0.5 / rows, 1);
+    // A ground or panel reaches the page edge on three sides at least: a
+    // full-width band at the top or foot, a full-height panel at a side.
+    const edges = [x0 === 0, x1 === 1, y0 === 0, y1 === 1].filter(Boolean).length;
+    if (edges < 3 || x1 - x0 < GROUND_MIN_SIDE || y1 - y0 < GROUND_MIN_SIDE) continue;
+    const inBox = (c: GroundCell) => c.cx >= x0 && c.cx <= x1 && c.cy >= y0 && c.cy <= y1;
+    const inside = solid.filter(inBox);
+    const outside = solid.filter((c) => !inBox(c));
+    if (inside.filter(isGround).length < inside.length * GROUND_FILL) continue;
+    if (outside.filter(isGround).length > outside.length * GROUND_OUTSIDE) continue;
+    return { color: hex(color), box: { x: round(x0), y: round(y0), w: round(x1 - x0), h: round(y1 - y0) } };
+  }
+  return null;
 }

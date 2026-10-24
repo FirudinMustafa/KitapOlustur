@@ -13,6 +13,7 @@ import { NOTO_SANS, NOTO_SERIF, pdfFontFamily, withSymbols } from "./fonts";
 import { CrosswordView, MarkingList, MatchLinesView, WordSearchView } from "./puzzle-blocks";
 import { resolveTextStyle } from "@/lib/text-style";
 import { ArtefactBody } from "./artefacts";
+import { SectionHead } from "./lesson-furniture";
 
 // Faz 1 "Tasarım sistemi": the per-block print pieces, split out of
 // BookDocument.tsx so the page templates (./templates.tsx) and the original
@@ -924,7 +925,7 @@ export function BlockCard({
     const numberColor = measured && !measured.filled ? measured.color : look.palette.primary;
     const pieces = panel ? tintPieces(look.palette.primaryLight, Math.max(4, look.theme.radius), PANEL_PAD, 8) : null;
     const wraps = blockLines(block, showAnswerKey) > UNSPLIT_MAX_LINES;
-    return (
+    const card = (
       <View style={[pieces?.outer ?? { marginBottom: 8 }, layoutStyle]} wrap={wraps}>
         {wraps ? <KeepAnchor /> : null}
         <View style={pieces?.top} minPresenceAhead={KEEP_WITH_NEXT}>
@@ -963,6 +964,16 @@ export function BlockCard({
           <BlockInner block={inline ? { ...block, body: "" } : block} showAnswerKey={showAnswerKey} look={look} plain dense />
         </View>
       </View>
+    );
+    // Lesson furniture: the head of the section this exercise opens
+    // (withSectionHeads keeps `section` only there).
+    return block.section ? (
+      <>
+        <SectionHead section={block.section} look={look} />
+        {card}
+      </>
+    ) : (
+      card
     );
   }
 
