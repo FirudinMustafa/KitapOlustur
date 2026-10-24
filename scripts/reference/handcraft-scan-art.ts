@@ -7,11 +7,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
+import { DPI, knockOutside } from "./print-kit";
 
 const ROOT = path.join(process.cwd(), ".handmade-scan");
 export const IMG_DIR = path.join(ROOT, "img"); // paid (handcraft-scan-images.mts)
 export const FREE_DIR = path.join(ROOT, "free"); // reused from earlier hand-made books
-const COMP_DIR = path.join(ROOT, "comp");
+const COMP_DIR = path.join(ROOT, `comp-${DPI}`);
 // Free pictures made for the hand-made i5 book (same generator, already paid
 // for): copied in once from wherever they are found.
 const FREE_SOURCES = [
@@ -32,27 +33,43 @@ export function free(name: string) {
   return fs.readFileSync(file);
 }
 
-export const PX = 3; // px per pt
+export const PX = DPI / 72; // px per pt: composites are drawn at the print resolution
 export const svg = (w: number, h: number, body: string) =>
   Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" viewBox="0 0 ${Math.round(w)} ${Math.round(h)}">${body}</svg>`);
 
 type Layer = { input: Buffer; left: number; top: number };
 export async function canvas(w: number, h: number, layers: Layer[], bg = { r: 255, g: 255, b: 255, alpha: 0 }) {
-  return sharp({ create: { width: Math.round(w), height: Math.round(h), channels: 4, background: bg } })
-    .composite(layers.map((l) => ({ ...l, left: Math.round(l.left), top: Math.round(l.top) })))
+  const cw = Math.round(w);
+  const ch = Math.round(h);
+  // a layer reaching past the canvas (rounding at print resolution) is cut to it
+  const fitted = await Promise.all(
+    layers.map(async (l) => {
+      const left = Math.round(l.left);
+      const top = Math.round(l.top);
+      const m = await sharp(l.input).metadata();
+      const lw = m.width ?? 1;
+      const lh = m.height ?? 1;
+      const x0 = Math.max(0, -left);
+      const y0 = Math.max(0, -top);
+      const ew = Math.min(lw - x0, cw - Math.max(0, left));
+      const eh = Math.min(lh - y0, ch - Math.max(0, top));
+      if (x0 === 0 && y0 === 0 && ew === lw && eh === lh) return { input: l.input, left, top };
+      return { input: await sharp(l.input).extract({ left: x0, top: y0, width: Math.max(1, ew), height: Math.max(1, eh) }).png().toBuffer(), left: Math.max(0, left), top: Math.max(0, top) };
+    }),
+  );
+  return sharp({ create: { width: cw, height: ch, channels: 4, background: bg } })
+    .composite(fitted)
     .png()
     .toBuffer();
 }
 export const contain = (buf: Buffer, w: number, h: number) =>
   sharp(buf).resize(Math.max(1, Math.round(w)), Math.max(1, Math.round(h)), { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } }).png().toBuffer();
 // White card background knocked out, so a cut-out sits on any colour.
+// White card ground knocked out (only the white reaching the edge, so a
+// figure's own white stays), so a cut-out sits on any colour.
 export async function knockout(buf: Buffer) {
   const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  for (let i = 0; i < data.length; i += 4) {
-    const m = Math.min(data[i], data[i + 1], data[i + 2]);
-    if (m > 244) data[i + 3] = 0;
-    else if (m > 232) data[i + 3] = Math.round(((244 - m) / 12) * 255);
-  }
+  knockOutside(data, info.width, info.height);
   return sharp(data, { raw: info }).png().toBuffer();
 }
 export async function circle(buf: Buffer, d: number, ring = "#ffffff", ringW = 8, bg?: string) {
@@ -91,7 +108,7 @@ export const vivid = (buf: Buffer, saturation = 1.25) => sharp(buf).modulate({ s
 
 export async function cached(name: string, make: () => Promise<Buffer>): Promise<Buffer> {
   fs.mkdirSync(COMP_DIR, { recursive: true });
-  const file = path.join(COMP_DIR, `${name}.png`);
+  const file = path.join(COMP_DIR, `${name.replace(/[^\w.-]/g, "_")}.png`);
   if (fs.existsSync(file) && !process.env.REBUILD_ART) return fs.readFileSync(file);
   const buf = await make();
   fs.writeFileSync(file, buf);
@@ -101,7 +118,7 @@ export async function cached(name: string, make: () => Promise<Buffer>): Promise
 // One artwork for a picture box: a drawn SVG ground with pictures on it.
 export type Placed = { buf: Buffer; x: number; y: number; w: number; h: number; fit?: "contain" | "cover"; round?: number; circle?: boolean; ring?: string; ringW?: number; bg?: string; knock?: boolean; rot?: number; pos?: string };
 export async function compose(name: string, w: number, h: number, ground: string, items: Placed[] = [], over = "") {
-  return cached(name, async () => {
+  return cached(`${name}-${Math.round(w)}x${Math.round(h)}`, async () => {
     const layers: Layer[] = [{ input: svg(w, h, ground), left: 0, top: 0 }];
     for (const p of items) {
       let b: Buffer;
@@ -116,6 +133,13 @@ export async function compose(name: string, w: number, h: number, ground: string
   });
 }
 
+// A composite designed at 3 px per pt (the fixed stroke widths, gaps and
+// font sizes in its SVG), drawn at the print resolution.
+function composeAt3(name: string, w: number, h: number, ground: string, items: Placed[] = []) {
+  const k = PX / 3;
+  return compose(`${name}-at3`, w * k, h * k, `<g transform="scale(${k})">${ground}</g>`, items.map((p) => ({ ...p, x: p.x * k, y: p.y * k, w: p.w * k, h: p.h * k, ringW: (p.ringW ?? 8) * k })));
+}
+
 // --- Starter -------------------------------------------------------------------
 
 // The laptop seen from above, keys lettered A-Z with the secret-message
@@ -123,7 +147,7 @@ export async function compose(name: string, w: number, h: number, ground: string
 // upper case; the pupils write the lower-case letters on the key lines.
 export const SECRET: Record<string, number> = { W: 1, E: 2, C: 3, A: 4, N: 5, D: 6, O: 7, I: 8, T: 9 };
 export function keyboard(w: number, h: number) {
-  return cached("keyboard", async () => {
+  return cached(`keyboard-${w}x${h}`, async () => {
     const W = Math.round(w * PX);
     const H = Math.round(h * PX);
     const k = W / 1500;
@@ -149,7 +173,9 @@ export function keyboard(w: number, h: number) {
         if (c === "A") keys += `<text x="${(x + 40) * k}" y="${(488 + 68) * k}" font-family="Comic Sans MS, Arial" font-size="${30 * k}" fill="#C62828" text-anchor="middle">a</text>`;
       });
     });
-    keys += key(1080, 488, 150, "", "ENTER") + key(1060, 576, 170, "") + key(980, 664, 250, "", "SHIFT");
+    // the right-hand keys start after each row's last letter (J, S and Z
+    // were half under ENTER and SHIFT)
+    keys += key(1100, 488, 130, "", "ENTER") + key(1092, 576, 138, "") + key(996, 664, 234, "", "SHIFT");
     keys += key(150, 752, 92, "", "CTRL") + key(250, 752, 92, "", "ALT") + key(350, 752, 560, "") + key(920, 752, 92, "", "ALT") + key(1020, 752, 92, "", "CTRL");
     // number pad
     for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) keys += key(1290 + c * 70, 400 + r * 88, 62, ["789", "456", "123", "0.."][r][c]);
@@ -170,20 +196,22 @@ export function keyboard(w: number, h: number) {
 
 // A paintbrush dipping into a numbered paint pot, one per colour.
 export const PAINTS: [string, string][] = [
-  ["red", "#E53935"], ["orange", "#FB8C00"], ["yellow", "#FDD835"],
-  ["green", "#43A047"], ["white", "#F5F5F5"], ["blue", "#1E88E5"],
-  ["black", "#212121"], ["purple", "#8E24AA"], ["brown", "#8D5524"],
+  ["pink", "#EC6FA9"], ["blue", "#1E88E5"], ["green", "#43A047"],
+  ["yellow", "#FDD835"], ["brown", "#8D5524"], ["purple", "#8E24AA"],
+  ["white", "#F5F5F5"], ["orange", "#FB8C00"], ["black", "#212121"],
 ];
 export function paintPots(w: number, h: number) {
-  return cached("paint-pots", async () => {
+  return cached(`paint-pots-${w}x${h}`, async () => {
     const W = Math.round(w * PX);
     const H = Math.round(h * PX);
-    const cw = (W - 60) / 3;
-    const ch = (H - 170) / 3;
-    let body = `<rect x="6" y="6" width="${W - 12}" height="${H - 12}" rx="40" fill="#FFF8EF" stroke="#F6C99A" stroke-width="8"/>`;
+    // fixed sizes in pt (x PX): 10 pt side, 50 pt top band, 6.7 pt foot - PAINT_GEOM
+    const s = PX;
+    const cw = (W - 20 * s) / 3;
+    const ch = (H - (170 / 3) * s) / 3;
+    let body = `<rect x="${2 * s}" y="${2 * s}" width="${W - 4 * s}" height="${H - 4 * s}" rx="${13 * s}" fill="#FFF8EF" stroke="#F6C99A" stroke-width="${2.7 * s}"/>`;
     PAINTS.forEach(([, c], i) => {
-      const x = 30 + (i % 3) * cw + cw * 0.18;
-      const y = 150 + Math.floor(i / 3) * ch;
+      const x = 10 * s + (i % 3) * cw + cw * 0.18;
+      const y = 50 * s + Math.floor(i / 3) * ch;
       const pw = cw * 0.5;
       const ph = ch * 0.42;
       const py = y + ch * 0.24;
@@ -204,7 +232,7 @@ export const NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11",
 const TILE_COLS = ["#EC407A", "#AB47BC", "#FBC02D", "#4FC3F7", "#E91E63", "#7CB342", "#FF7043", "#FFB300", "#F06292", "#7E57C2", "#37474F", "#29B6F6"];
 const DIGIT_COLS = ["#fff", "#FFF59D", "#6A1B9A", "#263238", "#3949AB", "#4A148C", "#fff", "#7B1FA2"];
 export function numberTiles(w: number, h: number) {
-  return cached("number-tiles", async () => {
+  return cached(`number-tiles-${w}x${h}`, async () => {
     const W = Math.round(w * PX);
     const H = Math.round(h * PX);
     const cols = 4;
@@ -230,18 +258,21 @@ export function numberTiles(w: number, h: number) {
 // Seven clothes pegs with a day of the week on each, letters missing.
 export const PEG_DAYS = ["_ON_AY", "TU_SD_Y", "W_DN_SD_Y", "TH_RS_AY", "F_I_AY", "SA_U_DAY", "S_ND_Y"];
 export function pegs(w: number, h: number) {
-  return cached("pegs", async () => {
+  return cached(`pegs-${w}x${h}`, async () => {
     const W = Math.round(w * PX);
     const H = Math.round(h * PX);
     const cols = ["#8E24AA", "#795548", "#43A047", "#ECEFF1", "#42A5F5", "#7E7E9A", "#D4E157"];
-    const rh = (H - 40) / 7;
-    let body = `<rect x="6" y="6" width="${W - 12}" height="${H - 12}" rx="36" fill="#FFFDF4" stroke="#F2C230" stroke-width="7"/>`;
+    // No frame of its own (the Days panel is the frame); every peg, turned,
+    // stays inside the picture (peg 7 at 12 degrees ran past its foot).
+    const s = PX / 3;
+    const rh = (H - 40 * s) / 7;
+    let body = "";
     PEG_DAYS.forEach((d, i) => {
-      const y = 30 + i * rh;
-      const x = 40 + (i % 2) * 30 + (i === 6 ? -20 : 0);
-      const pw = W - 120;
+      const y = 22 * s + i * rh;
+      const x = 34 * s + (i % 2) * 24 * s;
+      const pw = W - 110 * s;
       const ph = rh * 0.62;
-      const rot = [-6, -2, 2, -3, 4, 5, 12][i];
+      const rot = [-5, -2, 2, -3, 3, 4, -4][i];
       const c = cols[i];
       const dark = i === 3 || i === 6 ? "#37474F" : "#fff";
       body += `<g transform="rotate(${rot} ${x + pw / 2} ${y + ph / 2})">
@@ -258,9 +289,11 @@ export function pegs(w: number, h: number) {
 
 // The yellow star wallpaper the scan's p.10-11 print round the page.
 export function starGround(w: number, h: number, inset: { top: number; left: number; right: number }) {
-  return cached(`star-ground-${inset.left}-${inset.right}`, async () => {
+  return cached(`star-ground-${w}x${h}-${inset.left}-${inset.right}-${inset.top}`, async () => {
+    // drawn in half-points, scaled to the print resolution
     const W = Math.round(w * 2);
     const H = Math.round(h * 2);
+    const out = { w: Math.round(w * PX), h: Math.round(h * PX) };
     let stars = "";
     for (let y = 20; y < H; y += 110) for (let x = ((y / 110) % 2) * 55; x < W; x += 110) {
       const r = 26;
@@ -275,7 +308,7 @@ export function starGround(w: number, h: number, inset: { top: number; left: num
       <rect x="${inset.left * 2}" y="${inset.top * 2}" width="${W - (inset.left + inset.right) * 2}" height="${H}" fill="#EAF4FB"/>
       <rect x="${inset.left * 2}" y="${inset.top * 2}" width="${W - (inset.left + inset.right) * 2}" height="${H * 0.5}" fill="url(#fade)"/>
       <defs><linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#EAF4FB"/></linearGradient></defs>`;
-    return sharp(svg(W, H, body)).png().toBuffer();
+    return sharp(svg(out.w, out.h, `<g transform="scale(${out.w / W} ${out.h / H})">${body}</g>`)).png().toBuffer();
   });
 }
 
@@ -291,7 +324,7 @@ function clockFace(cx: number, cy: number, r: number, h: number, m: number, rim:
   return `<circle cx="${cx + r * 0.06}" cy="${cy + r * 0.08}" r="${r * 1.17}" fill="#00000022"/><circle cx="${cx}" cy="${cy}" r="${r * 1.15}" fill="${rim}"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff"/>${nums}${hand(ha, r * 0.5, r * 0.09, red ? "#D32F2F" : "#263238")}${hand(ma, r * 0.8, r * 0.06, red ? "#D32F2F" : "#263238")}<circle cx="${cx}" cy="${cy}" r="${r * 0.07}" fill="#263238"/>`;
 }
 export function clockRow(name: string, w: number, h: number, times: [number, number][], rims: string[], cols: number, red = false, ground = "") {
-  return cached(name, async () => {
+  return cached(`${name}-${w}x${h}-${times.join("_")}`, async () => {
     const W = Math.round(w * PX);
     const H = Math.round(h * PX);
     const rows = Math.ceil(times.length / cols);
@@ -305,7 +338,7 @@ export function clockRow(name: string, w: number, h: number, times: [number, num
 
 // One school building drawn at four times of day (the greetings panel).
 export function schoolAt(name: string, w: number, h: number, time: "morning" | "afternoon" | "evening" | "night" | "day") {
-  return cached(name, async () => {
+  return cached(`${name}-${w}x${h}-${time}`, async () => {
     const W = Math.round(w * PX);
     const H = Math.round(h * PX);
     const sky = { morning: ["#FFF3C4", "#9AD3F5"], afternoon: ["#5EB6F0", "#BFE6FB"], evening: ["#F57F17", "#8E24AA"], night: ["#1A1A4E", "#3F2B8C"], day: ["#8FD3FA", "#D9F1FD"] }[time];
@@ -332,9 +365,9 @@ export function schoolAt(name: string, w: number, h: number, time: "morning" | "
 
 // Grey city skyline strip (the bus-stop and dialogue grounds).
 export function skyline(name: string, w: number, h: number, colour = "#B0BEC5") {
-  return cached(name, async () => {
-    const W = Math.round(w * PX);
-    const H = Math.round(h * PX);
+  return cached(`${name}-${w}x${h}`, async () => {
+    const W = Math.round(w * 3);
+    const H = Math.round(h * 3);
     let b = "";
     let x = 0;
     let i = 0;
@@ -346,16 +379,16 @@ export function skyline(name: string, w: number, h: number, colour = "#B0BEC5") 
       x += bw;
       i++;
     }
-    return sharp(svg(W, H, b)).png().toBuffer();
+    return sharp(svg(w * PX, h * PX, `<g transform="scale(${PX / 3})">${b}</g>`)).png().toBuffer();
   });
 }
 
 // --- panels --------------------------------------------------------------------
 
 export function emailWindow(name: string, w: number, h: number, photo?: Buffer) {
-  const W = Math.round(w * PX);
-  const H = Math.round(h * PX);
-  return compose(
+  const W = Math.round(w * 3);
+  const H = Math.round(h * 3);
+  return composeAt3(
     name,
     W,
     H,
@@ -368,8 +401,8 @@ export function emailWindow(name: string, w: number, h: number, photo?: Buffer) 
 }
 
 export function postcard(name: string, w: number, h: number, landmark: Buffer) {
-  const W = Math.round(w * PX);
-  const H = Math.round(h * PX);
+  const W = Math.round(w * 3);
+  const H = Math.round(h * 3);
   // airmail border: slanted red/blue dashes along all four edges
   const edge = (len: number, horiz: boolean, off: number) =>
     Array.from({ length: Math.ceil(len / 40) }, (_, i) => i)
@@ -381,7 +414,7 @@ export function postcard(name: string, w: number, h: number, landmark: Buffer) {
           : `<polygon points="${off},${a + 10} ${off + 14},${a} ${off + 14},${a + 22} ${off},${a + 32}" fill="${c}"/>`;
       })
       .join("");
-  return compose(
+  return composeAt3(
     name,
     W,
     H,
@@ -393,8 +426,8 @@ export function postcard(name: string, w: number, h: number, landmark: Buffer) {
 
 // A row of kids at a bus stop: faces in circles on drawn bodies, a bus on the left.
 export function busQueue(name: string, w: number, h: number, faces: Buffer[]) {
-  const W = Math.round(w * PX);
-  const H = Math.round(h * PX);
+  const W = Math.round(w * 3);
+  const H = Math.round(h * 3);
   const n = faces.length;
   const x0 = W * 0.36;
   const step = (W - x0 - 20) / n;
@@ -410,5 +443,5 @@ export function busQueue(name: string, w: number, h: number, faces: Buffer[]) {
     ground += `<rect x="${cx - d * 0.42}" y="${top + d * 0.8}" width="${d * 0.84}" height="${H * 0.27}" rx="${d * 0.25}" fill="${bodyCols[i % 8]}"/><rect x="${cx - d * 0.3}" y="${top + d * 0.8 + H * 0.25}" width="${d * 0.22}" height="${H * 0.93 - (top + d * 0.8 + H * 0.25)}" fill="#37474F"/><rect x="${cx + d * 0.08}" y="${top + d * 0.8 + H * 0.25}" width="${d * 0.22}" height="${H * 0.93 - (top + d * 0.8 + H * 0.25)}" fill="#37474F"/><rect x="${cx + d * 0.3}" y="${top + d * 0.9}" width="${d * 0.28}" height="${H * 0.16}" rx="10" fill="#FFCA28"/>`;
     items.push({ buf: f, x: cx - d / 2, y: top, w: d, h: d, circle: true, ring: "#fff", ringW: 6 });
   });
-  return compose(name, W, H, ground, items);
+  return composeAt3(name, W, H, ground, items);
 }

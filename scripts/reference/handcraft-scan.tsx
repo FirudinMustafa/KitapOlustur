@@ -3,15 +3,16 @@
 // faded or cut off). Scope: cover, imprint, contents spread, the Starter
 // unit (scan sheets 3-10 = book pp.7-14) and Theme 1 up to the end of
 // module B (sheets 11-18 = book pp.15-22), back cover. Original
-// characters, texts, exercises and pictures; the scan's level (A1), unit /
-// module structure, page types, layout, page furniture and density.
-// 205 x 297 mm (the scan's measured page aspect, 0.69).
+// characters, story, texts, exercises and pictures; the scan's level (A1),
+// unit / module structure, page types, layout, page furniture and density.
 //
-//   npx tsx --env-file=.env.local scripts/reference/handcraft-scan-images.mts   (paid pictures, once)
-//   npx tsx scripts/reference/handcraft-scan-crop.mts                           (clean scan pages, for scoring)
-//   npx tsx scripts/reference/handcraft-scan.tsx
-//     -> .handmade-scan/student-book.pdf
-//   npx tsx scripts/fidelity.mts .handmade-scan/scan-pages.pdf .handmade-scan/student-book.pdf 1 5 16 20
+// PRINT EDITION: A4 trim (210 x 297 mm), 3 mm bleed, crop marks, pictures
+// at 300 dpi, every box on the grid of print-kit.ts.
+//
+//   npx tsx scripts/reference/handcraft-scan.tsx print     -> print/raw-interior.pdf, print/raw-cover.pdf (300 dpi)
+//   PRINT_DPI=150 npx tsx scripts/reference/handcraft-scan.tsx preview -> print/onizleme.pdf (trimmed, for the screen)
+//   npx tsx scripts/reference/print-finish.mts             -> print/kitap-ic-sayfalar.pdf, kitap-kapak.pdf (TrimBox/BleedBox)
+//   npx tsx scripts/reference/print-qa.mts print/kitap-ic-sayfalar.pdf
 //
 // Pictures: 11 paid (.handmade-scan/img), free pictures reused from the
 // hand-made i5 book (.handmade-scan/free), composites in
@@ -19,22 +20,28 @@
 import path from "node:path";
 import fs from "node:fs";
 import React from "react";
-import { Document, Page, View, Text, Image, Font, Svg, Path, Rect, Polygon, renderToBuffer } from "@react-pdf/renderer";
-import { loadEmojiIcons } from "../../src/lib/pdf/emoji-icons";
+import sharp from "sharp";
+import { Document, Page, View, Text, Image, Font, Svg, Path, Rect, Polygon, renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
+import { twemojiFileName, twemojiUrl } from "../../src/lib/activities";
+import { fitPicture, pointInFrame, type FitOptions } from "../../src/lib/pdf/picture-fit";
 import * as art from "./handcraft-scan-art";
+import { MM, W, H, BLEED, SLUG, LAST_ROW, cx, ce, ry, cells, B, type Box, DPI, printPicture, dpiTable, sheetFigures, cutOut } from "./print-kit";
 
 const FONTS = path.join(process.cwd(), "public", "fonts");
 Font.register({ family: "Noto", fonts: [{ src: path.join(FONTS, "NotoSans-Regular.ttf"), fontWeight: 400 }, { src: path.join(FONTS, "NotoSans-Bold.ttf"), fontWeight: 700 }, { src: path.join(FONTS, "NotoSans-Italic.ttf"), fontStyle: "italic" }] });
 Font.register({ family: "Baloo", fonts: [{ src: path.join(FONTS, "Baloo2-Medium.ttf"), fontWeight: 500 }, { src: path.join(FONTS, "Baloo2-Bold.ttf"), fontWeight: 700 }] });
 Font.register({ family: "Andika", fonts: [{ src: path.join(FONTS, "Andika-Regular.ttf"), fontWeight: 400 }, { src: path.join(FONTS, "Andika-Bold.ttf"), fontWeight: 700 }] });
-Font.register({ family: "Nunito", fonts: [{ src: path.join(FONTS, "Nunito-Regular.ttf"), fontWeight: 400 }, { src: path.join(FONTS, "Nunito-Bold.ttf"), fontWeight: 700 }] });
 Font.register({ family: "Sym", src: path.join(FONTS, "NotoSansSymbols2-Regular.ttf") });
 Font.registerHyphenationCallback((w) => [w]);
 
-// --- page geometry and palette --------------------------------------------------
-const MM = 72 / 25.4;
-const W = 205 * MM; // 581.1
-const H = 297 * MM; // 841.9
+// --- output mode -------------------------------------------------------------------------------
+// "print": the press sheet - trim + bleed + a slug with crop marks (300 dpi).
+// "preview": the trimmed page, whole book in reading order (covers, inside covers).
+const MODE = (process.argv[2] ?? "print") as "print" | "preview";
+const OFF = MODE === "print" ? BLEED + SLUG : 0; // where the trim's top-left sits on the sheet
+const OUT_DIR = path.join(process.cwd(), "print");
+
+// --- palette and type --------------------------------------------------------------------------
 const NUM = "#E64A19"; // exercise numbers
 const INK = "#1E2235";
 const RUBRIC = "#1B1F3B";
@@ -47,59 +54,137 @@ const STARTER_BLUE = "#4A55C9";
 const GOLD = "#F4C20D";
 const SLATE = "#2C2F3B";
 const BODY = 10;
+/** Padding of text inside a panel: one value for every panel. */
+const INSET = 4 * MM;
+const FULL: Box = B(0, W, 0, H);
 
-type Src = Buffer | string;
-const srcOf = (s: Src) => (typeof s === "string" ? s : { data: s, format: "png" as const });
 const t = (size = BODY, weight: 400 | 700 = 400, color = INK) => ({ fontFamily: "Noto", fontSize: size, fontWeight: weight, color, lineHeight: 1.3 });
 const hand = (size = 11, color = INK, weight: 400 | 700 = 400) => ({ fontFamily: "Andika", fontSize: size, color, fontWeight: weight, lineHeight: 1.3 });
-const B = ({ children, c }: { children: React.ReactNode; c?: string }) => <Text style={{ fontWeight: 700, ...(c ? { color: c } : {}) }}>{children}</Text>;
+const Bo = ({ children, c }: { children: React.ReactNode; c?: string }) => <Text style={{ fontWeight: 700, ...(c ? { color: c } : {}) }}>{children}</Text>;
 const blank = (n = 10) => "_".repeat(n);
 const ans = (s: string) => <Text style={{ fontFamily: "Andika", color: BLUE, textDecoration: "underline" }}>{`  ${s}  `}</Text>;
 
-// --- assets -------------------------------------------------------------------------
-const EMOJI = ["☂️", "🏀", "🌸", "🍌", "🐸", "🐳", "☁️", "📁", "🖨️", "🎧", "🖍️", "✂️", "🔊", "📎", "📏", "🍳", "👔", "🧰", "👫", "🩺", "📚", "🎸", "⚽", "🤖", "⭐", "🥄", "🔑", "🎒"];
-let EM: Record<string, string> = {};
+// --- bleed -------------------------------------------------------------------------------------
+// How far a painted box that touches a trim edge runs on past it. The
+// interior runs 3 mm into the bleed on every side; on the cover spread the
+// edges at the spine run only to the spine's middle.
+type Edges = { l: number; r: number; t: number; b: number };
+const ALL_EDGES: Edges = { l: BLEED, r: BLEED, t: BLEED, b: BLEED };
+const EdgeCtx = React.createContext<Edges>(ALL_EDGES);
+type Grown = { x: number; y: number; w: number; h: number };
+function grow(b: Box, e: Edges): Grown {
+  const h = b.h ?? 0;
+  const L = b.x <= 0.01;
+  const R = b.x + b.w >= W - 0.01;
+  const T = b.y <= 0.01;
+  const Bt = b.h !== undefined && b.y + h >= H - 0.01;
+  return { x: b.x - (L ? e.l : 0), y: b.y - (T ? e.t : 0), w: b.w + (L ? e.l : 0) + (R ? e.r : 0), h: h + (T ? e.t : 0) + (Bt ? e.b : 0) };
+}
+
+// --- assets ------------------------------------------------------------------------------------
+const EMOJI_DIR = path.join(process.cwd(), ".handmade-scan", "emoji");
+const EM: Record<string, Buffer> = {};
+// Twemoji drawn from its SVG at 1024 px (the 160 px PNGs printed at 25 mm were 160 dpi).
+async function loadEmoji(list: string[]) {
+  fs.mkdirSync(EMOJI_DIR, { recursive: true });
+  for (const e of list) {
+    const file = path.join(EMOJI_DIR, `${twemojiFileName(e)}.png`);
+    if (!fs.existsSync(file)) {
+      const res = await fetch(twemojiUrl(e));
+      if (!res.ok) throw new Error(`emoji ${e}: ${res.status}`);
+      fs.writeFileSync(file, await sharp(Buffer.from(await res.arrayBuffer()), { density: 2400 }).resize(1024, 1024, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer());
+    }
+    EM[e] = fs.readFileSync(file);
+  }
+}
 const E = (e: string) => EM[e];
-const emoBuf = (e: string) => Buffer.from((EM[e] ?? "").split(",")[1] ?? "", "base64");
+const ringPx = (n: number) => (n * art.PX) / 3; // ring widths were designed at 3 px per pt
 
-type FBox = [number, number, number, number];
-const px = (f: number, side: number) => Math.round(f * side * art.PX);
-const boxPx = (b: FBox) => [px(b[2], W), px(b[3], H)] as const;
+const CROSS_PICS: [string, number][] = [["🏀", 1], ["🌸", 2], ["🍌", 3], ["🐳", 5]];
+const CROSS_PICS_ACROSS: [string, number][] = [["🍇", 2], ["🐸", 4], ["☁️", 6]];
+const OBJECTS: [string, string][] = [["✂️", "scissors"], ["📓", "notebook"], ["🖌️", "paintbrush"], ["📎", "paper clip"], ["🖍️", "crayon"], ["🖥️", "computer"], ["📌", "drawing pin"], ["📏", "ruler"]];
+const TILE_EMOJI: [string, string][] = [["🍳", "#FFE0B2"], ["👔", "#C5CAE9"], ["🧰", "#CFD8DC"], ["👫", "#F8BBD0"], ["🏀", "#C8E6C9"], ["🩺", "#B3E5FC"], ["📚", "#FFF9C4"], ["🎸", "#E1BEE7"]];
 
-// Picture boxes, measured on the scan pages (fractions of the page).
+// --- the boxes the artwork is drawn for (grid) --------------------------------------------------
 const BOX = {
-  keyboard: [0, 0.125, 1, 0.5] as FBox,
-  paints: [0.06, 0.03, 0.41, 0.43] as FBox,
-  classroom: [0.07, 0.555, 0.86, 0.37] as FBox,
-  numbers: [0.08, 0.125, 0.43, 0.6] as FBox,
-  pegs: [0.535, 0.155, 0.44, 0.37] as FBox,
-  ordinal: [0.535, 0.575, 0.465, 0.165] as FBox,
-  bus: [0, 0.77, 1, 0.2] as FBox,
-  clocks: [0.06, 0.14, 0.42, 0.24] as FBox,
-  actClocks: [0.05, 0.665, 0.47, 0.26] as FBox,
-  greetings: [0.47, 0.065, 0.46, 0.5] as FBox,
-  town: [0.07, 0.105, 0.93, 0.255] as FBox,
+  keyboard: B(0, W, ry(10), ry(70)),
+  paints: B(cx(1), ce(6), ry(0), ry(50)),
+  classroom: B(cx(1), ce(12), ry(65), ry(107)),
+  numbers: B(cx(1), ce(6), ry(10), ry(79)),
+  daysPanel: B(cx(7), W, ry(6), ry(59)),
+  pegs: B(cx(7) + INSET, ce(12), ry(14), ry(57)),
+  ordinal: B(cx(7), W, ry(64), ry(84)),
+  bus: B(0, W, ry(86), ry(LAST_ROW)),
+  clockRow: (row: number) => B(cx(1), ce(6), ry(15 + row * 16), ry(25 + row * 16)),
+  actClocks: B(cx(1) + INSET, ce(6) - INSET, ry(86), ry(105)),
+  greetings: B(cx(7) - INSET, ce(12) + INSET, ry(3), ry(62)),
+  town: B(cx(1), W, ry(8), ry(38)),
+  jobs: B(cx(1), ce(12), ry(9), ry(40)),
+  people: B(cx(1), ce(12), ry(9), ry(40)),
+  email: B(cx(7), ce(12), ry(84), ry(LAST_ROW)),
+  postcard: B(cx(7), ce(12), ry(87), ry(LAST_ROW)),
 };
+const g0 = (b: Box) => grow(b, ALL_EDGES);
+const gw = (b: Box) => g0(b).w;
+const gh = (b: Box) => g0(b).h;
+
+// Greetings tiles: two across the panel (columns 7-9 and 10-12), three down.
+const GREET_CELLS = { w: ce(9) - cx(7), at: (i: number) => (i ? cx(10) : cx(7)) };
+const GREET_TILE_H = 11 * 2.5 * MM;
+const greetRow = (r: number) => ry(14 + r * 15);
+
+const imgAspect: Record<string, number> = {};
+async function aspectOf(name: string, buf: Buffer) {
+  const m = await sharp(buf).metadata();
+  imgAspect[name] = (m.width ?? 1) / (m.height ?? 1);
+}
 
 async function loadAssets() {
-  EM = await loadEmojiIcons(EMOJI);
+  await loadEmoji([...new Set([...CROSS_PICS, ...CROSS_PICS_ACROSS].map(([e]) => e).concat(OBJECTS.map(([e]) => e), TILE_EMOJI.map(([e]) => e)))]);
   const I = art.img;
   const F = art.free;
-  const [kw, kh] = boxPx(BOX.keyboard);
-  const peopleT = await Promise.all(Array.from({ length: 9 }, (_, i) => art.trim(I(`people-${i + 1}`))));
-  const tile = (name: string, emojis: string[], bg: string) =>
-    art.compose(name, 420, 300, `<rect width="420" height="300" rx="18" fill="${bg}"/><circle cx="330" cy="70" r="90" fill="#ffffff55"/>`, emojis.map((e, i) => ({ buf: emoBuf(e), x: emojis.length === 1 ? 130 : 60 + i * 160, y: emojis.length === 1 ? 60 : 70 + (i % 2) * 30, w: emojis.length === 1 ? 180 : 150, h: emojis.length === 1 ? 180 : 150 })));
+  const cast = await sheetFigures(I("cast"), 4, 2, 7);
+  const people = await sheetFigures(I("people"), 5, 2, 9);
+  const jobs = await sheetFigures(I("jobs"), 5, 2, 10);
+  const classlang = await sheetFigures(I("classlang"), 4, 2, 8);
+  const routines = await sheetFigures(I("routines"), 4, 2, 8);
+  for (const [n, b] of [["town", I("town")], ["classroom", I("classroom")]] as const) await aspectOf(n, b);
+  const tile = (name: string, e: string, bg: string) =>
+    art.compose(name, 140 * art.PX, 100 * art.PX, `<rect width="${140 * art.PX}" height="${100 * art.PX}" rx="${6 * art.PX}" fill="${bg}"/><circle cx="${110 * art.PX}" cy="${23 * art.PX}" r="${30 * art.PX}" fill="#ffffff55"/>`, [{ buf: E(e), x: 43 * art.PX, y: 20 * art.PX, w: 60 * art.PX, h: 60 * art.PX }]);
   const frameFaces = (name: string, faces: Buffer[], bg: string) => {
-    const w = 420;
-    const h = 300;
+    const fw = 140 * art.PX;
+    const fh = 100 * art.PX;
+    const n = faces.length;
+    const d = (n === 3 ? 40 : 53) * art.PX;
+    const step = n === 3 ? 42 * art.PX : n === 1 ? 0 : 63 * art.PX;
+    const x0 = n === 1 ? 47 * art.PX : 10 * art.PX;
     return art.compose(
       name,
-      w,
-      h,
-      `<rect width="${w}" height="${h}" fill="${bg}"/><rect y="${h * 0.62}" width="${w}" height="${h * 0.38}" fill="#C5A880"/>${Array.from({ length: 6 }, (_, i) => `<rect x="${i * 72}" y="${h * 0.3 - (i % 3) * 20}" width="58" height="${h * 0.34 + (i % 3) * 20}" fill="#B0BEC5"/>`).join("")}`,
-      faces.map((f, i) => ({ buf: f, x: 30 + i * (faces.length === 3 ? 125 : faces.length === 1 ? 140 : 190), y: 120 - (i % 2) * 14, w: faces.length === 3 ? 120 : 160, h: faces.length === 3 ? 120 : 160, circle: true, ring: "#fff", ringW: 6 })),
+      fw,
+      fh,
+      `<rect width="${fw}" height="${fh}" fill="${bg}"/><rect y="${fh * 0.62}" width="${fw}" height="${fh * 0.38}" fill="#C5A880"/>${Array.from({ length: 6 }, (_, i) => `<rect x="${i * 24 * art.PX}" y="${fh * 0.3 - (i % 3) * 7 * art.PX}" width="${19 * art.PX}" height="${fh * 0.34 + (i % 3) * 7 * art.PX}" fill="#B0BEC5"/>`).join("")}`,
+      faces.map((f, i) => ({ buf: f, x: x0 + i * step, y: 40 * art.PX - (i % 2) * 5 * art.PX, w: d, h: d, circle: true, ring: "#fff", ringW: ringPx(6) })),
     );
   };
+  // jobs as faces in tinted circles, five across, two down
+  const JOB_ORDER = [4, 8, 1, 10, 6, 5, 7, 3, 9, 2]; // baker, pilot, vet, police officer, farmer, photographer, nurse, mechanic, waiter, firefighter
+  const jg = jobsGeom();
+  const jobsArt = await art.compose(
+    "jobs-circles",
+    jg.w * art.PX,
+    jg.h * art.PX,
+    "",
+    JOB_ORDER.map((k, i) => ({ buf: jobs[k - 1], x: (jg.left(i) - jg.x) * art.PX, y: (jg.top(i) - jg.y) * art.PX, w: jg.d * art.PX, h: jg.d * art.PX, circle: true, ring: ["#FFF59D", "#BBDEFB", "#E1BEE7", "#B2DFDB", "#FFCCBC"][i % 5], ringW: ringPx(10), bg: ["#FFF8C4", "#D6ECFF", "#EEDDF5", "#D5F0EA", "#FFE1D6"][i % 5] })),
+  );
+  const pg = peopleGeom();
+  const peopleArt = await art.compose(
+    "people-row",
+    pg.w * art.PX,
+    pg.h * art.PX,
+    "",
+    people.map((p, i) => ({ buf: p, x: (pg.left(i) - pg.x) * art.PX, y: (pg.top(i) - pg.y) * art.PX, w: pg.cw * art.PX, h: pg.fh * art.PX })),
+  );
+  const gk = gw(BOX.keyboard);
   return {
     cover: I("cover"),
     starter: I("starter"),
@@ -107,55 +192,40 @@ async function loadAssets() {
     story: I("story"),
     town: await art.vivid(I("town"), 1.15),
     classroom: I("classroom"),
-    cast: await Promise.all(Array.from({ length: 7 }, (_, i) => art.trim(I(`cast-${i + 1}`)))),
-    jobs: Array.from({ length: 10 }, (_, i) => I(`jobs-${i + 1}`)),
-    classlang: await Promise.all(Array.from({ length: 8 }, (_, i) => art.trim(I(`classlang-${i + 1}`)))),
-    people: Array.from({ length: 9 }, (_, i) => I(`people-${i + 1}`)),
-    routines: Array.from({ length: 8 }, (_, i) => I(`routines-${i + 1}`)),
-    keyboard: await art.keyboard(kw / art.PX, kh / art.PX),
-    paints: await art.paintPots(BOX.paints[2] * W, BOX.paints[3] * H),
-    numbers: await art.numberTiles(BOX.numbers[2] * W, BOX.numbers[3] * H * 0.97),
-    pegs: await art.pegs(BOX.pegs[2] * W, BOX.pegs[3] * H),
-    starGroundL: await art.starGround(W, H, { top: 0.075 * H, left: 0.055 * W, right: 0 }),
-    starGroundR: await art.starGround(W, H, { top: 0.075 * H, left: 0, right: 0.055 * W }),
-    ordinal: await art.compose("ordinal-panel", ...boxPx(BOX.ordinal), `<rect x="0" y="0" width="${boxPx(BOX.ordinal)[0] + 40}" height="${boxPx(BOX.ordinal)[1]}" rx="40" fill="#4C5B7C"/><rect x="10" y="10" width="${boxPx(BOX.ordinal)[0]}" height="${boxPx(BOX.ordinal)[1] - 20}" rx="34" fill="none" stroke="#8FA3C9" stroke-width="4"/>`),
-    bus: await art.busQueue("bus-queue", BOX.bus[2] * W, BOX.bus[3] * H, ["w-family-7", "w-family-8", "w-family-10", "w-family-6", "w-family-9", "w-family-4", "w-family-3"].map(F)),
-    skylineBus: await art.skyline("skyline-bus", W, BOX.bus[3] * H, "#CFD8DC"),
-    clocks: [await art.clockRow("clocks-3a", BOX.clocks[2] * W, 0.085 * H, [[4, 0], [4, 15], [4, 20]], ["#7CB342", "#FBC02D", "#90A4AE"], 3), await art.clockRow("clocks-3b", BOX.clocks[2] * W, 0.085 * H, [[4, 30], [4, 45], [4, 55]], ["#E53935", "#3949AB", "#8E24AA"], 3)],
-    actClocks: await art.clockRow(
-      "clocks-8",
-      BOX.actClocks[2] * W,
-      BOX.actClocks[3] * H * 0.78,
-      [[7, 0], [8, 30], [10, 15], [11, 45], [1, 10], [2, 50], [6, 25], [9, 35]],
-      ["#E3F2FD", "#AED581", "#CE93D8", "#455A64"],
-      4,
-      true,
-    ),
-    schools: await Promise.all((["day", "day", "morning", "afternoon", "evening", "night"] as const).map((k, i) => art.schoolAt(`school-${i}`, 92, 64, k))),
-    greetKids: [await art.knockout(F("w-friends")), await art.knockout(I("cast-2")), await art.knockout(I("cast-3"))],
-    facesK: Object.fromEntries(await Promise.all(Array.from({ length: 10 }, async (_, i) => [`f${i + 1}`, await art.knockout(F(`w-family-${i + 1}`))]))) as Record<string, Buffer>,
+    cast,
+    classlang,
+    people,
+    routines,
+    keyboard: await art.keyboard(gk, gh(BOX.keyboard)),
+    paints: await art.paintPots(BOX.paints.w, BOX.paints.h!),
+    numbers: await art.numberTiles(BOX.numbers.w, BOX.numbers.h!),
+    pegs: await art.pegs(BOX.pegs.w, BOX.pegs.h!),
+    starGroundL: await art.starGround(W + 2 * BLEED, H + 2 * BLEED, { top: ry(4) + BLEED, left: 6 * MM + BLEED, right: 0 }),
+    starGroundR: await art.starGround(W + 2 * BLEED, H + 2 * BLEED, { top: ry(4) + BLEED, left: 0, right: 6 * MM + BLEED }),
+    ordinal: await (async () => {
+      const ow = gw(BOX.ordinal) * art.PX;
+      const oh = BOX.ordinal.h! * art.PX;
+      const r = 13 * art.PX;
+      return art.compose("ordinal-panel", ow, oh, `<rect x="0" y="0" width="${ow + r}" height="${oh}" rx="${r}" fill="#4C5B7C"/><rect x="${3.3 * art.PX}" y="${3.3 * art.PX}" width="${ow}" height="${oh - 6.6 * art.PX}" rx="${11 * art.PX}" fill="none" stroke="#8FA3C9" stroke-width="${1.3 * art.PX}"/>`);
+    })(),
+    bus: await art.busQueue("bus-queue", gw(BOX.bus), BOX.bus.h!, ["w-family-7", "w-family-8", "w-family-10", "w-family-6", "w-family-9", "w-family-4", "w-family-3"].map(F)),
+    skylineBus: await art.skyline("skyline-bus", gw(BOX.bus), BOX.bus.h!, "#CFD8DC"),
+    clocks: [
+      await art.clockRow("clocks-11a", BOX.clockRow(0).w, BOX.clockRow(0).h!, [[7, 30], [8, 0], [8, 45]], ["#7CB342", "#FBC02D", "#90A4AE"], 3),
+      await art.clockRow("clocks-11b", BOX.clockRow(1).w, BOX.clockRow(1).h!, [[10, 10], [11, 15], [12, 40]], ["#E53935", "#3949AB", "#8E24AA"], 3),
+    ],
+    actClocks: await art.clockRow("clocks-13", BOX.actClocks.w, BOX.actClocks.h!, [[7, 0], [8, 30], [10, 15], [11, 45], [1, 10], [2, 50], [6, 25], [9, 35]], ["#E3F2FD", "#AED581", "#CE93D8", "#455A64"], 4, true),
+    schools: await Promise.all((["morning", "afternoon", "evening", "night", "day", "day"] as const).map((k, i) => art.schoolAt(`school-${i}`, GREET_CELLS.w, GREET_TILE_H, k))),
+    greetKids: [await art.knockout(F("w-friends")), cast[1], cast[2]],
+    facesK: Object.fromEntries(await Promise.all(Array.from({ length: 10 }, async (_, i) => [`f${i + 1}`, await cutOut(F(`w-family-${i + 1}`))]))) as Record<string, Buffer>,
     faces: Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`f${i + 1}`, F(`w-family-${i + 1}`)])) as Record<string, Buffer>,
     friends: F("w-friends"),
     park: F("1c-park"),
     boys: F("d-games-4"),
     familyHome: F("1b-scene"),
-    sydney: F("w-landmarks-2"),
-    email: await art.emailWindow("email-19", 0.44 * W, 0.215 * H, F("w-family-10")),
-    postcard: await art.postcard("postcard-22b", 0.41 * W, 0.235 * H, F("w-landmarks-2")),
-    tiles3: await Promise.all(
-      (
-        [
-          ["🍳", "#FFE0B2"],
-          ["👔", "#C5CAE9"],
-          ["🧰", "#CFD8DC"],
-          ["👫", "#F8BBD0"],
-          ["🏀", "#C8E6C9"],
-          ["🩺", "#B3E5FC"],
-          ["📚", "#FFF9C4"],
-          ["🎸", "#E1BEE7"],
-        ] as const
-      ).map(([e, c], i) => tile(`tile3-${i}`, [e], c)),
-    ),
+    email: await art.emailWindow("email-19", BOX.email.w, BOX.email.h!, F("w-family-10")),
+    postcard: await art.postcard("postcard-22", BOX.postcard.w, BOX.postcard.h!, F("w-landmarks-2")),
+    tiles3: await Promise.all(TILE_EMOJI.map(([e, c], i) => tile(`tile3-${i}`, e, c))),
     frames5: await Promise.all(
       [
         [["f10"], "#B3E5FC"],
@@ -168,54 +238,97 @@ async function loadAssets() {
         [["f8", "f8"], "#FFCCBC"],
       ].map(([fs2, c], i) => frameFaces(`frame5-${i}`, (fs2 as string[]).map((f) => F(`w-family-${f.slice(1)}`)), c as string)),
     ),
-    jobsArt: await art.compose(
-      "jobs-circles",
-      px(0.9, W),
-      px(0.27, H),
-      "",
-      Array.from({ length: 10 }, (_, i) => {
-        const cw = px(0.9, W) / 5;
-        const ch = px(0.27, H) / 2;
-        const d = Math.min(cw * 0.86, ch * 0.8);
-        return { buf: I(`jobs-${i + 1}`), x: (i % 5) * cw + (cw - d) / 2, y: Math.floor(i / 5) * ch, w: d, h: d, circle: true, ring: ["#FFF59D", "#BBDEFB", "#E1BEE7", "#B2DFDB", "#FFCCBC"][i % 5], ringW: 10, bg: ["#FFF8C4", "#D6ECFF", "#EEDDF5", "#D5F0EA", "#FFE1D6"][i % 5] };
-      }),
-    ),
-    peopleArt: await art.compose(
-      "people-row-2",
-      px(0.95, W),
-      px(0.26, H),
-      "",
-      Array.from({ length: 9 }, (_, i) => {
-        const top = i < 5;
-        const cw = px(0.95, W) / (top ? 5 : 4);
-        const ch = px(0.26, H) / 2;
-        const col = top ? i : i - 5;
-        return { buf: peopleT[i], x: col * cw + cw * 0.08 + (top ? 0 : cw * 0.1), y: (top ? 0 : ch) + 4, w: cw * 0.84, h: ch * 0.78, knock: true };
-      }),
-    ),
-    huggi: await art.knockout(I("cast-4")),
+    jobsArt,
+    peopleArt,
   };
 }
 type Assets = Awaited<ReturnType<typeof loadAssets>>;
 let A: Assets;
 
-// --- layout primitives (page fractions) ------------------------------------------------
-const At = ({ b, children, z, style }: { b: [number, number, number?, number?]; children?: React.ReactNode; z?: number; style?: object }) => (
-  <View style={{ position: "absolute", left: b[0] * W, top: b[1] * H, ...(b[2] !== undefined ? { width: b[2] * W } : {}), ...(b[3] !== undefined ? { height: b[3] * H } : {}), ...(z ? { zIndex: z } : {}), ...style }}>{children}</View>
-);
-function Pic({ b, src, fit = "cover", r = 0, pos, border }: { b: FBox; src: Src; fit?: "cover" | "contain"; r?: number; pos?: string; border?: string }) {
+// geometry shared by the jobs artwork and its answer boxes
+function jobsGeom() {
+  const b = BOX.jobs;
+  const c = cells(b.x, b.x + b.w, 5, 2 * MM);
+  const ch = b.h! / 2;
+  const d = Math.min(c.w * 0.9, ch - 9 * MM);
+  return { x: b.x, y: b.y, w: b.w, h: b.h!, d, cell: c, left: (i: number) => c.at(i % 5) + (c.w - d) / 2, top: (i: number) => b.y + Math.floor(i / 5) * ch, boxY: (i: number) => b.y + Math.floor(i / 5) * ch + d + 1.5 * MM };
+}
+// geometry shared by the people artwork and its captions: five on top, four below
+function peopleGeom() {
+  const b = BOX.people;
+  const top = cells(b.x, b.x + b.w, 5, 2 * MM);
+  const ch = b.h! / 2;
+  const fh = ch - 7 * MM;
+  const bottomLeft = (i: number) => top.at(i) + top.w / 2;
+  return { x: b.x, y: b.y, w: b.w, h: b.h!, cw: top.w, fh, left: (i: number) => (i < 5 ? top.at(i) : bottomLeft(i - 5)), top: (i: number) => b.y + (i < 5 ? 0 : ch), labelY: (i: number) => b.y + (i < 5 ? 0 : ch) + fh + 0.5 * MM };
+}
+
+// --- pictures: print-resolution, fitted with picture-fit.ts --------------------------------------
+type PicReq = { src: Buffer; w: number; h: number; opt: FitOptions & { subject?: boolean; ground?: string; name?: string } };
+const PIC_REQ = new Map<string, PicReq>();
+const PIC_OUT = new Map<string, { data: Buffer; format: "png" | "jpg" }>();
+const bufId = new WeakMap<Buffer, string>();
+let bufN = 0;
+const idOf = (b: Buffer) => {
+  let id = bufId.get(b);
+  if (!id) {
+    id = `b${bufN++}`;
+    bufId.set(b, id);
+  }
+  return id;
+};
+function Pic({ b, src, fit = "cover", ax = 0.5, ay = 0.5, subject, r = 0, border, bw = 2, name, ground }: { b: Box; src: Buffer; fit?: "cover" | "contain"; ax?: number; ay?: number; subject?: boolean; r?: number; border?: string; bw?: number; name?: string; ground?: string }) {
+  const e = React.useContext(EdgeCtx);
+  const g = grow(b, e);
+  const opt = { fit, anchorX: ax, anchorY: ay, subject, ground, name };
+  const key = `${idOf(src)}|${g.w.toFixed(2)}|${g.h.toFixed(2)}|${fit}|${ax}|${ay}|${subject ? 1 : 0}|${ground ?? ""}`;
+  const out = PIC_OUT.get(key);
+  if (!out) PIC_REQ.set(key, { src, w: g.w, h: g.h, opt });
   return (
-    <At b={b}>
+    <View style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h }}>
       {/* eslint-disable-next-line jsx-a11y/alt-text */}
-      <Image src={srcOf(src)} style={{ width: b[2] * W, height: b[3] * H, objectFit: fit, ...(pos ? { objectPosition: pos } : {}), borderRadius: r, ...(border ? { borderWidth: 2, borderColor: border } : {}) }} />
-    </At>
+      {out ? <Image src={{ data: out.data, format: out.format }} style={{ width: g.w, height: g.h, borderRadius: r }} /> : null}
+      {border ? <View style={{ position: "absolute", left: 0, top: 0, width: g.w, height: g.h, borderWidth: bw, borderColor: border, borderRadius: r }} /> : null}
+    </View>
   );
 }
-const Fill = ({ b, color, r = 0, border, bw = 2, opacity }: { b: FBox; color: string; r?: number; border?: string; bw?: number; opacity?: number }) => (
-  <At b={b}>
-    <View style={{ width: "100%", height: "100%", backgroundColor: color, borderRadius: r, ...(border ? { borderWidth: bw, borderColor: border } : {}), ...(opacity !== undefined ? { opacity } : {}) }} />
-  </At>
+/** Where a point of a picture (fractions of the stored picture) lands on the page, by the same fit as Pic. */
+function picPoint(b: Box, aspect: number, opt: FitOptions, fx: number, fy: number) {
+  const g = grow(b, ALL_EDGES);
+  const rect = fitPicture(g.w, g.h, { aspect }, opt);
+  const p = pointInFrame(rect, { x: fx, y: fy });
+  return { x: g.x + p.px, y: g.y + p.py };
+}
+
+// --- layout primitives -------------------------------------------------------------------------
+/** A positioned block of content (text, rows); never grows into the bleed. */
+const At = ({ b, children, style }: { b: Box; children?: React.ReactNode; style?: object }) => (
+  <View style={{ position: "absolute", left: b.x, top: b.y, width: b.w, ...(b.h !== undefined ? { height: b.h } : {}), ...style }}>{children}</View>
 );
+/** A painted box; at a trim edge it runs on into the bleed. */
+function Fill({ b, color, r = 0, border, bw = 2, opacity, radii }: { b: Box; color: string; r?: number; border?: string; bw?: number; opacity?: number; radii?: object }) {
+  const g = grow(b, React.useContext(EdgeCtx));
+  return <View style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h, backgroundColor: color, borderRadius: r, ...radii, ...(border ? { borderWidth: bw, borderColor: border } : {}), ...(opacity !== undefined ? { opacity } : {}) }} />;
+}
+/**
+ * A drawn shape in its box; d() gets x/y mappers from box-local units in
+ * which 0 and the box size at a trim edge land on the bleed edge.
+ */
+function Decor({ b, d, fill, opacity }: { b: Box; d: (X: (v: number) => number, Y: (v: number) => number, w: number, h: number) => string; fill: string; opacity?: number }) {
+  const g = grow(b, React.useContext(EdgeCtx));
+  const dx = b.x - g.x;
+  const dy = b.y - g.y;
+  const bh = b.h ?? 0;
+  const X = (v: number) => (v <= 0 ? 0 : v >= b.w ? g.w : v + dx);
+  const Y = (v: number) => (v <= 0 ? 0 : v >= bh ? g.h : v + dy);
+  return (
+    <View style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h }}>
+      <Svg width={g.w} height={g.h}>
+        <Path d={d(X, Y, b.w, bh)} fill={fill} {...(opacity !== undefined ? { opacity } : {})} />
+      </Svg>
+    </View>
+  );
+}
 
 function AudioTag({ code }: { code: string }) {
   return (
@@ -228,8 +341,8 @@ function AudioTag({ code }: { code: string }) {
     </View>
   );
 }
-// An exercise heading as the scan prints it: a big orange-red number, an
-// optional green audio tag, the rubric in bold beside it (hanging indent).
+// An exercise heading: a big orange-red number, an optional green audio
+// tag, the rubric in bold beside it (hanging indent).
 function Ex({ n, children, audio, size = 10.4, numSize = 14, color = RUBRIC }: { n: string; children: React.ReactNode; audio?: string; size?: number; numSize?: number; color?: string }) {
   return (
     <View style={{ flexDirection: "row" }} wrap={false}>
@@ -239,8 +352,8 @@ function Ex({ n, children, audio, size = 10.4, numSize = 14, color = RUBRIC }: {
     </View>
   );
 }
-const ExAt = (p: { b: [number, number, number?]; n: string; children: React.ReactNode; audio?: string; size?: number; color?: string }) => (
-  <At b={[p.b[0], p.b[1], p.b[2] ?? 0.42]}>
+const ExAt = (p: { b: Box; n: string; children: React.ReactNode; audio?: string; size?: number; color?: string }) => (
+  <At b={p.b}>
     <Ex n={p.n} audio={p.audio} size={p.size} color={p.color}>
       {p.children}
     </Ex>
@@ -272,13 +385,11 @@ function Items({ items, cols = 1, size = BODY, start = 1, gap = 3, numColor = IN
   );
 }
 
-// Outlined cartoon title (the scan's Starter headings): copies of the text
-// offset round the main one make the outline.
+// Outlined cartoon title: copies of the text offset round the main one make the outline.
 function Title({ text, size = 24, fill = GOLD, stroke = "#5A3E00", font = "Baloo" }: { text: string; size?: number; fill?: string | string[]; stroke?: string; font?: string }) {
   const off = size * 0.055;
   const dirs = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1], [1.6, 1.8]];
-  const letters = (c: string | string[]) =>
-    Array.isArray(c) ? text.split("").map((ch, i) => <Text key={i} style={{ color: c[i % c.length] }}>{ch}</Text>) : text;
+  const letters = (c: string | string[]) => (Array.isArray(c) ? text.split("").map((ch, i) => <Text key={i} style={{ color: c[i % c.length] }}>{ch}</Text>) : text);
   const st = { fontFamily: font, fontWeight: 700 as const, fontSize: size, lineHeight: 1.05 };
   return (
     <View>
@@ -292,54 +403,63 @@ function Title({ text, size = 24, fill = GOLD, stroke = "#5A3E00", font = "Baloo
   );
 }
 
-// The crimson ribbon tab of the Theme pages ("Vocabulary", "Grammar"...).
-function Tab({ b, label, faded }: { b: [number, number]; label: string; faded?: boolean }) {
+// The crimson ribbon tab of the Theme pages ("Vocabulary", "Grammar"...):
+// 4 units high (two-line: 6), its fold one unit below.
+const TAB_H = { one: 4 * 2.5 * MM, two: 6 * 2.5 * MM };
+const FOLD = 2.5 * MM;
+function Tab({ x, y, label }: { x: number; y: number; label: string }) {
   const two = label.includes("\n");
-  const w = two ? 0.18 : label.length * 0.0132 + 0.06;
-  const h = two ? 0.052 : 0.04;
+  const w = two ? 38 * MM : label.length * 2.77 * MM + 12.6 * MM;
+  const h = two ? TAB_H.two : TAB_H.one;
   return (
-    <At b={[b[0], b[1], w, h + 0.014]} style={faded ? { opacity: 0.45 } : undefined}>
-      <Svg width={w * W} height={(h + 0.014) * H} style={{ position: "absolute", left: 0, top: 0 }}>
-        <Polygon points={`0,${h * H} 10,${h * H} 10,${(h + 0.014) * H}`} fill="#5C0A24" />
-        <Rect x={0} y={0} width={w * W} height={h * H} fill={CRIMSON} />
-        <Rect x={0} y={0} width={w * W} height={(h * H) / 2} fill="#C0245A" opacity={0.55} />
-        <Rect x={w * W - 5} y={0} width={5} height={h * H} fill="#00000033" />
+    <At b={B(x, x + w, y, y + h + FOLD)}>
+      <Svg width={w} height={h + FOLD} style={{ position: "absolute", left: 0, top: 0 }}>
+        <Polygon points={`0,${h} 10,${h} 10,${h + FOLD}`} fill="#5C0A24" />
+        <Rect x={0} y={0} width={w} height={h} fill={CRIMSON} />
+        <Rect x={0} y={0} width={w} height={h / 2} fill="#C0245A" opacity={0.55} />
+        <Rect x={w - 5} y={0} width={5} height={h} fill="#00000033" />
       </Svg>
-      <View style={{ position: "absolute", left: 0, top: 0, width: w * W, height: h * H, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ position: "absolute", left: 0, top: 0, width: w, height: h, alignItems: "center", justifyContent: "center" }}>
         <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: two ? 11.5 : 16, color: "#fff", textAlign: "center", lineHeight: two ? 1.0 : 1.1, letterSpacing: -0.4 }}>{label}</Text>
       </View>
     </At>
   );
 }
+/** The first row under a tab at the top margin. */
+const UNDER_TAB = { one: 6, two: 8 };
 
-function ModuleBadge({ code, right = true }: { code: string; right?: boolean }) {
+function ModuleBadge({ code }: { code: string }) {
+  const b = B(cx(11), ce(12), 0, ry(2));
   return (
-    <At b={[right ? 0.82 : 0.06, 0, 0.14, 0.045]}>
-      <Svg width={0.14 * W} height={0.045 * H}>
-        <Path d={`M0 0 H${0.14 * W} Q${0.12 * W} ${0.04 * H} ${0.07 * W} ${0.045 * H} Q${0.02 * W} ${0.04 * H} 0 0 Z`} fill="#A5D6A7" />
-      </Svg>
-      <View style={{ position: "absolute", left: 0.07 * W - 15, top: 3, width: 30, height: 30, borderRadius: 15, backgroundColor: "#1E88E5", borderWidth: 2, borderColor: "#fff", alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#fff", marginTop: 2 }}>{code}</Text>
-      </View>
-    </At>
+    <>
+      <Decor b={b} fill="#A5D6A7" d={(X, Y, w, h) => `M${X(0)} ${Y(0)} H${X(w)} V${Y(0) + 6 * MM} Q${X(w * 0.85)} ${Y(h)} ${X(w / 2)} ${Y(h)} Q${X(w * 0.15)} ${Y(h)} ${X(0)} ${Y(0) + 6 * MM} Z`} />
+      <At b={B(cx(11), ce(12), 5.5 * MM)}>
+        <View style={{ alignSelf: "center", width: 30, height: 30, borderRadius: 15, backgroundColor: "#1E88E5", borderWidth: 2, borderColor: "#fff", alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#fff", marginTop: 2 }}>{code}</Text>
+        </View>
+      </At>
+    </>
   );
 }
 
-function WordBanner({ b, lines, color = GREEN, size = 10.5, tilt = -1 }: { b: FBox; lines: string[]; color?: string; size?: number; tilt?: number }) {
+function WordBanner({ b, lines, color = GREEN, size = 10.5, textColor = "#fff" }: { b: Box; lines: string[]; color?: string; size?: number; textColor?: string }) {
   return (
-    <At b={b}>
-      <View style={{ transform: `rotate(${tilt}deg)`, backgroundColor: color, borderWidth: 2, borderColor: "#fff", paddingVertical: 3, paddingHorizontal: 8, alignItems: "center", justifyContent: "center", height: b[3] * H }}>
-        {lines.map((l) => (
-          <Text key={l} style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: size, color: "#fff", lineHeight: 1.15, textAlign: "center" }}>
-            {l}
-          </Text>
-        ))}
-      </View>
-    </At>
+    <>
+      <Fill b={b} color={color} border="#fff" bw={2} />
+      <At b={b}>
+        <View style={{ height: "100%", alignItems: "center", justifyContent: "center", paddingHorizontal: 8 }}>
+          {lines.map((l) => (
+            <Text key={l} style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: size, color: textColor, lineHeight: 1.15, textAlign: "center" }}>
+              {l}
+            </Text>
+          ))}
+        </View>
+      </At>
+    </>
   );
 }
 
-function Bubble({ b, children, color = "#fff", border = "#37474F", tail = "bl", r = 10, size = 10, font = "Andika", textColor = INK, center = true }: { b: [number, number, number]; children: React.ReactNode; color?: string; border?: string; tail?: "bl" | "br" | "tl" | "tr" | "none"; r?: number; size?: number; font?: string; textColor?: string; center?: boolean }) {
+function Bubble({ b, children, color = "#fff", border = "#37474F", tail = "bl", r = 10, size = 10, font = "Andika", textColor = INK, center = true }: { b: Box; children: React.ReactNode; color?: string; border?: string; tail?: "bl" | "br" | "tl" | "tr" | "none"; r?: number; size?: number; font?: string; textColor?: string; center?: boolean }) {
   const tailStyle =
     tail === "none" ? null : { position: "absolute" as const, width: 10, height: 10, backgroundColor: color, borderColor: border, transform: "rotate(45deg)", ...(tail[0] === "b" ? { bottom: -5.5, borderBottomWidth: 1.5, borderRightWidth: 1.5 } : { top: -5.5, borderTopWidth: 1.5, borderLeftWidth: 1.5 }), ...(tail[1] === "l" ? { left: 14 } : { right: 14 }) };
   return (
@@ -357,7 +477,7 @@ const NumTag = ({ n, size = 12, color = "#E53935" }: { n: string | number; size?
     <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: size * 0.68, color: "#fff", lineHeight: 1 }}>{n}</Text>
   </View>
 );
-// Red number + white answer box (the scan's write-in boxes under pictures).
+// Red number + white answer box (the write-in boxes under pictures).
 const AnswerBox = ({ n, w, label }: { n: string | number; w: number; label?: React.ReactNode }) => (
   <View style={{ flexDirection: "row", alignItems: "center", width: w }}>
     <NumTag n={n} size={13} />
@@ -366,86 +486,126 @@ const AnswerBox = ({ n, w, label }: { n: string | number; w: number; label?: Rea
 );
 const Check = () => <View style={{ width: 11, height: 11, borderWidth: 1.2, borderColor: "#455A64", borderRadius: 3, marginRight: 5, marginTop: 1 }} />;
 
-// --- footers ----------------------------------------------------------------------------
-function StarterFooter({ n }: { n: number }) {
+// --- footers: in the bottom margin, the number block running off the outside edge -----------------
+const FOOT_Y = ry(LAST_ROW) + 1 * MM;
+const FOOT_H = 6 * MM;
+const FOOT_NUM_W = cx(1) + INSET;
+function FooterBar({ n, label, numBg, labelStyle, labelBox }: { n: number; label: string; numBg: string; labelStyle: object; labelBox: object }) {
   const right = n % 2 === 1;
+  const num = right ? B(W - FOOT_NUM_W, W, FOOT_Y, FOOT_Y + FOOT_H) : B(0, FOOT_NUM_W, FOOT_Y, FOOT_Y + FOOT_H);
+  const lab = right ? B(cx(7), W - FOOT_NUM_W, FOOT_Y, FOOT_Y + FOOT_H) : B(FOOT_NUM_W, ce(6), FOOT_Y, FOOT_Y + FOOT_H);
   return (
-    <View style={{ position: "absolute", bottom: 0.022 * H, [right ? "right" : "left"]: 0, flexDirection: right ? "row-reverse" : "row", alignItems: "center" }}>
-      <View style={{ width: 0.075 * W, height: 17, backgroundColor: MAGENTA, alignItems: right ? "flex-start" : "flex-end", justifyContent: "center", paddingHorizontal: 8 }}>
-        <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 11, color: "#fff" }}>{n}</Text>
-      </View>
-      <View style={{ height: 17, backgroundColor: "#fff", paddingHorizontal: 5, justifyContent: "center", borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#F8BBD0" }}>
-        <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 10.5, color: "#E53935", letterSpacing: -0.3 }}>STARTER</Text>
-      </View>
-    </View>
+    <>
+      <Fill b={num} color={numBg} />
+      <At b={num}>
+        <View style={{ height: "100%", justifyContent: "center", alignItems: right ? "flex-start" : "flex-end", paddingHorizontal: INSET }}>
+          <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 10.5, color: "#fff", lineHeight: 1 }}>{n}</Text>
+        </View>
+      </At>
+      <At b={lab}>
+        <View style={{ height: "100%", flexDirection: right ? "row-reverse" : "row" }}>
+          <View style={{ height: "100%", justifyContent: "center", paddingHorizontal: 6, ...labelBox }}>
+            <Text style={{ lineHeight: 1, ...labelStyle }}>{label}</Text>
+          </View>
+        </View>
+      </At>
+    </>
   );
 }
-function ThemeFooter({ n, module }: { n: number; module?: string }) {
-  const right = n % 2 === 1;
-  return (
-    <View style={{ position: "absolute", bottom: 0.018 * H, [right ? "right" : "left"]: 0, flexDirection: right ? "row-reverse" : "row", alignItems: "center" }}>
-      <View style={{ width: 0.07 * W, height: 18, backgroundColor: SLATE, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 11, color: "#fff" }}>{n}</Text>
-      </View>
-      <View style={{ height: 18, width: module ? 0.2 * W : 0.13 * W, backgroundColor: GOLD, paddingHorizontal: 9, justifyContent: "center", borderWidth: 1.5, borderColor: SLATE }}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 9.5, color: SLATE, lineHeight: 1, marginTop: 2 }}>{module ? `theme 1   module ${module}` : "Theme 1"}</Text>
-      </View>
-    </View>
-  );
-}
+const StarterFooter = ({ n }: { n: number }) => (
+  <FooterBar n={n} label="STARTER" numBg={MAGENTA} labelStyle={{ fontFamily: "Noto", fontWeight: 700, fontSize: 10, color: "#E53935", letterSpacing: -0.3 }} labelBox={{ backgroundColor: "#fff", borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#F8BBD0" }} />
+);
+const ThemeFooter = ({ n, module }: { n: number; module?: string }) => (
+  <FooterBar n={n} label={module ? `theme 1   module ${module}` : "Theme 1"} numBg={SLATE} labelStyle={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 9.5, color: SLATE }} labelBox={{ backgroundColor: GOLD, borderWidth: 1.5, borderColor: SLATE, width: module ? 42 * MM : 27 * MM }} />
+);
 
-function BookPage({ children, bg = "#fff", ground, footer }: { children: React.ReactNode; bg?: string; ground?: Src; footer?: React.ReactNode }) {
+// --- the sheet: trim + bleed (+ slug with crop marks for the press) ------------------------------
+const SlugCtx = React.createContext<string>("");
+function CropMarks({ pw, ph, xs, ys, dashed = [] }: { pw: number; ph: number; xs: number[]; ys: number[]; dashed?: number[] }) {
+  // hairlines (0.25 pt) from 1 mm off the sheet edge to the bleed edge,
+  // never into the bleed; fold marks drawn as dashes
+  const end = OFF - BLEED;
+  const S = 0.25;
+  const len = end - 1 * MM;
+  const k = (s: object, i: string) => <View key={i} style={{ position: "absolute", backgroundColor: "#000000", ...s }} />;
+  const vert = (x: number, y0: number, i: string, dash: boolean) =>
+    dash ? Array.from({ length: Math.floor(len / (3.5 * MM)) }, (_, j) => k({ left: x - S / 2, top: y0 + j * 3.5 * MM, width: S, height: 2 * MM }, `${i}-${j}`)) : [k({ left: x - S / 2, top: y0, width: S, height: len }, i)];
   return (
-    <Page size={[W, H]} style={{ backgroundColor: bg, position: "relative" }}>
-      {/* eslint-disable-next-line jsx-a11y/alt-text */}
-      {ground ? <Image src={srcOf(ground)} style={{ position: "absolute", left: 0, top: 0, width: W, height: H - 0.5 }} /> : null}
-      {children}
-      {footer}
+    <>
+      {xs.flatMap((x) => [...vert(x, 1 * MM, `t${x}`, dashed.includes(x)), ...vert(x, ph - end, `b${x}`, dashed.includes(x))])}
+      {ys.flatMap((y) => [k({ left: 1 * MM, top: y - S / 2, width: len, height: S }, `l${y}`), k({ left: pw - end, top: y - S / 2, width: len, height: S }, `r${y}`)])}
+    </>
+  );
+}
+function Sheet({ children }: { children: React.ReactNode }) {
+  const label = React.useContext(SlugCtx);
+  const pw = W + 2 * OFF;
+  const ph = H + 2 * OFF;
+  return (
+    <Page size={[pw, ph]} style={{ backgroundColor: "#ffffff", fontFamily: "Noto" }}>
+      <View style={{ position: "absolute", left: OFF, top: OFF, width: W, height: H }}>{children}</View>
+      {MODE === "print" ? (
+        <>
+          <CropMarks pw={pw} ph={ph} xs={[OFF, OFF + W]} ys={[OFF, OFF + H]} />
+          <Text style={{ position: "absolute", left: OFF, top: OFF + H + BLEED + 2 * MM, fontFamily: "Noto", fontSize: 6, color: "#000000" }}>{label}</Text>
+        </>
+      ) : null}
     </Page>
   );
 }
+function BookPage({ children, bg, ground, footer }: { children: React.ReactNode; bg?: string; ground?: Buffer; footer?: React.ReactNode }) {
+  return (
+    <Sheet>
+      {bg ? <Fill b={FULL} color={bg} /> : null}
+      {ground ? <Pic b={FULL} src={ground} name="star ground" /> : null}
+      {children}
+      {footer}
+    </Sheet>
+  );
+}
 
-// --- pages: Starter -------------------------------------------------------------------------
+// --- pages: Starter ------------------------------------------------------------------------------
 function P7StarterOpener() {
   return (
     <BookPage bg="#BFE3F8" footer={<StarterFooter n={7} />}>
-      <Pic b={[0, 0, 1, 1]} src={A.starter} />
-      <Fill b={[0, 0.088, 1, 0.012]} color={MAGENTA} />
-      <Fill b={[0, 0.1, 1, 0.125]} color="#ffffff" opacity={0.93} />
-      <At b={[0.045, 0.108, 0.6]}>
+      <Pic b={FULL} src={A.starter} name="starter opener" />
+      <Fill b={B(0, W, ry(6), ry(7))} color={MAGENTA} />
+      <Fill b={B(0, W, ry(7), ry(22))} color="#ffffff" opacity={0.93} />
+      <At b={B(cx(1), ce(8), ry(8))}>
         <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 64, color: STARTER_BLUE, letterSpacing: -3, lineHeight: 1.1 }}>STARTER</Text>
       </At>
-      <Fill b={[0.5, 0.188, 0.2, 0.008]} color={STARTER_BLUE} />
-      <At b={[0.655, 0.06, 0.29, 0.255]}>
-        <View style={{ backgroundColor: MAGENTA, height: "100%", padding: 9, borderWidth: 2, borderColor: "#fff", transform: "rotate(-1deg)" }}>
+      <Fill b={B(cx(7), cx(9), ry(17), ry(18))} color={STARTER_BLUE} />
+      <Fill b={B(cx(9), ce(12), ry(2), ry(34))} color={MAGENTA} border="#fff" />
+      <At b={B(cx(9), ce(12), ry(2), ry(34))}>
+        <View style={{ padding: INSET }}>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#FFEB3B", lineHeight: 1.05 }}>Vocabulary</Text>
-          {["The alphabet", "Colours", "Numbers 1-100", "Ordinal numbers", "Days of the week", "Greetings", "Classroom language", "Jobs and places"].map((x) => (
+          {["Letters and spelling", "Colours and school things", "Numbers 1-100, 1st-30th", "Days of the week", "Hello and goodbye", "In the classroom", "Jobs and places in town"].map((x) => (
             <Text key={x} style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 9.2, color: "#fff", marginLeft: 6, lineHeight: 1.3 }}>
               {x}
             </Text>
           ))}
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#FFEB3B", marginTop: 3, lineHeight: 1.05 }}>Grammar</Text>
-          {["a / an", "Telling the time"].map((x) => (
+          {["a / an", "What time is it?"].map((x) => (
             <Text key={x} style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 9.2, color: "#fff", marginLeft: 6, lineHeight: 1.3 }}>
               {x}
             </Text>
           ))}
         </View>
       </At>
-      <Bubble b={[0.03, 0.335, 0.2]} color="#F06292" border="#fff" textColor="#fff" size={12} tail="br" r={16}>
-        Excuse me, what time is it?
+      <Bubble b={B(cx(1), ce(3), ry(35))} color="#F06292" border="#fff" textColor="#fff" size={12} tail="br" r={16}>
+        {"Good morning!\nI'm Omar."}
       </Bubble>
-      <Bubble b={[0.27, 0.36, 0.17]} color="#FFD54F" border="#fff" size={12} tail="br" r={16}>
-        Goodbye, Mia!
+      <Bubble b={B(cx(4), ce(6), ry(38))} color="#FFD54F" border="#fff" size={12} tail="br" r={16}>
+        {"Welcome back, Ana!"}
       </Bubble>
-      <Bubble b={[0.54, 0.47, 0.13]} color="#FFD54F" border="#fff" size={12} tail="tl" r={16}>
-        Bye! See you!
+      <Bubble b={B(cx(7), ce(8), ry(51))} color="#FFD54F" border="#fff" size={12} tail="tl" r={16}>
+        Thanks, Bea!
       </Bubble>
-      <Bubble b={[0.66, 0.325, 0.22]} color="#AED581" border="#fff" textColor="#4A148C" size={12} tail="bl" r={16}>
-        {"I'm Kate.\nK-A-T-E!"}
+      <Bubble b={B(cx(9), ce(11), ry(35))} color="#AED581" border="#fff" textColor="#4A148C" size={12} tail="bl" r={16}>
+        {"Seven, eight,\nnine ... TEN!"}
       </Bubble>
-      <Bubble b={[0.73, 0.555, 0.2]} color="#B3E5FC" border="#fff" size={12} tail="tl" r={16}>
-        {"It's four\no'clock."}
+      <Bubble b={B(cx(10), ce(12), ry(61))} color="#B3E5FC" border="#fff" size={12} tail="tl" r={16}>
+        {"It's twenty past\neight. We're late!"}
       </Bubble>
     </BookPage>
   );
@@ -453,22 +613,20 @@ function P7StarterOpener() {
 
 const KEY_SECRET = [[1, 2], [3, 4, 5], [6, 7], [8, 9]];
 function P8Alphabet() {
+  const card = B(cx(2), ce(6), ry(77), ry(107));
   return (
     <BookPage footer={<StarterFooter n={8} />}>
-      <Pic b={BOX.keyboard} src={A.keyboard} />
-      <At b={[0, 0.67, 0.55, 0.3]}>
-        <Svg width={0.55 * W} height={0.3 * H}>
-          <Path d={`M0 0 Q${0.3 * W} ${0.02 * H} ${0.55 * W} ${0.3 * H} H0 Z`} fill="#DCEFFB" />
-        </Svg>
-      </At>
-      <At b={[0.08, 0.035]}>
+      <Pic b={BOX.keyboard} src={A.keyboard} name="keyboard (drawn)" />
+      <Decor b={B(0, ce(7), ry(75), H)} fill="#DCEFFB" d={(X, Y, w, h) => `M${X(0)} ${Y(0)} Q${X(w * 0.55)} ${Y(h * 0.07)} ${X(w)} ${Y(h)} H${X(0)} Z`} />
+      <At b={B(cx(1), ce(8), ry(0))}>
         <Title text="The Alphabet" size={25} fill="#FFD23F" stroke="#7A4B00" />
       </At>
-      <ExAt b={[0.08, 0.085, 0.6]} n="1">
-        Complete the keyboard with small letters. Then write the numbered letters and find the secret message.
+      <ExAt b={B(cx(1), ce(8), ry(5))} n="1">
+        Write the small letters on the keys. Then find the numbered letters and read the secret message.
       </ExAt>
-      <At b={[0.14, 0.535, 0.74, 0.06]}>
-        <View style={{ flexDirection: "row", justifyContent: "center", backgroundColor: "#FFFDE7", borderWidth: 1.5, borderColor: "#F2D46B", borderRadius: 8, paddingVertical: 6 }}>
+      <Fill b={B(cx(2), ce(11), ry(59), ry(65))} color="#FFFDE7" border="#F2D46B" bw={1.5} r={8} />
+      <At b={B(cx(2), ce(11), ry(59), ry(65))}>
+        <View style={{ height: "100%", flexDirection: "row", justifyContent: "center", alignItems: "center" }}>
           {KEY_SECRET.map((g, gi) => (
             <View key={gi} style={{ flexDirection: "row", marginHorizontal: 9 }}>
               {g.map((n) => (
@@ -482,33 +640,34 @@ function P8Alphabet() {
           ))}
         </View>
       </At>
-      <ExAt b={[0.075, 0.65, 0.45]} n="2" audio="S.01">
-        Listen and circle the word you hear.
+      <ExAt b={B(cx(1), ce(6), ry(73))} n="2" audio="S.01">
+        Listen. Which word do you hear? Circle it.
       </ExAt>
-      <At b={[0.1, 0.69, 0.4, 0.26]}>
-        <View style={{ backgroundColor: "#fff", height: "100%", transform: "rotate(-1.5deg)", borderWidth: 1, borderColor: "#E0E0E0", paddingLeft: 30, paddingTop: 14 }}>
+      <Fill b={card} color="#ffffff" border="#E0E0E0" bw={1} />
+      <At b={card}>
+        <View style={{ padding: INSET, paddingTop: 3 * INSET }}>
           <Items cols={2} down size={12.5} gap={12} font="Andika" items={["bag / back", "pen / ten", "hat / cat", "bus / box", "red / bed", "sit / six", "car / star", "boat / coat", "map / mop", "tree / three"]} />
         </View>
       </At>
-      <Pic b={[0.0, 0.705, 0.17, 0.15]} src={A.faces.f10} fit="contain" />
-      <ExAt b={[0.54, 0.65, 0.42]} n="3">
-        Work with a partner. Read the dialogue and act it out.
+      <Pic b={B(0, cx(2), ry(79), ry(97))} src={A.facesK.f10} fit="contain" name="girl (w-family-10)" />
+      <ExAt b={B(cx(7), ce(12), ry(73))} n="3">
+        Read the dialogue. Then act it out with a friend. Use your names.
       </ExAt>
-      <Pic b={[0.55, 0.735, 0.45, 0.255]} src={art.img("people-5")} fit="contain" />
-      <Bubble b={[0.56, 0.7, 0.2]} tail="bl" size={10.5}>
-        {"Hello! I'm Tom.\nWhat's your name?"}
+      <Pic b={B(cx(9), ce(12), ry(85), ry(LAST_ROW))} src={A.people[4]} fit="contain" name="classmates (people-5)" />
+      <Bubble b={B(cx(7), ce(9), ry(79))} tail="br" size={10.5}>
+        {"Hi! I'm Tom.\nYou're new, right?"}
       </Bubble>
-      <Bubble b={[0.57, 0.752, 0.15]} tail="bl" size={10.5}>
-        {"How do you\nspell it?"}
+      <Bubble b={B(cx(7), ce(8), ry(90))} tail="br" size={10.5}>
+        {"Is it Nadia\nor Nadja?"}
       </Bubble>
-      <Bubble b={[0.79, 0.71, 0.14]} tail="br" size={11} border="#AB47BC" r={2}>
-        {"Nadia.\nN-A-D-I-A."}
+      <Bubble b={B(cx(10), ce(12), ry(80))} tail="br" size={11} border="#AB47BC" r={2}>
+        {"Nadia!\nN-A-D-I-A."}
       </Bubble>
     </BookPage>
   );
 }
 
-// Crossword (exercise 6): cells [row, col, number?].
+// Crossword (exercise 6).
 const CROSS: { word: string; r: number; c: number; down: boolean; n: number }[] = [
   { word: "ORANGE", r: 0, c: 2, down: true, n: 1 },
   { word: "PURPLE", r: 1, c: 0, down: false, n: 2 },
@@ -519,15 +678,15 @@ const CROSS: { word: string; r: number; c: number; down: boolean; n: number }[] 
   { word: "WHITE", r: 8, c: 4, down: false, n: 6 },
 ];
 function Crossword({ cell }: { cell: number }) {
-  const cells = new Map<string, number | undefined>();
+  const cellsMap = new Map<string, number | undefined>();
   for (const w of CROSS)
     w.word.split("").forEach((_, i) => {
       const k = `${w.r + (w.down ? i : 0)},${w.c + (w.down ? 0 : i)}`;
-      if (!cells.has(k) || i === 0) cells.set(k, i === 0 ? w.n : cells.get(k));
+      if (!cellsMap.has(k) || i === 0) cellsMap.set(k, i === 0 ? w.n : cellsMap.get(k));
     });
   return (
     <View style={{ width: cell * 9, height: cell * 9 }}>
-      {[...cells.entries()].map(([k, n]) => {
+      {[...cellsMap.entries()].map(([k, n]) => {
         const [r, c] = k.split(",").map(Number);
         return (
           <View key={k} style={{ position: "absolute", left: c * cell, top: r * cell, width: cell - 2, height: cell - 2, backgroundColor: "#fff", borderRadius: 3, borderWidth: 1, borderColor: "#B0BEC5" }}>
@@ -538,105 +697,104 @@ function Crossword({ cell }: { cell: number }) {
     </View>
   );
 }
-const CLASS_LABELS: [string, number, number][] = [
-  ["a board", 0.12, 0.2],
-  ["door", 0.385, 0.26],
-  ["umbrella", 0.2, 0.47],
-  ["eraser", 0.13, 0.33],
-  ["bookcase", 0.5, 0.44],
-  ["chair", 0.02, 0.56],
-  ["atlas", 0.08, 0.84],
-  ["pencil case", 0.43, 0.63],
-  ["ruler", 0.23, 0.92],
-  ["pen", 0.48, 0.88],
-  ["pencil", 0.73, 0.47],
-  ["desk", 0.82, 0.74],
+// a/an labels on the classroom picture: where (fractions of the picture) each tag starts
+const CLASS_LABELS: [string, string, number, number][] = [
+  ["an", "umbrella", 0.2, 0.33],
+  ["", "eraser", 0.04, 0.42],
+  ["", "door", 0.36, 0.44],
+  ["", "window", 0.36, 0.1],
+  ["", "plant", 0.6, 0.12],
+  ["", "bookcase", 0.5, 0.5],
+  ["", "orange wall", 0.78, 0.1],
+  ["", "girl", 0.87, 0.4],
+  ["", "drawing", 0.84, 0.74],
+  ["", "atlas", 0.06, 0.84],
+  ["", "pencil case", 0.36, 0.63],
+  ["", "pen", 0.56, 0.84],
 ];
+const PAINT_GEOM = (b: Box) => ({ cw: (b.w - 20) / 3, ch: (b.h! - 170 / 3) / 3 });
 function P9Colours() {
-  const cw = (BOX.paints[2] * W) / 3;
-  const ch = (BOX.paints[3] * H - 170 / 3) / 3;
+  const pb = BOX.paints;
+  const { cw, ch } = PAINT_GEOM(pb);
+  const cell = (ce(12) - cx(8)) / 9;
   return (
     <BookPage footer={<StarterFooter n={9} />}>
-      <At b={[0.45, 0, 0.55, 0.55]}>
-        <Svg width={0.55 * W} height={0.55 * H}>
-          <Path d={`M${0.15 * W} 0 H${0.55 * W} V${0.55 * H} H${0.3 * W} Q${0.05 * W} ${0.25 * H} ${0.15 * W} 0 Z`} fill="#E3F1FB" />
-        </Svg>
+      <Decor b={B(ce(6), W, 0, ry(60))} fill="#E3F1FB" d={(X, Y, w, h) => `M${X(w * 0.27)} ${Y(0)} H${X(w)} V${Y(h)} H${X(w * 0.55)} Q${X(w * 0.09)} ${Y(h * 0.45)} ${X(w * 0.27)} ${Y(0)} Z`} />
+      <Pic b={pb} src={A.paints} name="paint pots (drawn)" />
+      <At b={B(pb.x + INSET, pb.x + pb.w, pb.y + INSET)}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+          <Title text="Colours" size={22} fill={["#E91E63", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#E53935"]} stroke="#ffffff" />
+          <View style={{ marginLeft: 16, marginTop: 4, flex: 1 }}>
+            <Ex n="4" audio="S.02">
+              Listen and repeat.
+            </Ex>
+          </View>
+        </View>
       </At>
-      <Pic b={BOX.paints} src={A.paints} />
-      <At b={[0.075, 0.042]}>
-        <Title text="Colours" size={22} fill={["#E91E63", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#E53935"]} stroke="#ffffff" />
-      </At>
-      <ExAt b={[0.225, 0.047, 0.24]} n="4" audio="S.02">
-        Listen and repeat.
-      </ExAt>
       {art.PAINTS.map(([name, col], i) => (
-        <At key={name} b={[BOX.paints[0] + ((i % 3) * cw + 10) / W, BOX.paints[1] + (50 + Math.floor(i / 3) * ch + ch * 0.68) / H, cw / W - 0.02]}>
+        <At key={name} b={B(pb.x + 10 + (i % 3) * cw, pb.x + 10 + ((i % 3) + 1) * cw, pb.y + 50 + Math.floor(i / 3) * ch + ch * 0.7)}>
           <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 13, color: col === "#F5F5F5" ? "#9E9E9E" : col, textAlign: "center" }}>{name}</Text>
         </At>
       ))}
-      <ExAt b={[0.5, 0.042, 0.47]} n="6">
-        Look at the pictures and complete the crossword with the colours.
+      <ExAt b={B(cx(7), ce(12), ry(0))} n="6">
+        What colour is it? Write the colours in the crossword.
       </ExAt>
-      <At b={[0.55, 0.095, 0.42]}>
-        <View style={{ flexDirection: "row", justifyContent: "space-around", borderBottomWidth: 1.5, borderColor: "#B0BEC5", paddingBottom: 3 }}>
-          {[["🏀", 1], ["🌸", 2], ["🍌", 3], ["🐳", 5]].map(([e, n]) => (
-            <View key={e} style={{ alignItems: "center" }}>
-              {/* eslint-disable-next-line jsx-a11y/alt-text */}
-              <Image src={E(e as string)} style={{ width: 34, height: 34 }} />
-              <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 11, color: "#C2185B" }}>{n}↓</Text>
-            </View>
-          ))}
-        </View>
-      </At>
-      <At b={[0.49, 0.16, 0.08]}>
-        {[["☂️", 2], ["🐸", 4], ["☁️", 6]].map(([e, n]) => (
-          <View key={e} style={{ alignItems: "center", marginBottom: 22 }}>
-            {/* eslint-disable-next-line jsx-a11y/alt-text */}
-            <Image src={E(e as string)} style={{ width: 34, height: 34 }} />
-            <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 11, color: "#C2185B" }}>{n}→</Text>
-          </View>
-        ))}
-      </At>
-      <At b={[0.6, 0.165]}>
-        <Crossword cell={24} />
-      </At>
-      <ExAt b={[0.07, 0.49, 0.42]} n="5" audio="S.03">
-        Complete with <Text style={{ color: BLUE }}>a</Text> or <Text style={{ color: BLUE }}>an</Text>. Then listen and check.
-      </ExAt>
-      <Pic b={BOX.classroom} src={A.classroom} r={6} />
-      {CLASS_LABELS.map(([l, x, y], i) => (
-        <At key={l} b={[BOX.classroom[0] + x * BOX.classroom[2], BOX.classroom[1] + y * BOX.classroom[3]]}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <NumTag n={i + 1} size={13} />
-            <View style={{ backgroundColor: "#ffffffDD", paddingHorizontal: 3, height: 13, justifyContent: "center" }}>
-              <Text style={t(9.5)}>{i === 0 ? <Text style={{ fontFamily: "Andika", color: BLUE }}>a </Text> : "__ "}{i === 0 ? "board" : l}</Text>
-            </View>
-          </View>
-        </At>
+      {/* one column per picture: the down clues over columns 9-12, the across clues in column 7 */}
+      {CROSS_PICS.map(([e, n], i) => (
+        <React.Fragment key={e}>
+          <Pic b={B(cx(9 + i), ce(9 + i), ry(6), ry(10))} src={E(e)} fit="contain" name={`emoji ${e}`} />
+          <At b={B(cx(9 + i), ce(9 + i), ry(10))}>
+            <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 11, color: "#C2185B", textAlign: "center" }}>{n}↓</Text>
+          </At>
+        </React.Fragment>
       ))}
-      <At b={[0.51, 0.48, 0.43, 0.125]}>
-        <View style={{ backgroundColor: "#fff", borderWidth: 3, borderColor: "#7CB342", borderRadius: 12, height: "100%" }}>
-          <View style={{ backgroundColor: "#7CB342", borderTopLeftRadius: 8, paddingHorizontal: 30, paddingVertical: 2, alignSelf: "flex-start", borderBottomRightRadius: 10 }}>
-            <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 13, color: "#fff" }}>a - an</Text>
-          </View>
-          <View style={{ padding: 5, paddingTop: 3 }}>
-            <Text style={t(9.6)}>
-              We use <B>a</B> before a consonant sound.
-            </Text>
-            <Text style={{ ...t(9.6), marginLeft: 8 }}>
-              <B>a</B> chair{"            "}
-              <B>a</B> ruler
-            </Text>
-            <Text style={{ ...t(9.6), marginTop: 2 }}>
-              We use <B>an</B> before a vowel sound (a, e, i, o, u).
-            </Text>
-            <Text style={{ ...t(9.6), marginLeft: 8 }}>
-              <B>an</B> orange{"         "}
-              <B>an</B> eraser
-            </Text>
-          </View>
+      <Fill b={B(cx(8), ce(12), ry(13), ry(13) + 1.5)} color="#B0BEC5" />
+      {CROSS_PICS_ACROSS.map(([e, n], i) => (
+        <React.Fragment key={e}>
+          <Pic b={B(cx(7), ce(7), ry(16 + i * 12), ry(20 + i * 12))} src={E(e)} fit="contain" name={`emoji ${e}`} />
+          <At b={B(cx(7), ce(7), ry(20 + i * 12))}>
+            <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 11, color: "#C2185B", textAlign: "center" }}>{n}→</Text>
+          </At>
+        </React.Fragment>
+      ))}
+      <At b={B(cx(8), ce(12), ry(15))}>
+        <Crossword cell={cell} />
+      </At>
+      <ExAt b={B(cx(1), ce(6), ry(54))} n="5" audio="S.03">
+        Write <Text style={{ color: BLUE }}>a</Text> or <Text style={{ color: BLUE }}>an</Text>. Then listen and check.
+      </ExAt>
+      <Fill b={B(cx(7), ce(12), ry(52), ry(63))} color="#ffffff" border="#7CB342" bw={3} r={12} />
+      <Fill b={B(cx(7), ce(9), ry(52), ry(55))} color="#7CB342" radii={{ borderTopLeftRadius: 12, borderBottomRightRadius: 10 }} />
+      <At b={B(cx(7) + INSET, ce(9), ry(52), ry(55))}>
+        <View style={{ height: "100%", justifyContent: "center" }}>
+          <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 12, color: "#fff", lineHeight: 1 }}>a or an?</Text>
         </View>
       </At>
+      <At b={B(cx(7) + INSET, ce(12) - INSET, ry(56))}>
+        <Text style={t(9.6)}>
+          <Bo>a</Bo> + consonant sound: <Bo>a</Bo> lamp, <Bo>a</Bo> bag
+        </Text>
+        <Text style={{ ...t(9.6), marginTop: 2 }}>
+          <Bo>an</Bo> + vowel sound: <Bo>an</Bo> apple, <Bo>an</Bo> ice cream
+        </Text>
+      </At>
+      <Pic b={BOX.classroom} src={A.classroom} r={6} name="classroom" />
+      {CLASS_LABELS.map(([art0, l, fx, fy], i) => {
+        const p = picPoint(BOX.classroom, imgAspect.classroom, {}, fx, fy);
+        return (
+          <At key={l} b={B(p.x, p.x + 40 * MM, p.y)}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <NumTag n={i + 1} size={13} />
+              <View style={{ backgroundColor: "#ffffffDD", paddingHorizontal: 3, height: 13, justifyContent: "center" }}>
+                <Text style={t(9.5)}>
+                  {art0 ? <Text style={{ fontFamily: "Andika", color: BLUE }}>{art0} </Text> : "__ "}
+                  {l}
+                </Text>
+              </View>
+            </View>
+          </At>
+        );
+      })}
     </BookPage>
   );
 }
@@ -648,149 +806,159 @@ const ORDINALS: [string, string, string][] = [
   ["13", "th", "thirteenth"], ["20", "th", "twentieth"], ["21", "st", "twenty-first"], ["22", "nd", "twenty-second"], ["30", "th", "thirtieth"],
 ];
 function P10Numbers() {
-  const [bx, by, bw, bh] = BOX.numbers;
+  const nb = BOX.numbers;
+  const bus = g0(BOX.bus);
+  const step = (bus.w - bus.w * 0.36 - 20 / 3) / 7;
   return (
     <BookPage ground={A.starGroundL} footer={<StarterFooter n={10} />}>
-      <At b={[0.1, 0.088]}>
+      <At b={B(cx(1), ce(4), ry(6))}>
         <Title text="Numbers" size={23} fill="#F06292" stroke="#7B1240" />
       </At>
-      <ExAt b={[0.29, 0.095, 0.24]} n="7" audio="S.04">
+      <ExAt b={B(cx(4), ce(6), ry(7))} n="7" audio="S.04">
         Listen and repeat.
       </ExAt>
-      <Pic b={[bx, by, bw, bh * 0.97]} src={A.numbers} />
+      <Pic b={nb} src={A.numbers} name="number tiles (drawn)" />
       {NUM_WORDS.map((w, i) => (
-        <At key={w} b={[bx + ((i % 4) * bw) / 4, by + (Math.floor(i / 4) * bh * 0.97) / 7 + (bh * 0.97 * 0.73) / 7, bw / 4]}>
+        <At key={w} b={B(nb.x + ((i % 4) * nb.w) / 4, nb.x + (((i % 4) + 1) * nb.w) / 4, nb.y + (Math.floor(i / 4) * nb.h!) / 7 + (nb.h! * 0.73) / 7)}>
           <Text style={{ fontFamily: "Andika", fontSize: 10.5, color: INK, textAlign: "center" }}>{w}</Text>
         </At>
       ))}
-      <At b={[0.535, 0.09, 0.465, 0.445]}>
-        <View style={{ height: "100%", borderWidth: 2.5, borderColor: "#F2C230", borderRightWidth: 0, borderTopLeftRadius: 20, borderBottomLeftRadius: 20, backgroundColor: "#FFFDF4" }} />
-      </At>
-      <At b={[0.555, 0.1]}>
+      <Fill b={BOX.daysPanel} color="#FFFDF4" border="#F2C230" bw={2.5} radii={{ borderTopLeftRadius: 20, borderBottomLeftRadius: 20 }} />
+      <At b={B(cx(7) + INSET, ce(8), ry(7))}>
         <Title text="Days" size={21} fill="#FFD23F" stroke="#7A4B00" />
       </At>
-      <ExAt b={[0.67, 0.105, 0.31]} n="8" audio="S.05" size={9.8}>
-        Complete the days with the missing letters. Then listen and check.
+      <ExAt b={B(cx(9), ce(12), ry(7))} n="8" audio="S.05" size={9.8}>
+        Write the missing letters. Then listen and check the days.
       </ExAt>
-      <Pic b={BOX.pegs} src={A.pegs} />
-      <Pic b={BOX.ordinal} src={A.ordinal} />
-      <At b={[0.56, 0.582]}>
+      <Pic b={BOX.pegs} src={A.pegs} name="pegs (drawn)" />
+      <Pic b={BOX.ordinal} src={A.ordinal} name="ordinal panel (drawn)" />
+      <At b={B(cx(7) + INSET, ce(12), ry(65))}>
         <Title text="Ordinal Numbers" size={17} fill="#E3F2FD" stroke="#1565C0" />
       </At>
-      <At b={[0.56, 0.613, 0.4]}>
+      <At b={B(cx(7) + INSET, ce(12), ry(68))}>
         <Ex n="9" audio="S.06" color="#fff" size={10}>
           Listen and repeat.
         </Ex>
       </At>
-      <At b={[0.56, 0.637, 0.43]}>
-        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-          {ORDINALS.map(([d, s, w]) => (
-            <Text key={w} style={{ width: "33%", fontFamily: "Noto", fontSize: 8.6, color: "#fff", lineHeight: 1.32 }}>
-              <B>
-                {d}
-                {s}
-              </B>{" "}
-              {w}
-            </Text>
+      <At b={B(cx(7) + INSET, ce(12), ry(71))}>
+        <View style={{ flexDirection: "row" }}>
+          {[ORDINALS.slice(0, 5), ORDINALS.slice(5, 10), ORDINALS.slice(10)].map((col, ci) => (
+            <View key={ci} style={{ width: ["29%", "31%", "40%"][ci] }}>
+              {col.map(([d, s, w]) => (
+                <Text key={w} style={{ fontFamily: "Noto", fontSize: 8.4, color: "#fff", lineHeight: 1.32 }}>
+                  <Bo>
+                    {d}
+                    {s}
+                  </Bo>{" "}
+                  {w}
+                </Text>
+              ))}
+            </View>
           ))}
         </View>
       </At>
-      <ExAt b={[0.1, 0.745, 0.4]} n="10">
-        Fill in the blanks with ordinal numbers.
+      <ExAt b={B(cx(1), ce(6), ry(83))} n="10">
+        Who is in the queue? Write the ordinal numbers.
       </ExAt>
-      <Pic b={BOX.bus} src={A.skylineBus} />
-      <Pic b={BOX.bus} src={A.bus} />
-      {Array.from({ length: 7 }, (_, i) => (
-        <At key={i} b={[0.36 + ((1 - 0.36 - 0.012) / 7) * i + 0.004, 0.785, 0.09]}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <NumTag n={i + 1} size={11} />
-            <Text style={{ fontFamily: "Andika", fontSize: 9.5, color: BLUE, marginLeft: 2, borderBottomWidth: 0.8, borderColor: INK, minWidth: 34 }}>{i === 0 ? "first" : " "}</Text>
-          </View>
-        </At>
-      ))}
+      <Pic b={BOX.bus} src={A.skylineBus} name="skyline (drawn)" />
+      <Pic b={BOX.bus} src={A.bus} name="bus queue (drawn)" />
+      {Array.from({ length: 7 }, (_, i) => {
+        const x = bus.x + bus.w * 0.36 + i * step + step * 0.08;
+        return (
+          <At key={i} b={B(x, x + step * 0.9, ry(88))}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <NumTag n={i + 1} size={11} />
+              <Text style={{ fontFamily: "Andika", fontSize: 9.5, color: BLUE, marginLeft: 2, borderBottomWidth: 0.8, borderColor: INK, flex: 1 }}>{i === 0 ? "first" : " "}</Text>
+            </View>
+          </At>
+        );
+      })}
     </BookPage>
   );
 }
 
-const TIME_CAPTIONS = ["It's four\no'clock.", "It's quarter\npast four.", "It's twenty\npast four.", "It's half\npast four.", "It's quarter\nto five.", "It's five\nto five."];
-const GREETINGS = ["Hi! / Hello!", "Goodbye! / Bye!", "Good morning!", "Good afternoon!", "Good evening!", "Good night!"];
+const TIME_CAPTIONS = ["It's half\npast seven.", "It's eight\no'clock.", "It's quarter\nto nine.", "It's ten\npast ten.", "It's quarter\npast eleven.", "It's twenty\nto one."];
+const GREETINGS = ["Good morning!", "Good afternoon!", "Good evening!", "Good night!", "Hi! / Hello!", "Goodbye! / Bye!"];
 function P11Time() {
-  const [cx, cy, cw] = BOX.clocks;
-  const [gx, gy, gw] = BOX.greetings;
+  const gb = BOX.greetings;
   return (
     <BookPage ground={A.starGroundR} footer={<StarterFooter n={11} />}>
-      <At b={[0.07, 0.085]}>
+      <At b={B(cx(1), ce(6), ry(6))}>
         <Title text="Telling the Time" size={21} fill="#EC407A" stroke="#6A1B4D" />
       </At>
-      <ExAt b={[0.075, 0.122, 0.38]} n="11" audio="S.07">
+      <ExAt b={B(cx(1), ce(6), ry(11))} n="11" audio="S.07">
         Listen and repeat.
       </ExAt>
       {[0, 1].map((row) => (
-        <Pic key={row} b={[cx, cy + 0.005 + row * 0.128, cw, 0.085]} src={A.clocks[row]} />
+        <Pic key={row} b={BOX.clockRow(row)} src={A.clocks[row]} name="clocks (drawn)" />
       ))}
-      {TIME_CAPTIONS.map((c, i) => (
-        <At key={c} b={[cx + ((i % 3) * cw) / 3, cy + 0.088 + Math.floor(i / 3) * 0.128, cw / 3]}>
-          <Text style={{ ...hand(10.5), textAlign: "center", lineHeight: 1.1 }}>{c}</Text>
-        </At>
-      ))}
-      <ExAt b={[0.075, 0.405, 0.38]} n="12" audio="S.08">
+      {TIME_CAPTIONS.map((c, i) => {
+        const rb = BOX.clockRow(Math.floor(i / 3));
+        return (
+          <At key={c} b={B(rb.x + ((i % 3) * rb.w) / 3, rb.x + (((i % 3) + 1) * rb.w) / 3, rb.y + rb.h! + 0.5 * MM)}>
+            <Text style={{ ...hand(10.5), textAlign: "center", lineHeight: 1.1 }}>{c}</Text>
+          </At>
+        );
+      })}
+      <ExAt b={B(cx(1), ce(6), ry(46))} n="12" audio="S.08">
         Listen and repeat.
       </ExAt>
-      <Pic b={[0.02, 0.44, 0.15, 0.13]} src={A.facesK.f8} fit="contain" />
-      <Pic b={[0.33, 0.55, 0.15, 0.13]} src={A.facesK.f7} fit="contain" />
-      <Bubble b={[0.17, 0.432, 0.21]} color="#FFD54F" border="#F9A825" tail="bl" size={10.5} r={14}>
-        {"Excuse me! What\ntime is it, please?"}
+      {/* the girl above, the boy below; their lines in one column beside them, in reading order */}
+      <Pic b={B(cx(1), ce(2), ry(50), ry(64))} src={A.facesK.f8} fit="contain" name="girl (w-family-8)" />
+      <Pic b={B(cx(1), ce(2), ry(64), ry(78))} src={A.facesK.f7} fit="contain" name="boy (w-family-7)" />
+      <Bubble b={B(cx(3), ce(6), ry(50))} color="#FFD54F" border="#F9A825" tail="bl" size={10.5} r={14}>
+        {"Is it three o'clock, Sam?"}
       </Bubble>
-      <Bubble b={[0.17, 0.5, 0.12]} color="#FFD54F" border="#F9A825" tail="bl" size={10.5} r={14}>
-        Thanks!
+      <Bubble b={B(cx(3), ce(6), ry(57))} color="#81D4FA" border="#29B6F6" tail="bl" size={10.5} r={14}>
+        {"No, it isn't. It's half past two."}
       </Bubble>
-      <Bubble b={[0.14, 0.57, 0.16]} color="#81D4FA" border="#29B6F6" tail="br" size={10.5} r={14}>
-        {"It's ten\nto nine."}
+      <Bubble b={B(cx(3), ce(6), ry(64))} color="#FFD54F" border="#F9A825" tail="bl" size={10.5} r={14}>
+        {"Oh good! I'm not late."}
       </Bubble>
-      <Bubble b={[0.15, 0.635, 0.15]} color="#81D4FA" border="#29B6F6" tail="br" size={10.5} r={14}>
-        {"You're\nwelcome."}
+      <Bubble b={B(cx(3), ce(6), ry(71))} color="#81D4FA" border="#29B6F6" tail="bl" size={10.5} r={14}>
+        See you later!
       </Bubble>
-      <Fill b={[0.05, 0.705, 0.47, 0.23]} color="#BBDEFB" r={18} border="#fff" bw={3} />
-      <ExAt b={[0.075, 0.715, 0.44]} n="13">
-        Now ask and answer with your partner.
+      <Fill b={B(cx(1), ce(6), ry(80), ry(106))} color="#BBDEFB" r={18} border="#fff" bw={3} />
+      <ExAt b={B(cx(1) + INSET, ce(6) - INSET, ry(81))} n="13">
+        Point to a clock. Ask your partner: What time is it?
       </ExAt>
-      <Pic b={[0.06, 0.74, 0.45, 0.19]} src={A.actClocks} />
-      <At b={[gx, gy, gw, BOX.greetings[3]]}>
-        <View style={{ height: "100%", backgroundColor: "#B7DDE0", borderWidth: 2.5, borderColor: "#F2C230" }} />
-      </At>
-      <At b={[gx + 0.025, gy + 0.006]}>
+      <Pic b={BOX.actClocks} src={A.actClocks} name="clocks (drawn)" />
+      <Fill b={gb} color="#B7DDE0" border="#F2C230" bw={2.5} />
+      <At b={B(gb.x + INSET, gb.x + gb.w, gb.y + 1 * MM)}>
         <Title text="Greetings" size={19} fill="#546E7A" stroke="#ffffff" />
       </At>
-      <ExAt b={[gx + 0.02, gy + 0.042, gw - 0.04]} n="14" audio="S.09" size={9.8}>
-        Listen and repeat. How do you say these in your language?
+      <ExAt b={B(gb.x + INSET, gb.x + gb.w - INSET, ry(8))} n="14" audio="S.09" size={9.8}>
+        Listen and repeat. Which greeting do you use at 8 a.m.? And at 9 p.m.?
       </ExAt>
       {GREETINGS.map((g, i) => {
-        const fx = gx + 0.025 + (i % 2) * 0.215;
-        const fy = gy + 0.097 + Math.floor(i / 2) * 0.132;
+        const fx = GREET_CELLS.at(i % 2);
+        const fy = greetRow(Math.floor(i / 2));
         return (
           <React.Fragment key={g}>
-            <Pic b={[fx, fy, 0.195, 0.1]} src={A.schools[i]} r={6} border="#ffffff" />
-            {i < 2 ? <Pic b={[fx + 0.01, fy + 0.035, 0.12, 0.065]} src={i === 0 ? A.greetKids[0] : A.greetKids[1]} fit="contain" /> : null}
-            {i === 1 ? <Pic b={[fx + 0.1, fy + 0.035, 0.08, 0.065]} src={A.greetKids[2]} fit="contain" /> : null}
-            <At b={[fx, fy + 0.103, 0.195]}>
+            <Pic b={B(fx, fx + GREET_CELLS.w, fy, fy + GREET_TILE_H)} src={A.schools[i]} r={6} border="#ffffff" name="school (drawn)" />
+            {i === 4 ? <Pic b={B(fx, fx + GREET_CELLS.w, fy + 4 * 2.5 * MM, fy + GREET_TILE_H)} src={A.greetKids[0]} fit="contain" name="friends (w-friends)" /> : null}
+            {i === 5 ? <Pic b={B(fx, cx(11) + INSET, fy + 3 * 2.5 * MM, fy + GREET_TILE_H)} src={A.greetKids[1]} fit="contain" name="Zara (cast)" /> : null}
+            {i === 5 ? <Pic b={B(cx(11) + INSET, fx + GREET_CELLS.w, fy + 3 * 2.5 * MM, fy + GREET_TILE_H)} src={A.greetKids[2]} fit="contain" name="Theo (cast)" /> : null}
+            <At b={B(fx, fx + GREET_CELLS.w, fy + GREET_TILE_H + 1 * MM)}>
               <Text style={{ ...hand(10.5, INK, 700), textAlign: "center" }}>{g}</Text>
             </At>
           </React.Fragment>
         );
       })}
-      <ExAt b={[0.55, 0.59, 0.42]} n="15" audio="S.10">
-        Read and listen to the dialogue.
+      <ExAt b={B(cx(7), ce(12), ry(65))} n="15" audio="S.10">
+        Listen and read. Where is Leo going?
       </ExAt>
-      <Pic b={[0.55, 0.625, 0.42, 0.2]} src={A.friends} r={8} pos="50% 30%" />
-      <At b={[0.545, 0.795, 0.43]}>
-        <View style={{ backgroundColor: "#fff", borderWidth: 1, borderColor: "#90A4AE", padding: 6 }}>
+      <Pic b={B(cx(7), ce(12), ry(69), ry(88))} src={A.friends} r={8} ay={0.3} name="friends (w-friends)" />
+      <Fill b={B(cx(7), ce(12), ry(89), ry(105))} color="#ffffff" border="#90A4AE" bw={1} />
+      <At b={B(cx(7), ce(12), ry(89))}>
+        <View style={{ padding: INSET }}>
           {(
             [
-              ["Maya", "Good afternoon, Leo. How are you?"],
-              ["Leo", "Hi, Maya. I'm OK, thanks. And you?"],
-              ["Maya", "Very well, thank you."],
-              ["Leo", "Oh no, it's half past three! My bus! See you tomorrow!"],
-              ["Maya", "Bye, Leo!"],
+              ["Maya", "Good afternoon, Leo! Is this your phone?"],
+              ["Leo", "Yes, it is! Thanks, Maya."],
+              ["Maya", "Where are you going?"],
+              ["Leo", "To my piano lesson. It starts at four. What time is it now?"],
+              ["Maya", "It's ten to four. Hurry up! Bye!"],
             ] as const
           ).map(([w, s], i) => (
             <View key={i} style={{ flexDirection: "row" }}>
@@ -804,212 +972,221 @@ function P11Time() {
   );
 }
 
-const CLASS_SENTENCES = ["Can you say that again?", "Close your books.", "Listen carefully.", "Write the date.", "Work in pairs.", "Raise your hand.", "Can I open the window?", "Put it in the bin, please."];
-const OBJECTS: [string, string][] = [["📁", "folder"], ["🖨️", "printer"], ["✂️", "scissors"], ["📎", "paper clip"], ["📏", "ruler"], ["🖍️", "crayon"], ["🔊", "speaker"], ["🎧", "headphones"]];
+const CLASS_SENTENCES = ["Put your book away.", "Read with a partner.", "Can you say that again, please?", "Put your hand up, please.", "It's hot. Open the window, please.", "Write your name here.", "Put your rubbish in the bin.", "Listen, everyone!"];
 function P12Classroom() {
+  // four across = columns 1-3, 4-6, 7-9, 10-12
+  const pc = cells(cx(1), ce(12), 4, 6 * MM);
+  const oc = pc;
+  const panelX = cx(1) - INSET;
   return (
     <BookPage bg="#F3F8F8" footer={<StarterFooter n={12} />}>
-      <Fill b={[0, 0, 1, 0.07]} color="#ffffff" />
-      <At b={[0.04, 0.075, 0.96, 0.425]}>
-        <View style={{ height: "100%", backgroundColor: "#fff", borderWidth: 3, borderRightWidth: 0, borderColor: "#F2C230" }} />
-      </At>
-      <At b={[0.065, 0.088]}>
+      <Fill b={B(0, W, 0, ry(4))} color="#ffffff" />
+      <Fill b={B(panelX, W, ry(4), ry(56))} color="#ffffff" />
+      <Fill b={B(panelX, panelX + 3, ry(4), ry(56))} color="#F2C230" />
+      <Fill b={B(panelX, W, ry(4), ry(4) + 3)} color="#F2C230" />
+      <At b={B(cx(1), ce(6), ry(6))}>
         <Title text="Classroom Language" size={20} fill="#C0392B" stroke="#ffffff" />
       </At>
-      <ExAt b={[0.46, 0.094, 0.53]} n="16" audio="S.11" size={10}>
-        Listen and learn. Then match the pictures with the sentences.
+      <ExAt b={B(cx(7), ce(12), ry(6))} n="16" audio="S.11" size={10}>
+        Listen and repeat. Then write the sentence numbers in the boxes.
       </ExAt>
-      {A.classlang.map((c, i) => (
-        <React.Fragment key={i}>
-          <Pic b={[0.07 + (i % 4) * 0.23, 0.14 + Math.floor(i / 4) * 0.15, 0.2, 0.14]} src={c} fit="contain" />
-          <At b={[0.07 + (i % 4) * 0.23, 0.145 + Math.floor(i / 4) * 0.15]}>
-            <View style={{ alignItems: "center" }}>
-              <NumTag n={"ABCDEFGH"[i]} size={13} />
-              <View style={{ width: 13, height: 15, borderWidth: 1, borderColor: "#E57373", backgroundColor: "#fff" }} />
-            </View>
-          </At>
-        </React.Fragment>
-      ))}
-      <Fill b={[0.04, 0.443, 0.96, 0.057]} color="#CDEBE9" />
-      <At b={[0.07, 0.45, 0.92]}>
-        <Items cols={4} down size={10} gap={2} items={CLASS_SENTENCES} />
+      {A.classlang.map((c, i) => {
+        const x = pc.at(i % 4);
+        const y = ry(12 + Math.floor(i / 4) * 18);
+        return (
+          <React.Fragment key={i}>
+            <Pic b={B(x, x + pc.w, y, y + 42.5 * MM)} src={c} fit="contain" name={`classroom language ${i + 1}`} />
+            <At b={B(x, x + 13, y)}>
+              <View style={{ alignItems: "center" }}>
+                <NumTag n={"ABCDEFGH"[i]} size={13} />
+                <View style={{ width: 13, height: 15, borderWidth: 1, borderColor: "#E57373", backgroundColor: "#fff" }} />
+              </View>
+            </At>
+          </React.Fragment>
+        );
+      })}
+      <Fill b={B(panelX, W, ry(48), ry(56))} color="#CDEBE9" />
+      <At b={B(cx(1), ce(12), ry(49))}>
+        <Items cols={4} down size={9.6} gap={3} items={CLASS_SENTENCES} />
       </At>
-      <ExAt b={[0.07, 0.548, 0.36]} n="17">
-        Match the words with the pictures.
+      <ExAt b={B(cx(1), ce(5), ry(60))} n="17">
+        Write the words under the pictures.
       </ExAt>
-      <WordBanner b={[0.42, 0.535, 0.46, 0.05]} lines={["folder - printer - scissors - paper clip", "ruler - crayon - speaker - headphones"]} />
-      {OBJECTS.map(([e], i) => (
-        <React.Fragment key={e}>
-          <At b={[0.08 + (i % 4) * 0.225, 0.61 + Math.floor(i / 4) * 0.17, 0.2]}>
-            <View style={{ alignItems: "center" }}>
-              {/* eslint-disable-next-line jsx-a11y/alt-text */}
-              <Image src={E(e)} style={{ width: 70, height: 70 }} />
-            </View>
-          </At>
-          <At b={[0.07 + (i % 4) * 0.225, 0.725 + Math.floor(i / 4) * 0.17]}>
-            <AnswerBox n={(i + 1) as number} w={0.18 * W} />
-          </At>
-        </React.Fragment>
-      ))}
+      <WordBanner b={B(cx(6), ce(11), ry(59), ry(65))} lines={["computer - crayon - drawing pin - notebook", "paintbrush - paper clip - ruler - scissors"]} />
+      {OBJECTS.map(([e], i) => {
+        const x = oc.at(i % 4);
+        const y = ry(68 + Math.floor(i / 4) * 18);
+        return (
+          <React.Fragment key={e}>
+            <Pic b={B(x, x + oc.w, y, y + 10 * 2.5 * MM)} src={E(e)} fit="contain" name={`emoji ${e}`} />
+            <At b={B(x, x + oc.w, y + 12 * 2.5 * MM)}>
+              <AnswerBox n={i + 1} w={oc.w} />
+            </At>
+          </React.Fragment>
+        );
+      })}
     </BookPage>
   );
 }
 
-const JOB_SENTENCES = [
-  "This person looks after sick animals.",
-  "This person puts out fires and helps people.",
-  "This person repairs cars in a garage.",
-  "This person makes bread and cakes early in the morning.",
-  "This person takes pictures of people and places.",
-  "This person grows fruit and vegetables and keeps cows.",
-  "This person works in a hospital and helps the doctors.",
-  "This person flies planes to different countries.",
-  "This person brings food and drinks to your table.",
-  "This person keeps the streets safe.",
+// ex19: the questions, lettered; ex20: what each one says, lettered
+const JOBS_ABC = ["baker", "farmer", "firefighter", "mechanic", "nurse", "photographer", "pilot", "police officer", "vet", "waiter"];
+const JOB_QUESTIONS = [
+  "Your car doesn't start. Who can fix it?",
+  "Who sits at the front of a plane?",
+  "There's a fire in the kitchen! Who do you call?",
+  "You want a birthday cake. Who makes it?",
+  "Your bike isn't in the street! Who do you tell?",
+  "You need a photo for your school card. Who takes it?",
+  "Your rabbit is ill. Who can help it?",
+  "You're in a café and you're hungry. Who takes your order?",
+  "Who works on a farm and drives a tractor?",
+  "Who gives you your medicine in hospital?",
 ];
 const JOB_QUOTES = [
-  '"Your dog is fine now. Give her this medicine every day."',
-  '"Get out of the building, quick! Don\'t use the lift!"',
-  '"Your car is ready. I changed the tyres."',
-  '"Fresh bread! Get your warm rolls here!"',
+  '"Your car needs new tyres. Come back on Friday."',
+  '"Here\'s your pizza. Enjoy your meal!"',
+  '"Look! The tomatoes are red. Let\'s pick them."',
+  '"Don\'t worry - the fire is out now."',
+  '"This is your captain speaking. It\'s sunny in Madrid."',
+  '"Hold out your arm, please. This doesn\'t hurt."',
   '"Smile, please! Say cheese!"',
-  '"I need to feed the chickens before breakfast."',
-  '"Sit down here, please. The doctor can see you now."',
-  '"Good morning, everyone. We land in Rome in ten minutes."',
-  '"Are you ready to order? Today\'s soup is tomato."',
-  '"Stop, please! You can\'t park your car here."',
+  '"Hold your hamster gently. Its leg is OK now."',
+  '"Is this your bike? We found it in the park."',
+  '"These buns are hot - they\'re from the oven!"',
 ];
-const JOBS = ["vet", "firefighter", "mechanic", "baker", "photographer", "farmer", "nurse", "pilot", "waiter", "police officer"];
-const shuffled = (arr: string[], order: number[]) => order.map((i) => arr[i]);
+function JobList() {
+  return (
+    <>
+      {JOBS_ABC.map((j, i) => (
+        <View key={j} style={{ flexDirection: "row", marginBottom: 2.6 }}>
+          <Check />
+          <Text style={{ ...t(10), width: 16, fontWeight: 700 }}>{i + 1}</Text>
+          <Text style={t(10)}>{j}</Text>
+        </View>
+      ))}
+    </>
+  );
+}
 function P13Jobs() {
+  const jg = jobsGeom();
+  const frame = B(cx(1), ce(12), ry(75), ry(100));
   return (
     <BookPage footer={<StarterFooter n={13} />}>
-      <At b={[0, 0.02, 0.5, 0.38]}>
-        <Svg width={0.5 * W} height={0.38 * H}>
-          <Path d={`M0 ${0.03 * H} L${0.42 * W} 0 L${0.36 * W} ${0.07 * H} L${0.08 * W} ${0.07 * H} L${0.08 * W} ${0.38 * H} L0 ${0.38 * H} Z`} fill="#9CCC65" />
-        </Svg>
-      </At>
-      <ExAt b={[0.085, 0.06, 0.33]} n="18">
-        Match the words with the pictures.
+      <Decor b={B(0, ce(6), ry(-2), ry(38))} fill="#9CCC65" d={(X, Y, w, h) => `M${X(0)} ${Y(h * 0.08)} L${X(w * 0.84)} ${Y(0)} L${X(w * 0.72)} ${Y(h * 0.18)} L${X(cx(1) - 0.01)} ${Y(h * 0.18)} L${X(cx(1) - 0.01)} ${Y(h)} L${X(0)} ${Y(h)} Z`} />
+      <ExAt b={B(cx(1), ce(5), ry(2))} n="18">
+        Look and write the jobs.
       </ExAt>
-      <WordBanner b={[0.42, 0.045, 0.48, 0.055]} lines={["vet • firefighter • mechanic • baker • photographer", "farmer • nurse • pilot • waiter • police officer"]} size={10} />
-      <Pic b={[0.08, 0.11, 0.9, 0.27]} src={A.jobsArt} />
-      {JOBS.map((_, i) => (
-        <At key={i} b={[0.085 + (i % 5) * 0.18, 0.225 + Math.floor(i / 5) * 0.135]}>
-          <AnswerBox n={i + 1} w={0.15 * W} />
+      <WordBanner b={B(cx(6), ce(12), ry(0), ry(7))} lines={["baker • farmer • firefighter • mechanic • nurse", "photographer • pilot • police officer • vet • waiter"]} size={10} />
+      <Pic b={BOX.jobs} src={A.jobsArt} name="jobs in circles (cut-outs)" />
+      {Array.from({ length: 10 }, (_, i) => (
+        <At key={i} b={B(jg.cell.at(i % 5), jg.cell.at(i % 5) + jg.cell.w, jg.boxY(i))}>
+          <AnswerBox n={i + 1} w={jg.cell.w} />
         </At>
       ))}
-      <At b={[0.075, 0.39, 0.42, 0.04]}>
-        <Svg width={0.42 * W} height={0.04 * H}>
-          <Path d={`M0 0 H${0.42 * W} L${0.39 * W} ${0.04 * H} H0 Z`} fill="#AED581" />
-        </Svg>
-      </At>
-      <ExAt b={[0.09, 0.397, 0.4]} n="19">
-        Match the jobs with the sentences.
+      <Decor b={B(cx(1), ce(6), ry(42), ry(47))} fill="#AED581" d={(X, Y, w, h) => `M${X(0)} ${Y(0)} H${X(w)} L${X(w * 0.93)} ${Y(h)} H${X(0)} Z`} />
+      <ExAt b={B(cx(1) + INSET, ce(6), ry(43))} n="19">
+        Who is it? Match the jobs with the questions.
       </ExAt>
-      <At b={[0.11, 0.44, 0.22]}>
-        {JOBS.map((j, i) => (
-          <View key={j} style={{ flexDirection: "row", marginBottom: 2.6 }}>
-            <Check />
-            <Text style={{ ...t(10), width: 16, fontWeight: 700 }}>{i + 1}</Text>
-            <Text style={t(10)}>{j}</Text>
-          </View>
-        ))}
+      <At b={B(cx(1) + INSET, ce(4), ry(49))}>
+        <JobList />
       </At>
-      <At b={[0.33, 0.44, 0.63]}>
-        <Items letters size={9.6} gap={2.6} items={shuffled(JOB_SENTENCES, [5, 3, 6, 8, 1, 4, 0, 9, 2, 7])} />
+      <At b={B(cx(5), ce(12), ry(49))}>
+        <Items letters size={9.6} gap={2.6} items={JOB_QUESTIONS} />
       </At>
-      <Fill b={[0.08, 0.663, 0.85, 0.004]} color="#64B5F6" />
-      <ExAt b={[0.08, 0.632, 0.7]} n="20">
-        Who says it? Match the jobs with the sentences.
+      <ExAt b={B(cx(1), ce(12), ry(71))} n="20">
+        Who says it? Write the letters in the boxes.
       </ExAt>
-      <At b={[0.11, 0.68, 0.22]}>
-        {JOBS.map((j, i) => (
-          <View key={j} style={{ flexDirection: "row", marginBottom: 2.6 }}>
-            <Check />
-            <Text style={{ ...t(10), width: 16, fontWeight: 700 }}>{i + 1}</Text>
-            <Text style={t(10)}>{j}</Text>
-          </View>
-        ))}
+      <Fill b={B(frame.x, frame.x + frame.w, frame.y, frame.y + 1.2 * MM)} color="#64B5F6" />
+      <Fill b={B(frame.x, frame.x + frame.w, frame.y + frame.h! - 1.2 * MM, frame.y + frame.h!)} color="#64B5F6" />
+      <Fill b={B(frame.x, frame.x + 1.7 * MM, frame.y, frame.y + frame.h!)} color="#9CCC65" r={3} />
+      <Fill b={B(frame.x + frame.w - 1.7 * MM, frame.x + frame.w, frame.y, frame.y + frame.h!)} color="#9CCC65" r={3} />
+      <At b={B(cx(1) + INSET, ce(4), ry(78))}>
+        <JobList />
       </At>
-      <At b={[0.33, 0.68, 0.62]}>
-        <Items letters size={9.6} gap={2.6} items={shuffled(JOB_QUOTES, [3, 0, 9, 6, 2, 8, 4, 1, 7, 5])} />
+      <At b={B(cx(5), ce(12) - INSET, ry(78))}>
+        <Items letters size={9.6} gap={2.6} items={JOB_QUOTES} />
       </At>
-      <Fill b={[0.08, 0.905, 0.85, 0.004]} color="#64B5F6" />
-      <Fill b={[0.085, 0.665, 0.008, 0.245]} color="#9CCC65" r={3} />
-      <Fill b={[0.915, 0.665, 0.008, 0.245]} color="#9CCC65" r={3} />
     </BookPage>
   );
 }
 
-const TOWN_TAGS: [number, number][] = [[0.07, 0.62], [0.19, 0.14], [0.41, 0.3], [0.56, 0.32], [0.69, 0.4], [0.9, 0.42]];
+// numbered tags on the town picture: where (fractions of the picture) each starts
+const TOWN_TAGS: [string, number, number][] = [
+  ["cinema", 0.7, 0.3],
+  ["market", 0.08, 0.52],
+  ["museum", 0.88, 0.3],
+  ["park", 0.22, 0.24],
+  ["baker's", 0.55, 0.36],
+  ["chemist's", 0.36, 0.25],
+];
+const TOWN_FIT = { anchorY: 0.45 };
 const CLUES = [
-  "You go here when you need medicine for a cold.",
-  "You can buy apples, bananas and potatoes here.",
-  "You sit in the dark and watch a film here.",
-  "You buy fresh bread and a birthday cake here.",
-  "You play football and have a picnic here.",
-  "You look at old things from the past here.",
+  '"Two tickets for the seven o\'clock film, please."',
+  '"A kilo of tomatoes and four lemons, please."',
+  '"Look at this old Roman coin!"',
+  '"Can I have a chocolate cake for my mum\'s birthday?"',
+  '"Let\'s sit by the fountain and feed the ducks."',
+  '"This medicine is for your cough. Take it after dinner."',
 ];
 function P14Places() {
-  const [tx, ty, tw, th] = BOX.town;
   const c = A.cast;
+  const name = (s: string) => <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#283593" }}>{s}</Text>;
   return (
     <BookPage footer={<StarterFooter n={14} />}>
-      <ExAt b={[0.07, 0.072, 0.5]} n="21">
-        Match the words with the places in the picture.
+      <ExAt b={B(cx(1), ce(6), ry(4))} n="21">
+        Write the places from the box next to the numbers.
       </ExAt>
-      <Pic b={BOX.town} src={A.town} />
-      <WordBanner b={[0.6, 0.11, 0.36, 0.05]} lines={["park • cinema • museum", "baker's • chemist's • greengrocer's"]} size={10} />
-      {TOWN_TAGS.map(([x, y], i) => (
-        <At key={i} b={[tx + x * tw, ty + y * th]}>
-          <View style={{ flexDirection: "row" }}>
-            <NumTag n={i + 1} size={14} />
-            <View style={{ width: 16, height: 14, backgroundColor: "#fff" }} />
-          </View>
-        </At>
-      ))}
-      <ExAt b={[0.07, 0.372, 0.8]} n="22">
-        Read the clues and write the places from <Text style={{ color: "#C62828" }}>Exercise 21</Text>.
+      <WordBanner b={B(cx(8), ce(12), ry(3), ry(8))} lines={["park • cinema • museum", "baker's • chemist's • market"]} size={10} />
+      <Pic b={BOX.town} src={A.town} ay={TOWN_FIT.anchorY} name="town" />
+      {TOWN_TAGS.map(([place, fx, fy], i) => {
+        const p = picPoint(BOX.town, imgAspect.town, TOWN_FIT, fx, fy);
+        return (
+          <At key={place} b={B(p.x, p.x + 30, p.y, p.y + 14)}>
+            <View style={{ flexDirection: "row" }}>
+              <NumTag n={i + 1} size={14} />
+              <View style={{ width: 16, height: 14, backgroundColor: "#fff" }} />
+            </View>
+          </At>
+        );
+      })}
+      <ExAt b={B(cx(1), ce(12), ry(40))} n="22">
+        Where are these people? Read and write the places from <Text style={{ color: "#C62828" }}>Exercise 21</Text>.
       </ExAt>
-      <Fill b={[0.1, 0.398, 0.9, 0.162]} color="#E1F0F7" />
-      <At b={[0.12, 0.405, 0.86]}>
+      <Fill b={B(cx(1), W, ry(43), ry(62))} color="#E1F0F7" />
+      <At b={B(cx(1) + INSET, ce(12), ry(43) + INSET)}>
         <Items size={10.5} gap={4.6} items={CLUES.map((c2) => `${c2}  ${blank(18)}`)} />
       </At>
-      <ExAt b={[0.07, 0.578, 0.5]} n="23" audio="S.12">
-        Meet the space explorers.
+      <ExAt b={B(cx(1), ce(6), ry(64))} n="23" audio="S.12">
+        Meet the Hill Park friends.
       </ExAt>
-      <Pic b={[0.03, 0.6, 0.25, 0.135]} src={c[0]} fit="contain" />
-      <At b={[0.07, 0.725]}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#283593" }}>Star-Bus</Text>
-      </At>
-      <Bubble b={[0.28, 0.615, 0.48]} tail="bl" font="Noto" size={10} center={false} r={12}>
-        {"I'm Star-Bus. I'm not a normal school bus - I can fly to the stars! My passengers are Zara and Theo."}
+      <Pic b={B(cx(1), ce(3), ry(67), ry(82))} src={c[0]} fit="contain" name="Star-Bus (cast)" />
+      <At b={B(cx(1), ce(3), ry(83))}>{name("Star-Bus")}</At>
+      <Bubble b={B(cx(4), ce(9), ry(68))} tail="bl" font="Noto" size={10} center={false} r={12}>
+        {"Beep-beep! I'm Star-Bus, the flying school bus of Hill Park School. Every morning I take Zara, Theo and their friends to school."}
       </Bubble>
-      <Pic b={[0.82, 0.585, 0.18, 0.235]} src={c[1]} fit="contain" />
-      <At b={[0.79, 0.62]}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#283593" }}>Zara</Text>
+      <Pic b={B(cx(11), ce(12), ry(65), ry(90))} src={c[1]} fit="contain" name="Zara (cast)" />
+      <At b={B(cx(10), ce(10), ry(66))}>
+        <View style={{ alignItems: "flex-end" }}>{name("Zara")}</View>
       </At>
-      <Bubble b={[0.44, 0.685, 0.37]} tail="br" font="Noto" size={10} center={false} r={12}>
-        {"Hi, I'm Zara. I'm eleven and I'm from Moon Base Luna. Theo is my best friend. Come with us!"}
+      <Bubble b={B(cx(6), ce(10), ry(76))} tail="br" font="Noto" size={10} center={false} r={12}>
+        {"Hi! I'm Zara and I'm eleven. I love robots - I made Pip! My favourite subject is Science."}
       </Bubble>
-      <Pic b={[0.31, 0.72, 0.17, 0.205]} src={c[2]} fit="contain" />
-      <At b={[0.24, 0.755]}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#283593" }}>Theo</Text>
+      <Pic b={B(0, ce(2), ry(87), ry(LAST_ROW))} src={c[3]} fit="contain" name="K-77 (cast)" />
+      <At b={B(cx(3), ce(4), ry(88))}>{name("K-77")}</At>
+      <Bubble b={B(cx(3), ce(5), ry(93))} tail="bl" font="Noto" size={10} center={false} r={12}>
+        {"I'm K-77, the crossing robot at the school gate. I help children cross the road. Slow down, Star-Bus!"}
+      </Bubble>
+      <Pic b={B(cx(6), ce(7), ry(85), ry(LAST_ROW))} src={c[2]} fit="contain" name="Theo (cast)" />
+      <At b={B(cx(6), ce(7), ry(83))}>
+        <View style={{ alignItems: "center" }}>{name("Theo")}</View>
       </At>
-      <Bubble b={[0.51, 0.775, 0.42]} tail="bl" font="Noto" size={10} center={false} r={12}>
-        {"Hello! My name's Theo. I'm twelve and I'm a student at Luna School. My hobby is space football."}
+      <Bubble b={B(cx(8), ce(12), ry(91))} tail="bl" font="Noto" size={10} center={false} r={12}>
+        {"Hello! I'm Theo, Zara's cousin. I'm twelve and I'm new at Hill Park School. I like music and making things."}
       </Bubble>
-      <Pic b={[0.0, 0.775, 0.17, 0.205]} src={c[3]} fit="contain" />
-      <At b={[0.16, 0.83]}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#283593" }}>K-77</Text>
-      </At>
-      <Bubble b={[0.15, 0.87, 0.36]} tail="tl" font="Noto" size={10} center={false} r={12}>
-        {"I'm Officer K-77, a police robot on the Moon. I check the space buses. Star-Bus is always too fast!"}
-      </Bubble>
-      <Pic b={[0.84, 0.845, 0.16, 0.11]} src={c[4]} fit="contain" />
-      <Bubble b={[0.53, 0.87, 0.32]} tail="br" font="Noto" size={10} center={false} r={12}>
-        {"Hoo-hoo! I'm Pip, a robot owl. I fly with Zara and Theo and take photos of their trips."}
+      <Pic b={B(cx(11), ce(12), ry(97), ry(LAST_ROW))} src={c[4]} fit="contain" name="Pip (cast)" />
+      <Bubble b={B(cx(8), ce(10), ry(99))} tail="br" font="Noto" size={10} center={false} r={12}>
+        {"Tweet-tweet! I'm Pip, Zara's robot owl. Smile for my camera!"}
       </Bubble>
     </BookPage>
   );
@@ -1019,53 +1196,50 @@ function P14Places() {
 function P15ThemeOpener() {
   return (
     <BookPage bg="#CDE9F8" footer={<ThemeFooter n={15} />}>
-      <Pic b={[0, 0, 1, 1]} src={A.theme1} />
-      <At b={[0, 0, 1, 0.24]}>
-        <Svg width={W} height={0.24 * H}>
-          <Path d={`M0 0 H${W} V${0.15 * H} Q${0.7 * W} ${0.1 * H} ${0.45 * W} ${0.19 * H} Q${0.2 * W} ${0.26 * H} 0 ${0.2 * H} Z`} fill="#ffffff" opacity={0.92} />
-        </Svg>
-      </At>
-      <Fill b={[0.32, 0.112, 0.68, 0.012]} color="#37404F" />
-      <At b={[0.05, 0.085, 0.29, 0.075]}>
-        <View style={{ height: "100%", backgroundColor: "#37404F", transform: "rotate(-2deg)" }}>
-          <View style={{ position: "absolute", left: 6, top: -5, right: -6, bottom: 5, backgroundColor: "#C9A227", alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 34, color: "#fff", marginTop: 6 }}>Theme 1</Text>
-          </View>
+      <Pic b={FULL} src={A.theme1} name="theme 1 opener" />
+      <Decor b={B(0, W, 0, ry(24))} fill="#ffffff" opacity={0.92} d={(X, Y, w, h) => `M${X(0)} ${Y(0)} H${X(w)} V${Y(h * 0.6)} Q${X(w * 0.7)} ${Y(h * 0.4)} ${X(w * 0.45)} ${Y(h * 0.78)} Q${X(w * 0.2)} ${Y(h * 1.08)} ${X(0)} ${Y(h * 0.82)} Z`} />
+      <Fill b={B(cx(5), W, ry(9), ry(10))} color="#37404F" />
+      <Fill b={B(cx(1) + 2 * MM, ce(4) + 2 * MM, ry(6), ry(15))} color="#37404F" />
+      <Fill b={B(cx(1), ce(4), ry(5), ry(14))} color="#C9A227" />
+      <At b={B(cx(1), ce(4), ry(5), ry(14))}>
+        <View style={{ height: "100%", alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 34, color: "#fff", marginTop: 6 }}>Theme 1</Text>
         </View>
       </At>
-      <At b={[0.55, 0.06, 0.34, 0.27]}>
-        <View style={{ backgroundColor: GOLD, height: "100%", padding: 10, transform: "rotate(1.2deg)" }}>
+      <Fill b={B(cx(8), ce(12), ry(2), ry(34))} color={GOLD} />
+      <At b={B(cx(8), ce(12), ry(2), ry(34))}>
+        <View style={{ padding: INSET }}>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#fff", lineHeight: 1.05 }}>Vocabulary</Text>
-          {["People at school", "School rules", "Things we do at school"].map((x) => (
+          {["Jobs at school", "A day at school", "School clubs"].map((x) => (
             <Text key={x} style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 9.4, color: SLATE, marginLeft: 6, lineHeight: 1.3 }}>
               • {x}
             </Text>
           ))}
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#fff", marginTop: 3, lineHeight: 1.05 }}>Grammar</Text>
-          {['The verb "to be"', "Subject pronouns", "Possessive adjectives", "Question words  • Imperatives", "like / love / hate + -ing", "must / can (permission)"].map((x) => (
+          {["am / is / are", "I, you, he ... / my, your, his ...", "Commands: Sit down! Don't run!", "Who? What? Where? When?", "can / must (permission)", "love / like / hate + -ing"].map((x) => (
             <Text key={x} style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 9.4, color: SLATE, marginLeft: 6, lineHeight: 1.3 }}>
               • {x}
             </Text>
           ))}
         </View>
       </At>
-      <Bubble b={[0.22, 0.31, 0.17]} color="#EC407A" border="#fff" textColor="#fff" size={12} tail="bl" r={18}>
-        {"Don't be\nlate!"}
+      <Bubble b={B(cx(3), ce(4), ry(32))} color="#EC407A" border="#fff" textColor="#fff" size={12} tail="bl" r={18}>
+        {"Don't run!\nSquawk!"}
       </Bubble>
-      <Bubble b={[0.04, 0.4, 0.2]} color="#FFCA28" border="#fff" size={12} tail="bl" r={18}>
-        {"Are you good\nat Maths?"}
+      <Bubble b={B(cx(1), ce(3), ry(43))} color="#FFCA28" border="#fff" size={12} tail="bl" r={18}>
+        {"I love playing\nfootball!"}
       </Bubble>
-      <Bubble b={[0.36, 0.37, 0.22]} color="#4DD0E1" border="#fff" size={12} tail="br" r={18}>
-        {"What's your\nfavourite subject?"}
+      <Bubble b={B(cx(5), ce(7), ry(38))} color="#4DD0E1" border="#fff" size={12} tail="br" r={18}>
+        {"Where's the\nmusic room?"}
       </Bubble>
-      <Bubble b={[0.62, 0.45, 0.2]} color="#BA68C8" border="#fff" textColor="#fff" size={12} tail="br" r={18}>
-        {"I love\nFridays!"}
+      <Bubble b={B(cx(9), ce(11), ry(49))} color="#BA68C8" border="#fff" textColor="#fff" size={12} tail="br" r={18}>
+        {"Can I park my\nscooter here?"}
       </Bubble>
     </BookPage>
   );
 }
 
-function StoryBox({ b, lines, nameW = 42 }: { b: [number, number, number]; lines: [string, string][]; nameW?: number }) {
+function StoryBox({ b, lines, nameW = 42 }: { b: Box; lines: [string, string][]; nameW?: number }) {
   const col: Record<string, string> = { Maya: "#AD1457", Theo: "#1565C0", Zara: "#E65100", "Mr Okafor": "#2E7D32" };
   return (
     <At b={b}>
@@ -1084,122 +1258,123 @@ function StoryBox({ b, lines, nameW = 42 }: { b: [number, number, number]; lines
 function P16Story() {
   return (
     <BookPage footer={<ThemeFooter n={16} module="A" />}>
-      <Pic b={[0, 0, 1, 1]} src={A.story} />
-      <At b={[0.05, 0.022, 0.31]}>
-        <View style={{ borderWidth: 1.5, borderColor: "#E53935", borderStyle: "dashed", borderRadius: 10, backgroundColor: "#fff", padding: 5, paddingTop: 13 }}>
-          <View style={{ position: "absolute", top: -8, left: 8, backgroundColor: "#E53935", borderRadius: 9, paddingHorizontal: 7, paddingVertical: 1, flexDirection: "row" }}>
-            <Text style={{ fontFamily: "Sym", fontSize: 9, color: "#FFEB3B" }}>✓ </Text>
-            <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 9.5, color: "#fff" }}>Check these words</Text>
-          </View>
-          <Text style={{ ...hand(10.5), textAlign: "center" }}>jumper - visitor - rule - gadget - allowed - copy - notebook</Text>
+      <Pic b={FULL} src={A.story} name="story comic" />
+      <At b={B(cx(1), ce(4), ry(1))}>
+        <View style={{ borderWidth: 1.5, borderColor: "#E53935", borderStyle: "dashed", borderRadius: 10, backgroundColor: "#fff", paddingVertical: 5, paddingTop: 11, paddingLeft: INSET + 6 - 1.5, paddingRight: 5 }}>
+          <Text style={hand(10.5)}>floor - mine - glow - model - project - Earth - round</Text>
+        </View>
+      </At>
+      <Fill b={B(cx(1) + INSET, ce(3), ry(0), ry(2))} color="#E53935" r={7} />
+      <At b={B(cx(1) + INSET, ce(3), ry(0), ry(2))}>
+        <View style={{ height: "100%", flexDirection: "row", alignItems: "center", paddingLeft: 6 }}>
+          <Text style={{ fontFamily: "Sym", fontSize: 9, color: "#FFEB3B", lineHeight: 1 }}>✓ </Text>
+          <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 9.5, color: "#fff", lineHeight: 1 }}>Check these words</Text>
         </View>
       </At>
       <StoryBox
-        b={[0.03, 0.09, 0.34]}
+        b={B(cx(1), ce(4), ry(8))}
         nameW={30}
         lines={[
-          ["Maya", "Here you are, Theo. This is your school jumper."],
-          ["Theo", "A jumper? I hate jumpers!"],
-          ["Maya", "Sorry, students wear jumpers at our school. It's a rule."],
-          ["Zara", "Ha-ha! Green is your colour, Theo!"],
-          ["Theo", "But I'm not a student here. I'm a visitor."],
-          ["Maya", "You're a visitor for five days. Put it on, please!"],
+          ["Maya", "Theo, is this your jumper? It's on the floor."],
+          ["Theo", "No, it isn't. Mine is in my bag."],
+          ["Zara", "Ha-ha! That's Ben's jumper - look, his name is on it!"],
+          ["Maya", "Oh, sorry, Theo."],
+          ["Theo", "That's OK. But where is my bag?"],
+          ["Zara", "It's on your back, Theo!"],
         ]}
       />
       <StoryBox
-        b={[0.685, 0.315, 0.31]}
-        nameW={60}
+        b={B(ce(9), ce(12), ry(33))}
+        nameW={54}
         lines={[
-          ["Maya", "Theo! Put that ball away! Mr Okafor is looking at you!"],
-          ["Mr Okafor", "No games in class, please, young man."],
-          ["Theo", "It's not a game. It's my space map."],
-          ["Mr Okafor", "Map or not, gadgets are not allowed in class."],
-          ["Zara", "Listen to Mr Okafor, Theo."],
-          ["Theo", "OK. Sorry."],
+          ["Maya", "Theo! What's that under your desk?"],
+          ["Theo", "My glow ball! A model of the Moon!"],
+          ["Mr Okafor", "Theo, are you playing in my lesson?"],
+          ["Theo", "No, sir. It's for my science project."],
+          ["Mr Okafor", "A science project? Interesting ..."],
         ]}
       />
       <StoryBox
-        b={[0.03, 0.665, 0.37]}
+        b={B(cx(1), ce(5), ry(74))}
         nameW={60}
         lines={[
-          ["Mr Okafor", "Now, Mr Visitor. Come to the board, please."],
-          ["Theo", "Me? Why?"],
-          ["Mr Okafor", "Write our class rules on the board. Then copy them in your notebook."],
-          ["Theo", "My notebook? We don't use notebooks on the Moon."],
-          ["Mr Okafor", "On the Moon? Very funny. Write them three times, then!"],
+          ["Mr Okafor", "Theo, please come to the board and tell us about your project."],
+          ["Theo", "This is the Earth, and this is the Moon. The Moon goes round the Earth."],
+          ["Mr Okafor", "Very good! And where is the Sun?"],
+          ["Theo", "Er ... the Sun is in my bag!"],
+          ["Zara", "Ha-ha! You're a great teacher, Theo!"],
         ]}
       />
-      <At b={[0.1, 0.88, 0.62]}>
-        <View style={{ backgroundColor: "#fff", borderWidth: 2.5, borderColor: "#E53935", borderRadius: 14, padding: 6, paddingTop: 3 }}>
+      <Fill b={B(cx(2), ce(9), ry(96), ry(106))} color="#ffffff" border="#E53935" bw={2.5} r={14} />
+      <At b={B(cx(2), ce(9), ry(96))}>
+        <View style={{ padding: 6, paddingTop: 4 }}>
           <Ex n="1" audio="1.01" size={10.2}>
-            Read and listen to the story. Then answer Pip&apos;s questions.
+            Read and listen to the story. Then answer the questions.
           </Ex>
-          <Items cols={2} size={9.8} gap={1.5} items={["Do students wear jumpers at Maya's school?", "What is Theo's ball?", "Who is cross with Theo? Why?", "Where is Theo's school?"]} />
+          <Items cols={2} size={9.8} gap={1.5} items={["Whose jumper is it?", "Where is Theo's bag?", "What is Theo's glow ball?", "Is Mr Okafor angry at the end?"]} />
         </View>
       </At>
-      <Pic b={[0.72, 0.85, 0.1, 0.065]} src={A.cast[4]} fit="contain" />
     </BookPage>
   );
 }
 
 const PEOPLE = ["librarian", "cook", "coach", "music teacher", "classmates", "caretaker", "headteacher", "bus driver", "school nurse"];
-const RIDDLES = [
-  "I make lunch for all the students. I wear a white hat.",
-  "I am the boss of the school. Teachers and parents talk to me.",
-  "I look after the school books. I often say \"Shh!\"",
-  "I help you when you are ill or hurt.",
-  "We are in the same class. We sit together and help each other.",
-  "I teach PE. I love football and basketball.",
-  "I repair doors, windows and lights at school.",
-  "I teach songs. I play the guitar and the piano.",
+const PEOPLE_TEXT = [
+  "Mrs Lane helps you find a good book. She's the",
+  "Mr Diaz makes soup and pasta for lunch. He's the",
+  "Mr Shaw fixes doors, windows and lights. He's the",
+  "Ms Kim puts a plaster on your knee. She's the",
+  "Ella and Ben sit with me in every lesson. They're my",
+  "Mr Reed blows his whistle on the football field. He's the",
+  "Mrs Hart visits every class on Mondays. She's the",
+  "Miss Rossi plays the piano and we sing. She's the",
 ];
 function P17Vocabulary() {
+  const pg = peopleGeom();
+  const panel = B(cx(7), ce(12), ry(43), ry(105));
   return (
     <BookPage footer={<ThemeFooter n={17} module="A" />}>
-      <Fill b={[0, 0, 1, 0.045]} color="#EAF4FB" />
+      <Fill b={B(0, W, 0, ry(1))} color="#EAF4FB" />
       <ModuleBadge code="1A" />
-      <Tab b={[0.04, 0.03]} label="Vocabulary" />
-      <ExAt b={[0.04, 0.092, 0.4]} n="2" audio="1.02">
+      <Tab x={cx(1)} y={ry(0)} label="Vocabulary" />
+      <ExAt b={B(cx(1), ce(6), ry(UNDER_TAB.one))} n="2" audio="1.02">
         Listen and repeat.
       </ExAt>
-      <Pic b={[0.03, 0.115, 0.95, 0.26]} src={A.peopleArt} />
-      {PEOPLE.map((p, i) => {
-        const top = i < 5;
-        const cw = 0.95 / (top ? 5 : 4);
-        const col = top ? i : i - 5;
+      <Pic b={BOX.people} src={A.peopleArt} name="school staff (cut-outs)" />
+      {PEOPLE.map((p, i) => (
+        <At key={p} b={B(pg.left(i), pg.left(i) + pg.cw, pg.labelY(i))}>
+          <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 11.5, color: SLATE, textAlign: "center" }}>{p}</Text>
+        </At>
+      ))}
+      <ExAt b={B(cx(1), ce(6), ry(42))} n="3">
+        Which person uses it? Write the letters.
+      </ExAt>
+      {A.tiles3.map((tl, i) => {
+        const x = i % 2 ? cx(4) : cx(1);
+        const y = ry(46 + Math.floor(i / 2) * 10);
         return (
-          <At key={p} b={[0.03 + col * cw + (top ? 0 : cw * 0.1), 0.115 + (top ? 0.105 : 0.235), cw * 0.84]}>
-            <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 11.5, color: SLATE, textAlign: "center" }}>{p}</Text>
-          </At>
+          <React.Fragment key={i}>
+            <Pic b={B(x, ce(i % 2 ? 5 : 2), y, y + 20 * MM)} src={tl} r={3} border="#455A64" name="tile (Twemoji)" />
+            <At b={B(ce(i % 2 ? 5 : 2) + 1.5 * MM, ce(i % 2 ? 5 : 2) + 1.5 * MM + 13, y)}>
+              <NumTag n={i + 1} size={13} />
+              <View style={{ width: 13, height: 15, borderWidth: 1, borderColor: "#E57373", backgroundColor: "#fff" }} />
+            </At>
+          </React.Fragment>
         );
       })}
-      <ExAt b={[0.04, 0.392, 0.44]} n="3">
-        Match the pictures with the words in the box.
+      <WordBanner b={B(cx(1), ce(6), ry(89), ry(95))} lines={["A. coach • B. music teacher • C. cook • D. nurse", "E. classmates • F. librarian • G. headteacher • H. caretaker"]} color="#F9C80E" size={9.4} />
+      <Fill b={panel} color="#D9EEF9" r={16} border="#5DA9DD" bw={2} />
+      <ExAt b={B(cx(7) + INSET, ce(12) - INSET, ry(45))} n="4">
+        Read about the people at Hill Park School. Complete with the words in the box.
       </ExAt>
-      {A.tiles3.map((tl, i) => (
-        <React.Fragment key={i}>
-          <Pic b={[0.04 + (i % 2) * 0.225, 0.425 + Math.floor(i / 2) * 0.09, 0.16, 0.08]} src={tl} r={3} border="#455A64" />
-          <At b={[0.205 + (i % 2) * 0.225, 0.43 + Math.floor(i / 2) * 0.09]}>
-            <NumTag n={i + 1} size={13} />
-            <View style={{ width: 13, height: 15, borderWidth: 1, borderColor: "#E57373", backgroundColor: "#fff" }} />
-          </At>
-        </React.Fragment>
-      ))}
-      <WordBanner b={[0.04, 0.79, 0.43, 0.055]} lines={["A. cook • B. headteacher • C. caretaker • D. classmates", "E. coach • F. nurse • G. librarian • H. music teacher"]} color="#F9C80E" size={9.4} tilt={1} />
-      <Fill b={[0.49, 0.4, 0.47, 0.52]} color="#D9EEF9" r={16} border="#5DA9DD" bw={2} />
-      <ExAt b={[0.51, 0.413, 0.44]} n="4">
-        Read and answer the questions with the words in the box.
-      </ExAt>
-      <WordBanner b={[0.52, 0.465, 0.42, 0.048]} lines={["cook • headteacher • caretaker • classmates", "coach • nurse • librarian • music teacher"]} size={9.6} />
-      <At b={[0.52, 0.53, 0.43]}>
+      <WordBanner b={B(cx(7) + INSET, ce(12) - INSET, ry(51), ry(57))} lines={["caretaker • classmates • coach • cook", "headteacher • librarian • music teacher • nurse"]} size={9.6} />
+      <At b={B(cx(7) + INSET, ce(12) - INSET, ry(59))}>
         <Items
-          size={10}
-          gap={3.6}
-          items={RIDDLES.map((r, i) => (
-            <Text key={i} style={t(10)}>
-              {r}
-              {"\n"}
-              {i === 4 ? "Who are we?" : "Who am I?"} {blank(16)}
+          size={9.8}
+          gap={5}
+          items={PEOPLE_TEXT.map((r, i) => (
+            <Text key={i} style={t(9.8)}>
+              {r} {blank(14)}.
             </Text>
           ))}
         />
@@ -1208,16 +1383,16 @@ function P17Vocabulary() {
   );
 }
 
-function GrammarTable({ head, rows, w }: { head: string; rows: string[][]; w: number }) {
+function GrammarTable({ head, rows, w, widths }: { head: string; rows: string[][]; w: number; widths: number[] }) {
   return (
-    <View style={{ width: w, borderWidth: 1, borderColor: "#37474F", marginRight: 6 }}>
+    <View style={{ width: w, borderWidth: 1, borderColor: "#37474F", marginRight: 4 }}>
       <View style={{ backgroundColor: "#4A5470", paddingVertical: 2 }}>
-        <Text style={{ ...t(9.2, 700, "#fff"), textAlign: "center" }}>{head}</Text>
+        <Text style={{ ...t(8.8, 700, "#fff"), textAlign: "center" }}>{head}</Text>
       </View>
       {rows.map((r, i) => (
-        <View key={i} style={{ flexDirection: "row", borderTopWidth: i ? 1 : 0, borderColor: "#90A4AE", backgroundColor: "#fff" }}>
+        <View key={i} style={{ flexDirection: "row", backgroundColor: "#fff" }}>
           {r.map((c, j) => (
-            <Text key={j} style={{ ...t(9), flex: j === r.length - 1 ? 1.4 : 1, textAlign: "center", paddingVertical: 2, borderLeftWidth: j ? 0.6 : 0, borderColor: "#CFD8DC" }}>
+            <Text key={j} style={{ ...t(8.2), lineHeight: 1.2, flex: widths[j], textAlign: "center", paddingVertical: 0.6, borderLeftWidth: j ? 0.6 : 0, borderColor: "#CFD8DC" }}>
               {c}
             </Text>
           ))}
@@ -1226,201 +1401,200 @@ function GrammarTable({ head, rows, w }: { head: string; rows: string[][]; w: nu
     </View>
   );
 }
+const PRON = ["I", "You", "He", "She", "It", "We", "You", "They"];
+const BE = ["am", "are", "is", "is", "is", "are", "are", "are"];
 function P18Grammar() {
-  const tw = 0.172 * W;
+  const tw = 35 * MM;
+  const pc = cells(cx(1), ce(6), 2, 6 * MM);
   return (
     <BookPage bg="#E6F2FB" footer={<ThemeFooter n={18} module="A" />}>
-      <Fill b={[0.06, 0.03, 0.92, 0.95]} color="#ffffff" r={10} />
-      <Tab b={[0.11, 0.05]} label="Grammar" />
-      <At b={[0.3, 0.075, 0.6, 0.03]}>
-        <View style={{ backgroundColor: "#F57C00", height: "100%", borderTopLeftRadius: 12, justifyContent: "center", paddingLeft: 12 }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#fff", marginTop: 2 }}>The verb &quot;to be&quot;</Text>
+      <Fill b={B(cx(1) - INSET, W, ry(-1), ry(LAST_ROW))} color="#ffffff" radii={{ borderTopLeftRadius: 10, borderBottomLeftRadius: 10 }} />
+      <Tab x={cx(1)} y={ry(0)} label="Grammar" />
+      <Fill b={B(cx(5), ce(10), ry(3), ry(7))} color="#F57C00" radii={{ borderTopLeftRadius: 12 }} />
+      <At b={B(cx(5) + INSET, ce(10), ry(3), ry(7))}>
+        <View style={{ height: "100%", justifyContent: "center" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 14, color: "#fff", lineHeight: 1 }}>The verb &quot;to be&quot;</Text>
         </View>
       </At>
-      <Pic b={[0.84, 0.035, 0.13, 0.08]} src={A.faces.f10} fit="contain" />
-      <At b={[0.12, 0.105, 0.86, 0.165]}>
-        <View style={{ height: "100%", borderWidth: 3, borderColor: "#F2C230", borderRadius: 14, padding: 6, flexDirection: "row", backgroundColor: "#FFFDF2" }}>
-          <GrammarTable head="Positive" w={tw} rows={[["I", "am", "ready."], ["You", "are", "ready."], ["He/She/It", "is", "ready."], ["We/You/They", "are", "ready."]]} />
-          <GrammarTable head="Negative" w={tw} rows={[["I", "am not", "late."], ["You", "are not", "late."], ["He/She/It", "is not", "late."], ["We/You/They", "are not", "late."]]} />
-          <GrammarTable head="Questions" w={tw} rows={[["Am", "I", "OK?"], ["Are", "you", "OK?"], ["Is", "he/she/it", "OK?"], ["Are", "we/you/they", "OK?"]]} />
-          <View style={{ width: 0.118 * W, borderWidth: 1, borderColor: "#37474F" }}>
+      <Pic b={B(cx(11), ce(12), ry(-1), ry(8))} src={A.facesK.f10} fit="contain" name="girl (w-family-10)" />
+      <Fill b={B(cx(1), ce(10), ry(9), ry(27))} color="#FFFDF2" border="#F2C230" bw={3} r={14} />
+      <At b={B(cx(1) + INSET, ce(10), ry(9) + INSET)}>
+        <View style={{ flexDirection: "row" }}>
+          <GrammarTable head="Positive" w={tw} widths={[1, 1, 1.4]} rows={PRON.map((p, i) => [p, BE[i], "ready."])} />
+          <GrammarTable head="Negative" w={tw} widths={[1, 1.3, 1.1]} rows={PRON.map((p, i) => [p, `${BE[i]} not`, "late."])} />
+          <GrammarTable head="Questions" w={tw} widths={[1, 1, 1]} rows={PRON.map((p, i) => [BE[i][0].toUpperCase() + BE[i].slice(1), p === "I" ? "I" : p.toLowerCase(), "OK?"])} />
+          <View style={{ width: 24 * MM, borderWidth: 1, borderColor: "#37474F", backgroundColor: "#fff" }}>
             <View style={{ backgroundColor: "#4A5470", paddingVertical: 2 }}>
-              <Text style={{ ...t(9.2, 700, "#fff"), textAlign: "center" }}>Short answers</Text>
+              <Text style={{ ...t(8.8, 700, "#fff"), paddingLeft: 4 }}>Short answers</Text>
             </View>
             {["Yes, I am.", "No, I'm not.", "Yes, she is.", "No, they aren't."].map((s) => (
-              <Text key={s} style={{ ...t(9), paddingLeft: 4, paddingVertical: 3.2, backgroundColor: "#fff" }}>
-                - {s}
+              <Text key={s} style={{ ...t(8.6), paddingLeft: 4, paddingVertical: 4.2 }}>
+                {s}
               </Text>
             ))}
           </View>
         </View>
       </At>
-      <At b={[0.855, 0.15, 0.145, 0.11]}>
-        <View style={{ backgroundColor: GOLD, borderTopLeftRadius: 12, borderBottomLeftRadius: 12, padding: 5, height: "100%" }}>
-          <Text style={{ ...t(9.4, 700, "#fff"), textAlign: "center", backgroundColor: "#F9A825", borderRadius: 4, marginBottom: 2 }}>Short forms</Text>
-          {["I am = I'm", "You are = You're", "He is = He's", "It is not = It isn't"].map((s) => (
-            <Text key={s} style={t(8.6, 700, SLATE)}>
+      <Fill b={B(cx(11), W, ry(12), ry(25))} color={GOLD} radii={{ borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }} />
+      <At b={B(cx(11), ce(12), ry(12))}>
+        <View style={{ padding: 4 }}>
+          <Text style={{ ...t(9, 700, "#fff"), backgroundColor: "#F9A825", borderRadius: 4, marginBottom: 2, paddingLeft: 2 }}>Short forms</Text>
+          {["I'm = I am", "you're = you are", "he's = he is", "isn't = is not"].map((s) => (
+            <Text key={s} style={{ ...t(8, 700, SLATE), paddingLeft: 2 }}>
               {s}
             </Text>
           ))}
         </View>
       </At>
-      <ExAt b={[0.13, 0.3, 0.38]} n="5">
-        Look at the pictures and complete the sentences with the correct form of the verb <Text style={{ color: BLUE }}>&quot;to be&quot;</Text>.
+      <ExAt b={B(cx(1), ce(6), ry(31))} n="5">
+        What are they like? Look and write the correct form of <Text style={{ color: BLUE }}>&quot;to be&quot;</Text>.
       </ExAt>
       {(
         [
-          [A.faces.f1, <>Grandpa Joe {ans("is")} old.</>],
-          [A.boys, <>Tom and Sam {blank(6)} at home.</>],
-          [A.faces.f8, <>Ella {blank(6)} sad.</>],
-          [art.img("people-3"), <>Mr Reed {blank(6)} a coach.</>],
-          [A.cast[0], <>The bus {blank(6)} red.</>],
-          [A.park, <>We {blank(6)} in the park.</>],
-        ] as [Buffer, React.ReactNode][]
-      ).map(([src, cap], i) => (
-        <React.Fragment key={i}>
-          <Pic b={[0.15 + (i % 2) * 0.19, 0.355 + Math.floor(i / 2) * 0.115, 0.17, 0.085]} src={src} r={3} fit={i === 4 || i === 3 ? "contain" : "cover"} border="#B0BEC5" />
-          <At b={[0.148 + (i % 2) * 0.19, 0.353 + Math.floor(i / 2) * 0.115]}>
-            <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: ["#E53935", "#43A047", "#5E35B1", "#1E88E5", "#FB8C00", "#00897B"][i], alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "#fff" }}>
-              <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 10, color: "#fff" }}>{i + 1}</Text>
-            </View>
-          </At>
-          <At b={[0.14 + (i % 2) * 0.19, 0.443 + Math.floor(i / 2) * 0.115, 0.19]}>
-            <Text style={{ ...t(9.6), textAlign: "center" }}>{cap}</Text>
-          </At>
-        </React.Fragment>
-      ))}
-      <At b={[0.12, 0.7, 0.4, 0.27]}>
-        <View style={{ height: "100%", backgroundColor: "#FCE4EC", borderRadius: 30 }} />
-      </At>
-      <At b={[0.15, 0.725, 0.34, 0.235]}>
-        <View style={{ height: "100%", backgroundColor: "#fff", borderWidth: 1, borderColor: "#E0E0E0", padding: 8 }}>
-          <Ex n="6">
-            Complete the sentences with the correct form of the verb <Text style={{ color: BLUE }}>&quot;to be&quot;</Text>.
-          </Ex>
+          [A.faces.f1, <>Grandpa Joe {ans("is")} happy today.</>, false],
+          [A.boys, <>Ben and Kofi {blank(6)} good at video games.</>, false],
+          [A.faces.f8, <>Ella {blank(6)} nine years old.</>, false],
+          [A.people[2], <>Mr Reed {blank(6)} our PE teacher.</>, true],
+          [A.cast[0], <>Star-Bus {blank(6)} purple.</>, true],
+          [A.park, <>We {blank(6)} in the park with our friends.</>, false],
+        ] as [Buffer, React.ReactNode, boolean][]
+      ).map(([src, cap, cut], i) => {
+        const x = pc.at(i % 2);
+        const y = ry(37 + Math.floor(i / 2) * 14);
+        return (
+          <React.Fragment key={i}>
+            <Pic b={B(x, x + pc.w, y, y + 9 * 2.5 * MM)} src={src} r={3} fit={cut ? "contain" : "cover"} subject={!cut} border="#B0BEC5" ground={cut ? "#ffffff" : undefined} name={`ex5 picture ${i + 1}`} />
+            <At b={B(x + 1 * MM, x + 1 * MM + 16, y + 1 * MM)}>
+              <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: ["#E53935", "#43A047", "#5E35B1", "#1E88E5", "#FB8C00", "#00897B"][i], alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "#fff" }}>
+                <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 10, color: "#fff" }}>{i + 1}</Text>
+              </View>
+            </At>
+            <At b={B(x, x + pc.w, y + 9 * 2.5 * MM + 1 * MM)}>
+              <Text style={{ ...t(9.6), textAlign: "center" }}>{cap}</Text>
+            </At>
+          </React.Fragment>
+        );
+      })}
+      <Fill b={B(cx(1), ce(6), ry(80), ry(LAST_ROW))} color="#FCE4EC" r={30} />
+      <Fill b={B(cx(1) + INSET, ce(6) - INSET, ry(82), ry(106))} color="#ffffff" border="#E0E0E0" bw={1} />
+      <At b={B(cx(1) + INSET, ce(6) - INSET, ry(82))}>
+        <View style={{ padding: INSET }}>
+          <Ex n="6">Fill in the gaps with am, is or are.</Ex>
           <View style={{ height: 5 }} />
-          <Items
-            size={10.4}
-            gap={3.4}
-            items={[<>He {ans("is")} from Canada.</>, `They ${blank(6)} my friends.`, `I ${blank(6)} eleven years old.`, `${blank(6)} you cold?`, `My mum ${blank(6)} a doctor.`, `Our classroom ${blank(6)} on the first floor.`, `The Eiffel Tower ${blank(6)} in Paris.`]}
-          />
+          <Items size={10.2} gap={3.2} items={[<>My dog {ans("is")} black and white.</>, `Kofi and I ${blank(6)} in the school band.`, `${blank(6)} your sister at home?`, `Today ${blank(6)} Monday.`, `You ${blank(6)} late again, Theo!`, `The shoes ${blank(6)} under the bed.`, `I ${blank(6)} not hungry, thank you.`]} />
         </View>
       </At>
-      <ExAt b={[0.54, 0.3, 0.42]} n="7">
-        Complete the text with <Text style={{ color: BLUE }}>am, is, are</Text>.
+      <ExAt b={B(cx(7), ce(12), ry(31))} n="7">
+        Read Kofi&apos;s text and write <Text style={{ color: BLUE }}>am, is</Text> or <Text style={{ color: BLUE }}>are</Text>.
       </ExAt>
-      <Pic b={[0.53, 0.53, 0.43, 0.2]} src={A.theme1} r={4} pos="50% 45%" />
-      <At b={[0.52, 0.335, 0.45, 0.215]}>
-        <View style={{ height: "100%", backgroundColor: "#F1F8E9", borderRadius: 120, borderWidth: 2, borderColor: "#C5E1A5", paddingHorizontal: 22, paddingVertical: 12, justifyContent: "center" }}>
-          <Text style={{ ...t(10.2), textAlign: "center", lineHeight: 1.45 }}>
-            Hi! My name ¹{ans("is")} Leo. I ² {blank(5)} eleven years old and I ³ {blank(5)} in Year 6. My school ⁴ {blank(5)} Hill Park School. My class ⁵ {blank(5)} 6C. My favourite subjects ⁶ {blank(5)} Art and PE. On Mondays, my Art lesson ⁷ {blank(5)} at 10:15. Our teacher ⁸ {blank(5)} Mrs Grant. She ⁹ {blank(5)} very kind. We ¹⁰ {blank(5)} a happy class!
+      <Fill b={B(cx(7), ce(12), ry(36), ry(63))} color="#F1F8E9" r={120} border="#C5E1A5" bw={2} />
+      <At b={B(cx(7), ce(12), ry(36), ry(63))}>
+        <View style={{ height: "100%", paddingHorizontal: 22, justifyContent: "center" }}>
+          <Text style={{ ...t(10), textAlign: "center", lineHeight: 1.42 }}>
+            Hi! I&apos;m Kofi. This ¹{ans("is")} my school, Hill Park School. It ² {blank(5)} in the centre of Brightwater. The building ³ {blank(5)} yellow and red, and the clock ⁴ {blank(5)} very big. The classrooms ⁵ {blank(5)} bright and the garden ⁶ {blank(5)} beautiful. I ⁷ {blank(5)} in Class 6C with Ella and Ben. They ⁸ {blank(5)} really funny. Our teacher, Mr Okafor, ⁹ {blank(5)} very kind. We ¹⁰ {blank(5)} a great team!
           </Text>
         </View>
       </At>
-      <ExAt b={[0.54, 0.75, 0.42]} n="8">
-        Make questions and answer them.
+      <Pic b={B(cx(7), ce(12), ry(65), ry(84))} src={A.theme1} r={4} ay={0.45} name="theme 1 school" />
+      <ExAt b={B(cx(7), ce(12), ry(86))} n="8">
+        Ask and answer about Kofi&apos;s school.
       </ExAt>
-      <At b={[0.555, 0.78, 0.42]}>
+      <At b={B(cx(7), ce(12), ry(89))}>
         <Items
           size={10}
           gap={2.6}
           items={[
             <Text key="a" style={t(10)}>
-              Leo / ten years old? <Text style={hand(10, BLUE)}>Is Leo ten years old? - No, he isn&apos;t. He&apos;s eleven.</Text>
+              the school / in Brightwater? <Text style={hand(10, BLUE)}>Is the school in Brightwater? - Yes, it is.</Text>
             </Text>,
-            "he / in Year 5?",
-            "his school / Green Park School?",
-            "his favourite subjects / Maths and Music?",
-            "his teacher / Mrs Grant?",
+            "the building / blue and white?",
+            "the classrooms / dark?",
+            "Kofi / in Class 6B?",
+            "Mr Okafor / kind?",
           ]}
         />
       </At>
-      <ExAt b={[0.54, 0.915, 0.42]} n="9">
-        Write about your school. Use <Text style={{ color: BLUE }}>Ex. 7</Text> as a model.
+      <ExAt b={B(cx(7), ce(12), ry(102))} n="9">
+        Now describe your school in five sentences. Look at Kofi&apos;s text for ideas.
       </ExAt>
     </BookPage>
   );
 }
 
 function P19Speaking() {
+  const form = B(0, ce(4), ry(68), ry(103));
   return (
     <BookPage footer={<ThemeFooter n={19} module="A" />}>
-      <Fill b={[0, 0, 0.012, 1]} color="#7E57C2" />
-      <Fill b={[0.012, 0.92, 0.36, 0.05]} color="#C77DD9" />
-      <Tab b={[0.06, 0.03]} label="Speaking" />
-      <ExAt b={[0.06, 0.09, 0.42]} n="10">
-        Work with a partner. Ask and answer questions as in the example.
+      <Fill b={B(0, 3 * MM, 0, H)} color="#7E57C2" />
+      <Fill b={B(0, ce(5), ry(105), ry(LAST_ROW))} color="#C77DD9" />
+      <Tab x={cx(1)} y={ry(0)} label="Speaking" />
+      <ExAt b={B(cx(1), ce(6), ry(UNDER_TAB.one))} n="10">
+        Ask your partner about clubs. Look at the example.
       </ExAt>
-      <Pic b={[0.05, 0.14, 0.42, 0.36]} src={A.park} r={14} pos="35% 50%" />
-      <Bubble b={[0.1, 0.2, 0.22]} color="#F06292" border="#fff" textColor="#fff" size={11} tail="bl" r={3}>
-        {"What's your favourite\nday, Sam?"}
+      <Pic b={B(cx(1), ce(6), ry(12), ry(54))} src={A.park} r={14} ax={0.35} name="park (1c-park)" />
+      <Bubble b={B(cx(2), ce(5), ry(17))} color="#F06292" border="#fff" textColor="#fff" size={11} tail="bl" r={3}>
+        {"Are you in the school choir, Sam?"}
       </Bubble>
-      <Bubble b={[0.12, 0.27, 0.15]} color="#F06292" border="#fff" textColor="#fff" size={11} tail="bl" r={3}>
-        Saturday!
+      <Bubble b={B(cx(4), ce(6), ry(24))} color="#64B5F6" border="#fff" textColor="#fff" size={11} tail="br" r={3}>
+        {"Yes, I am! And you?"}
       </Bubble>
-      <Bubble b={[0.28, 0.26, 0.18]} color="#64B5F6" border="#fff" textColor="#fff" size={11} tail="br" r={3}>
-        {"Friday. What\nabout you?"}
+      <Bubble b={B(cx(2), ce(4), ry(31))} color="#F06292" border="#fff" textColor="#fff" size={11} tail="bl" r={3}>
+        {"No, I'm in the chess club."}
       </Bubble>
-      <Tab b={[0.06, 0.52]} label="Listening" faded />
-      <At b={[0.06, 0.575, 0.42]} style={{ opacity: 0.55 }}>
-        <Ex n="11" audio="1.03">
-          Listen and complete the form.
-        </Ex>
-      </At>
-      <At b={[0.012, 0.61, 0.33, 0.3]}>
-        <View style={{ height: "100%", backgroundColor: "#fff", borderWidth: 1, borderColor: "#CFD8DC", paddingLeft: 12, paddingTop: 8, transform: "rotate(-1deg)" }}>
-          {["Name", "Surname", "Age", "Class", "Favourite subject", "Favourite colour", "Favourite day", "Best friend"].map((f) => (
-            <View key={f} style={{ flexDirection: "row", alignItems: "flex-end", marginBottom: 7.5 }}>
-              <Text style={hand(10.5, "#37474F")}>{f}:</Text>
-              <View style={{ flex: 1, borderBottomWidth: 0.8, borderColor: "#455A64", marginLeft: 4, marginRight: 10, height: 10 }} />
-            </View>
-          ))}
-        </View>
-      </At>
-      <Fill b={[0.32, 0.6, 0.06, 0.32]} color="#90CAF9" />
-      <Tab b={[0.5, 0.03]} label={"Everyday\nDialogues"} />
-      <At b={[0.56, 0.088]}>
-        <Title text="Greetings" size={18} fill="#EC407A" stroke="#ffffff" />
-      </At>
-      <ExAt b={[0.5, 0.128, 0.45]} n="12" audio="1.04">
-        Listen to the dialogue and act it out with your partner.
+      <Tab x={cx(1)} y={ry(57)} label="Listening" />
+      <ExAt b={B(cx(1), ce(6), ry(63))} n="11" audio="1.03">
+        Listen and complete Mia&apos;s club card.
       </ExAt>
-      <At b={[0.51, 0.175, 0.37]}>
-        <View style={{ borderWidth: 4, borderColor: "#F06292", backgroundColor: "#fff", padding: 8, transform: "rotate(1deg)" }}>
-          {["Hi, I'm Sara. What's your name?", "I'm Daniel. Nice to meet you, Sara.", "Nice to meet you, too. How are you?", "Fine, thanks. And you?"].map((s) => (
+      <Fill b={form} color="#ffffff" border="#CFD8DC" bw={1} />
+      <At b={B(cx(1), ce(4), ry(68) + INSET)}>
+        {["Name", "Class", "Age", "Club", "Day", "Time", "Room", "Teacher"].map((f) => (
+          <View key={f} style={{ flexDirection: "row", alignItems: "flex-end", marginBottom: 7.5 }}>
+            <Text style={hand(10.5, "#37474F")}>{f}:</Text>
+            <View style={{ flex: 1, borderBottomWidth: 0.8, borderColor: "#455A64", marginLeft: 4, height: 10 }} />
+          </View>
+        ))}
+      </At>
+      <Fill b={B(cx(5), ce(5), ry(66), ry(105))} color="#90CAF9" />
+      <Tab x={cx(7)} y={ry(0)} label={"Everyday\nDialogues"} />
+      <At b={B(cx(8), ce(12), ry(UNDER_TAB.two))}>
+        <Title text="Meeting people" size={18} fill="#EC407A" stroke="#ffffff" />
+      </At>
+      <ExAt b={B(cx(7), ce(12), ry(12))} n="12" audio="1.04">
+        Listen. Then introduce a friend to your partner.
+      </ExAt>
+      <Fill b={B(cx(7), ce(11), ry(18), ry(29))} color="#ffffff" border="#F06292" bw={4} />
+      <At b={B(cx(7), ce(11), ry(18), ry(29))}>
+        <View style={{ height: "100%", justifyContent: "center", paddingHorizontal: INSET }}>
+          {["Ana, this is my cousin Leo.", "Hi, Leo! Nice to meet you.", "Nice to meet you too, Ana.", "Leo is in our class now!"].map((s) => (
             <Text key={s} style={{ ...t(10, 700), lineHeight: 1.45 }}>
               - {s}
             </Text>
           ))}
         </View>
       </At>
-      <At b={[0.62, 0.32, 0.38, 0.33]}>
-        <Svg width={0.38 * W} height={0.33 * H}>
-          <Polygon points={`${0.05 * W},0 ${0.38 * W},${0.06 * H} ${0.38 * W},${0.3 * H} ${0.2 * W},${0.33 * H} ${0.1 * W},${0.14 * H}`} fill="#F3DDB8" />
-        </Svg>
-      </At>
-      <Tab b={[0.5, 0.3]} label="Listening" />
-      <ExAt b={[0.51, 0.36, 0.45]} n="13" audio="1.05">
-        Listen and write True (T) or False (F).
+      <Decor b={B(ce(8), W, ry(32), ry(72))} fill="#F3DDB8" d={(X, Y, w, h) => `M${X(w * 0.13)} ${Y(0)} L${X(w)} ${Y(h * 0.18)} L${X(w)} ${Y(h * 0.91)} L${X(w * 0.53)} ${Y(h)} L${X(w * 0.26)} ${Y(h * 0.42)} Z`} />
+      <Tab x={cx(7)} y={ry(31)} label="Listening" />
+      <ExAt b={B(cx(7), ce(12), ry(37))} n="13" audio="1.05">
+        Listen to Ella. Are the sentences true (T) or false (F)?
       </ExAt>
-      <At b={[0.51, 0.415, 0.3]}>
-        {["Ella is in Year 6.", "It's Monday today.", "Art is on Wednesdays.", "Ella's favourite subject is Music.", "Maths is in the afternoon.", "Ella's best friend is Rosa."].map((s, i) => (
+      <At b={B(cx(7), ce(10), ry(43))}>
+        {["Ella's class is at the zoo.", "The bus is late.", "Ella's teacher is Mr Diaz.", "Ella loves the giraffes.", "Ben is hungry.", "It's cold and windy."].map((s, i) => (
           <View key={s} style={{ flexDirection: "row", marginBottom: 8, alignItems: "flex-start" }}>
             <Text style={{ ...t(10.2, 700), width: 12 }}>{i + 1}</Text>
-            <Text style={{ ...t(10.2), marginRight: 6 }}>{s}</Text>
+            <Text style={{ ...t(10.2), flex: 1 }}>{s}</Text>
             <View style={{ width: 13, height: 13, borderWidth: 1.4, borderColor: "#F9A825", borderRadius: 3, backgroundColor: "#fff" }} />
           </View>
         ))}
       </At>
-      <Pic b={[0.8, 0.37, 0.2, 0.25]} src={art.img("people-5")} fit="contain" />
-      <Tab b={[0.5, 0.645]} label="Writing" />
-      <ExAt b={[0.51, 0.705, 0.45]} n="14">
-        Read Sophie&apos;s email. Then write a similar one about you.
+      <Pic b={B(cx(11), ce(12), ry(39), ry(68))} src={A.people[4]} fit="contain" name="classmates (people-5)" />
+      <Tab x={cx(7)} y={ry(72)} label="Writing" />
+      <ExAt b={B(cx(7), ce(12), ry(78))} n="14">
+        Read Sophie&apos;s email. Then write back to her about your class.
       </ExAt>
-      <Pic b={[0.5, 0.74, 0.44, 0.215]} src={A.email} />
-      <At b={[0.64, 0.772, 0.285]}>
-        <Text style={{ fontFamily: "Andika", fontSize: 10.4, color: "#4A148C", lineHeight: 1.36 }}>
-          Hi! My name is Sophie. I go to Bay View School. I&apos;m 11 years old. My favourite colour is blue and my favourite teacher is Mrs Lee. My best friends are Mia and Rosa. I&apos;m really happy today. Write soon!
+      <Pic b={BOX.email} src={A.email} name="e-mail window (drawn)" />
+      <At b={B(cx(9), ce(12) - INSET, ry(84) + 9 * MM)}>
+        <Text style={{ fontFamily: "Andika", fontSize: 10, color: "#4A148C", lineHeight: 1.36 }}>
+          Hi Leo! I&apos;m in a new class this year - 6B! My classroom is on the second floor and it&apos;s very sunny. My new teacher is Mrs Lee. She&apos;s really nice. Ella and Rosa are in my class too! Are you happy at your new school? Love, Sophie
         </Text>
       </At>
     </BookPage>
@@ -1429,73 +1603,65 @@ function P19Speaking() {
 
 const ROUTINES = ["hand in your homework", "line up", "pack your bag", "have lunch", "tidy your desk", "read the notice board", "wash your hands", "hang up your coat"];
 function P20ModuleB() {
+  const rc = cells(cx(1), ce(12), 4, 6 * MM);
   return (
     <BookPage bg="#EFE6F7" footer={<ThemeFooter n={20} module="B" />}>
-      <Fill b={[0.07, 0.015, 0.88, 0.965]} color="#ffffff" />
-      <At b={[0.62, 0.03, 0.38, 0.3]}>
-        <Svg width={0.38 * W} height={0.3 * H}>
-          <Path d={`M${0.1 * W} 0 H${0.38 * W} V${0.3 * H} Q${0.15 * W} ${0.25 * H} ${0.1 * W} 0 Z`} fill="#DCEBF7" />
-        </Svg>
-      </At>
-      <Pic b={[0.76, 0.03, 0.22, 0.19]} src={A.huggi} fit="contain" />
+      <Fill b={B(cx(1) - INSET, ce(12) + INSET, 0, ry(LAST_ROW))} color="#ffffff" />
+      <Decor b={B(ce(8), W, ry(-1), ry(31))} fill="#DCEBF7" d={(X, Y, w, h) => `M${X(w * 0.26)} ${Y(0)} H${X(w)} V${Y(h)} Q${X(w * 0.4)} ${Y(h * 0.83)} ${X(w * 0.26)} ${Y(0)} Z`} />
+      <Pic b={B(cx(10), ce(12), ry(3), ry(23))} src={A.cast[3]} fit="contain" name="K-77 (cast)" />
       <ModuleBadge code="1B" />
-      <Tab b={[0.13, 0.05]} label="Vocabulary" />
-      <ExAt b={[0.13, 0.11, 0.62]} n="1">
-        Robo is a new robot at our school. It is learning English. Can you help it?
+      <Tab x={cx(1)} y={ry(0)} label="Vocabulary" />
+      <ExAt b={B(cx(1), ce(9), ry(UNDER_TAB.one))} n="1">
+        What happens in a school day? Look at the pictures and write the phrases from the box.
       </ExAt>
-      <WordBanner b={[0.15, 0.14, 0.58, 0.05]} lines={["hand in your homework • line up • pack your bag • have lunch", "tidy your desk • read the notice board • wash your hands • hang up your coat"]} color="#D6E9F8" size={9.4} tilt={0.5} />
-      <At b={[0.15, 0.14, 0.58, 0.05]}>
-        <View style={{ height: "100%", alignItems: "center", justifyContent: "center", transform: "rotate(0.5deg)" }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 9.4, color: SLATE, textAlign: "center", lineHeight: 1.15 }}>{"hand in your homework • line up • pack your bag • have lunch\ntidy your desk • read the notice board • wash your hands • hang up your coat"}</Text>
-        </View>
-      </At>
+      <WordBanner b={B(cx(1), ce(9), ry(13), ry(19))} lines={["hand in your homework • line up • pack your bag • have lunch", "tidy your desk • read the notice board • wash your hands • hang up your coat"]} color="#D6E9F8" size={9.4} textColor={SLATE} />
       {A.routines.map((r, i) => {
-        const x = 0.15 + (i % 4) * 0.205;
-        const y = 0.21 + Math.floor(i / 4) * 0.165;
+        const x = rc.at(i % 4);
+        const y = ry(21 + Math.floor(i / 4) * 19);
         return (
           <React.Fragment key={i}>
-            <At b={[x, y, 0.19, 0.155]}>
-              <View style={{ height: "100%", borderWidth: 2.5, borderColor: "#DCE775", borderRadius: 10, backgroundColor: "#fff" }} />
-            </At>
-            <Pic b={[x + 0.01, y + 0.006, 0.17, 0.11]} src={r} r={4} />
-            <At b={[x + 0.012, y + 0.01]}>
+            <Fill b={B(x, x + rc.w, y, y + 18 * 2.5 * MM)} color="#ffffff" border="#DCE775" bw={2.5} r={10} />
+            <Pic b={B(x + INSET, x + rc.w - INSET, y + INSET, y + INSET + 11 * 2.5 * MM)} src={r} fit="cover" subject r={4} ground="#ffffff" name={`routine ${i + 1}`} />
+            <At b={B(x + INSET + 1 * MM, x + INSET + 1 * MM + 14, y + INSET + 1 * MM)}>
               <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: "#E53935", alignItems: "center", justifyContent: "center", borderWidth: 1.2, borderColor: "#fff" }}>
                 <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 8.5, color: "#fff" }}>{i + 1}</Text>
               </View>
             </At>
-            <Fill b={[x + 0.015, y + 0.14, 0.16, 0.0015]} color="#455A64" />
+            <Fill b={B(x + INSET, x + rc.w - INSET, y + 16 * 2.5 * MM, y + 16 * 2.5 * MM + 0.5 * MM)} color="#455A64" />
           </React.Fragment>
         );
       })}
-      <ExAt b={[0.13, 0.555, 0.38]} n="2">
+      <ExAt b={B(cx(1), ce(6), ry(62))} n="2">
         Complete the sentences with the phrases in the box.
       </ExAt>
-      <At b={[0.15, 0.59, 0.35, 0.075]}>
-        <View style={{ height: "100%", backgroundColor: "#CFE5F5", borderWidth: 1, borderColor: "#90A4AE", justifyContent: "center", transform: "rotate(-0.5deg)" }}>
+      <Fill b={B(cx(1), ce(6), ry(66), ry(74))} color="#CFE5F5" border="#90A4AE" bw={1} />
+      <At b={B(cx(1), ce(6), ry(66), ry(74))}>
+        <View style={{ height: "100%", justifyContent: "center" }}>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 9.6, color: SLATE, textAlign: "center", lineHeight: 1.18 }}>{"hand in your homework • line up\npack your bag • have lunch • tidy your desk\nread the notice board • wash your hands\nhang up your coat"}</Text>
         </View>
       </At>
-      <At b={[0.14, 0.68, 0.38]}>
+      <At b={B(cx(1), ce(6), ry(76))}>
         <Items
-          size={9.8}
-          gap={5.5}
+          size={9.6}
+          gap={3}
           items={[
-            `It's 12:30. Let's go to the canteen and ${blank(12)}.`,
-            `Before lunch, you must ${blank(12)} with soap.`,
-            `It's the end of the day. Please ${blank(12)} and go home.`,
-            `The bell is ringing! Please ${blank(12)} at the door.`,
-            `Your desk is a mess! Please ${blank(12)}.`,
-            `Come in and ${blank(12)} on the hook.`,
-            `There is news about the trip. Go and ${blank(12)}.`,
-            `It's Monday. Please ${blank(12)} on my desk.`,
+            `Your coat is on the floor, Ben! Please ${blank(12)}.`,
+            `We ${blank(12)} in the canteen at one o'clock.`,
+            `Mr Okafor wants our homework. Let's ${blank(12)} now.`,
+            `What's on today? Let's ${blank(12)}.`,
+            `The bell! Please ${blank(12)} by the door, everyone.`,
+            `There are crayons everywhere! ${blank(12)}, please.`,
+            `You've got paint on your fingers. ${blank(12)} before lunch.`,
+            `It's half past three. ${blank(12)} - it's time to go home!`,
           ]}
         />
       </At>
-      <ExAt b={[0.55, 0.555, 0.4]} n="3">
-        Match the phrases with the sentences.
+      <ExAt b={B(cx(7), ce(12), ry(62))} n="3">
+        What do they do? Write the letters.
       </ExAt>
-      <At b={[0.56, 0.59, 0.39, 0.075]}>
-        <View style={{ height: "100%", backgroundColor: "#CFE5F5", borderWidth: 1, borderColor: "#90A4AE", flexDirection: "row", flexWrap: "wrap", padding: 4, paddingLeft: 10 }}>
+      <Fill b={B(cx(7), ce(12), ry(66), ry(74))} color="#CFE5F5" border="#90A4AE" bw={1} />
+      <At b={B(cx(7) + INSET, ce(12), ry(66) + 1.5 * MM)}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
           {ROUTINES.map((r, i) => (
             <Text key={r} style={{ width: "50%", fontFamily: "Baloo", fontWeight: 700, fontSize: 8.4, color: SLATE, lineHeight: 1.2 }}>
               <Text style={{ color: "#E53935" }}>{"abcdefgh"[i]}.</Text> {r}
@@ -1503,20 +1669,20 @@ function P20ModuleB() {
           ))}
         </View>
       </At>
-      <At b={[0.56, 0.68, 0.38]}>
+      <At b={B(cx(7), ce(12), ry(76))}>
         {[
-          "It's raining and your coat is wet.",
-          "You are hungry.",
-          "Your hands are dirty after the Art lesson.",
-          "Your homework is ready.",
-          "There are pens and paper all over your desk.",
-          "You want to know about the school trip.",
-          "It's time to go out to the playground.",
-          "The lessons are finished for today.",
+          "Maya's fingers are blue from the paint.",
+          "Theo's homework is finished.",
+          "Zara is in the cloakroom with her jacket in her hands.",
+          "It's one o'clock and Ben is very hungry.",
+          "There's a new poster about the school concert.",
+          "Ella's books and crayons are all over her desk.",
+          "The teacher says: \"Time for PE! Stand at the door.\"",
+          "School is over. Theo's books are on his desk.",
         ].map((s, i) => (
-          <View key={s} style={{ flexDirection: "row", marginBottom: 7.5 }}>
-            <Text style={{ ...t(9.8, 700), width: 11 }}>{i + 1}</Text>
-            <Text style={{ ...t(9.8), flex: 1 }}>{s}</Text>
+          <View key={s} style={{ flexDirection: "row", marginBottom: 5 }}>
+            <Text style={{ ...t(9.6, 700), width: 11 }}>{i + 1}</Text>
+            <Text style={{ ...t(9.6), flex: 1, paddingRight: 4 }}>{s}</Text>
             <View style={{ width: 11, height: 12, borderWidth: 1, borderColor: "#455A64", borderRadius: 2 }} />
           </View>
         ))}
@@ -1525,56 +1691,64 @@ function P20ModuleB() {
   );
 }
 
-const BUBBLES5 = ["am Lucy.", "are my friend.", "is my brother.", "is my sister.", "is my cat.", "are in Year 6.", "are from Spain.", "are twins!"];
+const BUBBLES5 = ["am Nina.", "are my friend.", "is my brother.", "is my sister.", "is my cat.", "are in Year 6.", "are from Spain.", "are twins!"];
 function P21Pronouns() {
+  const fc = cells(cx(1), ce(6), 2, 6 * MM);
+  const pc = cells(cx(7), ce(12), 2, 6 * MM);
+  const PIC6: { src: Buffer; fit: "cover" | "contain"; row: number; col: number; name: string }[] = [
+    { src: A.faces.f4, fit: "cover", row: 0, col: 0, name: "girl (w-family-4)" },
+    { src: A.people[6], fit: "contain", row: 0, col: 1, name: "headteacher (people-7)" },
+    { src: A.familyHome, fit: "cover", row: 1, col: 0, name: "family at home (1b-scene)" },
+    { src: A.cast[0], fit: "contain", row: 1, col: 1, name: "Star-Bus (cast)" },
+  ];
   return (
     <BookPage bg="#F1EAF8" footer={<ThemeFooter n={21} module="B" />}>
-      <Fill b={[0.04, 0.015, 0.92, 0.965]} color="#ffffff" />
-      <Tab b={[0.08, 0.03]} label="Grammar" />
-      <Pic b={[0.33, 0.035, 0.12, 0.075]} src={A.faces.f9} fit="contain" />
-      <At b={[0.08, 0.1, 0.36, 0.26]}>
-        <View style={{ height: "100%", borderWidth: 3, borderColor: "#F2C230", borderRadius: 18, backgroundColor: "#FFFDF0", padding: 10, paddingTop: 0 }}>
-          <View style={{ backgroundColor: "#F6B913", marginLeft: -10, marginRight: 30, paddingVertical: 4, paddingLeft: 12, borderTopLeftRadius: 14 }}>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 13.5, color: "#fff", lineHeight: 1.1 }}>{"Subject pronouns\nPossessive adjectives"}</Text>
-          </View>
-          <View style={{ flexDirection: "row", marginTop: 8, justifyContent: "center" }}>
-            {[
-              ["Subject pronouns", ["I", "You", "He", "She", "It", "We", "You", "They"]],
-              ["Possessive adjectives", ["my", "your", "his", "her", "its", "our", "your", "their"]],
-            ].map(([h, xs]) => (
-              <View key={h as string} style={{ width: 0.15 * W, borderWidth: 1, borderColor: "#37474F", marginHorizontal: 3 }}>
-                <Text style={{ ...t(8.6, 700, "#fff"), backgroundColor: "#4A5470", textAlign: "center", paddingVertical: 2 }}>{h as string}</Text>
-                {(xs as string[]).map((x, i) => (
-                  <Text key={i} style={{ ...t(9.6), textAlign: "center", lineHeight: 1.32 }}>
-                    {x}
-                  </Text>
-                ))}
-              </View>
-            ))}
-          </View>
+      <Fill b={B(cx(1) - INSET, ce(12) + INSET, 0, ry(LAST_ROW))} color="#ffffff" />
+      <Tab x={cx(1)} y={ry(0)} label="Grammar" />
+      <Pic b={B(cx(5), ce(6), ry(-1), ry(7))} src={A.facesK.f9} fit="contain" name="boy (w-family-9)" />
+      <Fill b={B(cx(1), ce(6), ry(7), ry(34))} color="#FFFDF0" border="#F2C230" bw={3} r={18} />
+      <Fill b={B(cx(1), ce(5), ry(7), ry(13))} color="#F6B913" radii={{ borderTopLeftRadius: 18 }} />
+      <At b={B(cx(1) + INSET, ce(5), ry(7), ry(13))}>
+        <View style={{ height: "100%", justifyContent: "center" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 13.5, color: "#fff", lineHeight: 1.1 }}>{"Subject pronouns\nPossessive adjectives"}</Text>
         </View>
       </At>
-      <ExAt b={[0.08, 0.39, 0.38]} n="4">
-        Write the correct <Text style={{ color: BLUE }}>subject pronouns</Text>.
+      {[
+            ["Subject pronouns", ["I", "You", "He", "She", "It", "We", "You", "They"]],
+            ["Possessive adjectives", ["my", "your", "his", "her", "its", "our", "your", "their"]],
+      ].map(([h, xs], k) => (
+        <At key={h as string} b={B((k ? cx(4) : cx(1)) + INSET, (k ? cx(4) : cx(1)) + INSET + 31 * MM, ry(14))}>
+          <Text style={{ ...t(8.2, 700, "#fff"), backgroundColor: "#4A5470", textAlign: "center", paddingVertical: 2 }}>{h as string}</Text>
+          <View style={{ borderWidth: 1, borderTopWidth: 0, borderColor: "#37474F", backgroundColor: "#fff" }}>
+            {(xs as string[]).map((x, i) => (
+              <Text key={i} style={{ ...t(9.6), textAlign: "center", lineHeight: 1.32 }}>
+                {x}
+              </Text>
+            ))}
+          </View>
+        </At>
+      ))}
+      <ExAt b={B(cx(1), ce(6), ry(42))} n="4">
+        Which pronoun? Write <Text style={{ color: BLUE }}>he, she, it, we, you</Text> or <Text style={{ color: BLUE }}>they</Text>.
       </ExAt>
-      <At b={[0.09, 0.44, 0.38]}>
-        <Items cols={2} size={10.2} gap={9} items={[<>Tom and Ann {ans("they")}</>, `You and I ${blank(6)}`, `A pencil ${blank(6)}`, `Dogs ${blank(6)}`, `Books ${blank(6)}`, `A cat ${blank(6)}`, `Mrs Hall ${blank(6)}`, `Mr Jones ${blank(6)}`]} />
+      <At b={B(cx(1), ce(6), ry(48))}>
+        <Items cols={2} size={10} gap={9} items={[<>my grandma {ans("she")}</>, `Theo and I ${blank(5)}`, `the ruler ${blank(5)}`, `my parents ${blank(5)}`, `Zara ${blank(5)}`, `the windows ${blank(5)}`, `you and Maya ${blank(5)}`, `Mr Okafor ${blank(5)}`]} />
       </At>
-      <ExAt b={[0.08, 0.6, 0.38]} n="5">
+      <ExAt b={B(cx(1), ce(6), ry(67))} n="5">
         Complete the speech bubbles with the correct <Text style={{ color: BLUE }}>subject pronouns</Text>.
       </ExAt>
       {A.frames5.map((f, i) => {
-        const x = 0.08 + (i % 2) * 0.19;
-        const y = 0.645 + Math.floor(i / 2) * 0.077;
+        const x = fc.at(i % 2);
+        const y = ry(72 + Math.floor(i / 2) * 9);
         return (
           <React.Fragment key={i}>
-            <Pic b={[x, y, 0.18, 0.072]} src={f} />
-            <At b={[x + 0.003, y + 0.045]}>
+            <Pic b={B(x, x + fc.w, y, y + 20 * MM)} src={f} name="speech-bubble frame (drawn)" />
+            <At b={B(x + 0.6 * MM, x + 6 * MM, y + 13 * MM)}>
               <Text style={{ fontFamily: "Noto", fontWeight: 700, fontSize: 14, color: "#fff", backgroundColor: "#E53935", paddingHorizontal: 3 }}>{i + 1}</Text>
             </At>
-            <At b={[x + 0.05, y + 0.004, 0.125]}>
-              <View style={{ backgroundColor: "#fff", borderRadius: 8, borderWidth: 1, borderColor: "#5C6BC0", paddingHorizontal: 3 }}>
-                <Text style={{ ...hand(8.8), textAlign: "center" }}>
+            <At b={B(x + 8 * MM, x + fc.w - 1 * MM, y + 1 * MM)}>
+              <View style={{ backgroundColor: "#fff", borderRadius: 8, borderWidth: 1, borderColor: "#5C6BC0", paddingHorizontal: 3, paddingVertical: 1 }}>
+                <Text style={{ ...hand(8.6), textAlign: "center", lineHeight: 1.35 }}>
                   {i === 0 ? <Text style={{ color: BLUE }}>I </Text> : "___ "}
                   {BUBBLES5[i]}
                 </Text>
@@ -1583,50 +1757,54 @@ function P21Pronouns() {
           </React.Fragment>
         );
       })}
-      <ExAt b={[0.48, 0.04, 0.47]} n="6">
-        Look at the pictures and complete the sentences with the correct <Text style={{ color: BLUE }}>possessive adjectives</Text>.
+      <ExAt b={B(cx(7), ce(12), ry(0))} n="6">
+        Write <Text style={{ color: BLUE }}>my, your, his, her, its, our</Text> or <Text style={{ color: BLUE }}>their</Text>.
       </ExAt>
-      <Pic b={[0.48, 0.105, 0.22, 0.13]} src={A.faces.f4} />
-      <Pic b={[0.71, 0.1, 0.24, 0.14]} src={art.img("people-7")} fit="contain" />
-      <Pic b={[0.5, 0.245, 0.24, 0.13]} src={A.familyHome} pos="30% 50%" />
-      <Pic b={[0.75, 0.25, 0.2, 0.12]} src={A.cast[0]} fit="contain" />
-      {[[0.485, 0.2], [0.89, 0.2], [0.505, 0.33], [0.9, 0.33]].map(([x, y], i) => (
-        <At key={i} b={[x, y]}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 26, color: "#fff", backgroundColor: "#263238", paddingHorizontal: 6, borderRadius: 14 }}>{i + 1}</Text>
-        </At>
-      ))}
-      <At b={[0.52, 0.39, 0.42, 0.2]}>
-        <View style={{ height: "100%", borderWidth: 1.2, borderColor: "#C62828", backgroundColor: "#fff", padding: 8, paddingLeft: 12 }}>
-          <Items
-            size={10.2}
-            gap={3}
-            items={[
-              <>{ans("Her")} name is Lily.</>,
-              `${blank(8)} name is Mr Brown.`,
-              `${blank(8)} names are Sam and Kate.`,
-              `${blank(8)} name is Star-Bus.`,
-              <Text key="5" style={t(10.2)}>
-                <B>a:</B> What is your name?{"\n"}
-                <B>b:</B> {blank(6)} name is {blank(10)}.
-              </Text>,
-              <Text key="6" style={t(10.2)}>
-                <B>a:</B> What is the name of your school?{"\n"}
-                <B>b:</B> {blank(6)} school is {blank(10)}.
-              </Text>,
-            ]}
-          />
-        </View>
+      {PIC6.map((p, i) => {
+        const x = pc.at(p.col);
+        const y = ry(p.row ? 25 : 9);
+        return (
+          <React.Fragment key={i}>
+            <Pic b={B(x, x + pc.w, y, y + 35 * MM)} src={p.src} fit={p.fit} subject={p.fit === "cover"} name={p.name} />
+            <At b={B(x + INSET, x + INSET + 12 * MM, y + 10 * 2.5 * MM)}>
+              <View style={{ alignItems: "flex-start" }}>
+                <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 22, color: "#fff", backgroundColor: "#263238", paddingHorizontal: 6, borderRadius: 12, lineHeight: 1.1 }}>{i + 1}</Text>
+              </View>
+            </At>
+          </React.Fragment>
+        );
+      })}
+      <Fill b={B(cx(7), ce(12), ry(42), ry(66))} color="#ffffff" border="#C62828" bw={1.2} />
+      <At b={B(cx(7) + INSET, ce(12) - INSET, ry(42) + INSET)}>
+        <Items
+          size={10}
+          gap={3}
+          items={[
+            <>This is Lily. {ans("Her")} hair is long and black.</>,
+            `This is Mr Brown. ${blank(8)} tie is blue.`,
+            `The Lees are at home. ${blank(8)} sofa is blue.`,
+            `Star-Bus is purple. ${blank(8)} eyes are big and blue.`,
+            <Text key="5" style={t(10)}>
+              <Bo>a:</Bo> Is this your pencil?{"\n"}
+              <Bo>b:</Bo> No, it isn&apos;t. {blank(6)} pencil is red.
+            </Text>,
+            <Text key="6" style={t(10)}>
+              <Bo>a:</Bo> Where are Tom and Rita&apos;s coats?{"\n"}
+              <Bo>b:</Bo> {blank(6)} coats are in the cloakroom.
+            </Text>,
+          ]}
+        />
       </At>
-      <ExAt b={[0.5, 0.61, 0.46]} n="7">
-        Look at the picture and complete the text with the correct <Text style={{ color: BLUE }}>possessive adjectives</Text>.
+      <ExAt b={B(cx(7), ce(12), ry(68))} n="7">
+        Look at the photo. Complete Sam&apos;s text with <Text style={{ color: BLUE }}>possessive adjectives</Text>.
       </ExAt>
-      <At b={[0.51, 0.67, 0.22]}>
-        <Text style={{ fontFamily: "Andika", fontSize: 11.2, lineHeight: 2.0 }}>
-          Hi! ¹{ans("My")} name is Sam and this is my family. My mum - ² {blank(6)} name is Kate. My dad - ³ {blank(6)} name is Mark. ⁴ {blank(6)} surname is Lee. And the cats? ⁵ {blank(6)} names are Tiger and Smudge! What&apos;s ⁶ {blank(6)} name?
+      <At b={B(cx(7), ce(9), ry(75))}>
+        <Text style={{ fontFamily: "Andika", fontSize: 10.8, lineHeight: 1.85 }}>
+          Hi! This is ¹{ans("my")} family on Saturday. My sister Amy is busy - ² {blank(6)} job is the carpet. Mum and Dad are in the kitchen with ³ {blank(6)} friends. Our cat is on ⁴ {blank(6)} cushion. And me? I&apos;m in ⁵ {blank(6)} room. What&apos;s ⁶ {blank(6)} Saturday like?
         </Text>
       </At>
-      <Pic b={[0.74, 0.66, 0.23, 0.16]} src={A.familyHome} r={2} border="#ffffff" />
-      <Pic b={[0.76, 0.82, 0.18, 0.13]} src={A.faces.f6} fit="contain" />
+      <Pic b={B(cx(10), ce(12), ry(75), ry(93))} src={A.familyHome} r={2} border="#ffffff" name="family at home (1b-scene)" />
+      <Pic b={B(cx(10), ce(12), ry(95), ry(107))} src={A.facesK.f6} fit="contain" name="boy (w-family-6)" />
     </BookPage>
   );
 }
@@ -1634,152 +1812,197 @@ function P21Pronouns() {
 function P22Speaking() {
   return (
     <BookPage bg="#E9F3FB" footer={<ThemeFooter n={22} module="B" />}>
-      <Fill b={[0.08, 0.025, 0.86, 0.96]} color="#ffffff" />
-      <At b={[0.08, 0.025, 0.34, 0.24]}>
-        <View style={{ height: "100%", backgroundColor: "#D6EAF8", borderBottomRightRadius: 160 }} />
-      </At>
-      <Tab b={[0.13, 0.045]} label="Speaking" />
-      <At b={[0.13, 0.105, 0.36]}>
-        <Ex n="8.a">Work with a partner. Read the words in the box and put them into five groups. There are four words in each group.</Ex>
+      <Fill b={B(cx(1) - INSET, ce(12) + INSET, 0, ry(LAST_ROW))} color="#ffffff" />
+      <Fill b={B(cx(1) - INSET, ce(5), 0, ry(24))} color="#D6EAF8" radii={{ borderBottomRightRadius: 160 }} />
+      <Tab x={cx(1)} y={ry(0)} label="Speaking" />
+      <At b={B(cx(1), ce(6), ry(UNDER_TAB.one))}>
+        <Ex n="8.a">Work with a partner. Sort the twenty words into five groups of four.</Ex>
         <View style={{ height: 3 }} />
-        <Ex n="8.b">Think of a title for each group.</Ex>
+        <Ex n="8.b">Give each group a name.</Ex>
       </At>
-      <At b={[0.14, 0.215, 0.36, 0.085]}>
-        <View style={{ height: "100%", backgroundColor: "#fff", borderWidth: 1.5, borderColor: "#F2C230", borderStyle: "dashed", justifyContent: "center", padding: 4, transform: "rotate(-1deg)" }}>
+      <Fill b={B(cx(1), ce(6), ry(20), ry(31))} color="#ffffff" border="#F2C230" bw={1.5} />
+      <At b={B(cx(1), ce(6), ry(20), ry(31))}>
+        <View style={{ height: "100%", justifyContent: "center", padding: 4 }}>
           <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: 9.3, color: "#283593", textAlign: "center", lineHeight: 1.3 }}>
-            {"evening - shy - Music - Sunday - pink\nfunny - Wednesday - night - brown - Science\nclever - morning - Geography - grey - Saturday\nafternoon - English - kind - Monday - green"}
+            {"vet - park - coach - ruler - happy\nmuseum - nurse - notebook - librarian - sad\nscissors - hungry - cinema - pilot - caretaker\ntired - cook - crayon - chemist's - baker"}
           </Text>
         </View>
       </At>
-      <Pic b={[0.16, 0.355, 0.33, 0.155]} src={A.boys} r={4} pos="50% 40%" />
-      <Bubble b={[0.24, 0.31, 0.23]} tail="bl" font="Noto" size={10} center={false} border="#64B5F6" r={2}>
-        {"Group 1\nDays: Sunday, Monday ..."}
+      <Pic b={B(cx(1), ce(6), ry(39), ry(56))} src={A.boys} r={4} ay={0.4} name="boys (d-games-4)" />
+      <Bubble b={B(cx(3), ce(6), ry(33))} tail="bl" font="Noto" size={10} center={false} border="#64B5F6" r={2}>
+        {"Group 1\nPlaces: park, museum ..."}
       </Bubble>
-      <Tab b={[0.12, 0.525]} label="Listening" />
-      <ExAt b={[0.13, 0.585, 0.36]} n="9" audio="1.06">
-        Listen to the dialogues and complete the sentences.
+      <Tab x={cx(1)} y={ry(58)} label="Listening" />
+      <ExAt b={B(cx(1), ce(6), ry(64))} n="9" audio="1.06">
+        Listen and write the missing words.
       </ExAt>
-      <At b={[0.15, 0.635, 0.36]}>
+      <At b={B(cx(1), ce(6), ry(69))}>
         <Items
           size={9.8}
           gap={5}
           items={[
-            `A: Is Anna shy, Tom?\nB: No, ${blank(4)} isn't. ${blank(4)} is very friendly.`,
-            `A: Are Leo and Max in your class?\nB: Yes, ${blank(5)} are.`,
-            `A: ${blank(4)} Mrs Kim your Science teacher?\nB: No, ${blank(4)} isn't. ${blank(4)} is ${blank(4)} Music teacher.`,
-            `A: Are ${blank(4)} in the school team?\nB: No, ${blank(4)} aren't. ${blank(4)} are in the chess club.`,
-            `A: Is Pedro from Mexico?\nB: Yes, ${blank(4)} is from Mexico City.`,
-            `A: Is this ${blank(5)} pencil case, Ella?\nB: Yes, it's ${blank(5)} pencil case.`,
+            `A: Is your sister at home today?\nB: No, ${blank(4)} isn't. ${blank(4)} is at her piano lesson.`,
+            `A: Where are my keys, Mum?\nB: ${blank(5)} are on the kitchen table.`,
+            `A: Kofi, is that ${blank(5)} dog?\nB: Yes! ${blank(5)} name is Biscuit.`,
+            `A: Are you and Ella in the chess club?\nB: Yes, ${blank(4)} are. ${blank(4)} club is on Fridays.`,
+            `A: ${blank(4)} the museum open on Mondays?\nB: No, ${blank(4)} isn't.`,
+            `A: Hi, I'm Ben. ${blank(4)} you the new coach?\nB: Yes, I ${blank(4)}. ${blank(4)} name's Mr Reed.`,
           ]}
         />
       </At>
-      <Tab b={[0.53, 0.04]} label={"Everyday\nDialogues"} />
-      <At b={[0.62, 0.1, 0.33]}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#5D4037", textAlign: "right", lineHeight: 1 }}>{"Asking about age\nand personality"}</Text>
+      <Tab x={cx(7)} y={ry(0)} label={"Everyday\nDialogues"} />
+      <At b={B(cx(9), ce(12), ry(UNDER_TAB.two))}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: "#5D4037", textAlign: "right", lineHeight: 1 }}>Talking about friends</Text>
       </At>
-      <ExAt b={[0.53, 0.155, 0.42]} n="10" audio="1.07">
-        Listen to the dialogue and act it out with your partner.
+      <ExAt b={B(cx(7), ce(12), ry(13))} n="10" audio="1.07">
+        Listen and act out the dialogue. Then talk about a friend.
       </ExAt>
-      <At b={[0.55, 0.205, 0.39]}>
-        <View style={{ borderWidth: 5, borderColor: "#9575CD", backgroundColor: "#fff", padding: 7 }}>
-          {["Hi, Ben! How old are you?", "I'm twelve. And you?", "I'm eleven. What are you like?", "I'm friendly and a bit noisy!"].map((s) => (
+      <Fill b={B(cx(7), ce(12), ry(19), ry(30))} color="#ffffff" border="#9575CD" bw={5} />
+      <At b={B(cx(7), ce(12), ry(19), ry(30))}>
+        <View style={{ height: "100%", justifyContent: "center", paddingHorizontal: INSET }}>
+          {["Who's that girl, Ben?", "That's my cousin Ana. She's twelve.", "She looks friendly!", "Yes, she's really kind and funny."].map((s) => (
             <Text key={s} style={{ ...t(10, 700), lineHeight: 1.4 }}>
               - {s}
             </Text>
           ))}
         </View>
       </At>
-      <Tab b={[0.53, 0.335]} label="Listening" />
-      <ExAt b={[0.53, 0.39, 0.42]} n="11" audio="1.08">
-        Listen and complete the sentences with the phrases in the box.
+      <Tab x={cx(7)} y={ry(34)} label="Listening" />
+      <ExAt b={B(cx(7), ce(12), ry(40))} n="11" audio="1.08">
+        Listen. Which phrase is it? Complete the sentences.
       </ExAt>
-      <WordBanner b={[0.55, 0.435, 0.41, 0.06]} lines={["hand in your homework • line up", "pack your bag • have lunch • tidy your desk", "read the notice board • wash your hands"]} color="#8E44AD" size={9.4} tilt={0} />
-      <At b={[0.55, 0.51, 0.4]}>
+      <WordBanner b={B(cx(7), ce(12), ry(46), ry(53))} lines={["hand in your homework • line up", "pack your bag • have lunch • tidy your desk", "read the notice board • wash your hands"]} color="#8E44AD" size={9.4} />
+      <At b={B(cx(7), ce(12), ry(55))}>
         <Items
           size={9.8}
           gap={2.6}
           items={[
-            `After Art, we always ${blank(14)}.`,
-            `At 12:15 we go to the canteen and ${blank(12)}.`,
-            `Please ${blank(14)} before you go home.`,
-            `When the bell rings, we ${blank(10)} at the door.`,
-            `Can I ${blank(14)} now, Miss Clark?`,
-            `I ${blank(14)} every morning to see the news.`,
-            `At the end of the day, we ${blank(12)}.`,
+            `It's 8:55. The bell is ringing - quick, let's ${blank(10)}!`,
+            `Our class ${blank(12)} at quarter past twelve.`,
+            `Theo, ${blank(14)} before you eat that apple!`,
+            `On Fridays we ${blank(12)} before the weekend.`,
+            `The team list is on the wall. Let's ${blank(12)}.`,
+            `Please ${blank(14)} on my table, Ella.`,
+            `It's home time! ${blank(12)} and get your coat.`,
           ]}
         />
       </At>
-      <Tab b={[0.53, 0.655]} label="Writing" />
-      <ExAt b={[0.53, 0.71, 0.43]} n="12" size={10}>
-        Imagine you are at a summer language school in Australia. Write a postcard to a friend at home. Use the phrases and your own ideas.
+      <Tab x={cx(7)} y={ry(74)} label="Writing" />
+      <ExAt b={B(cx(7), ce(12), ry(80))} n="12" size={10}>
+        You are on a school trip to Sydney. Write a postcard to your grandma. Use the phrases and your own ideas.
       </ExAt>
-      <Pic b={[0.54, 0.775, 0.41, 0.19]} src={A.postcard} />
-      <At b={[0.7, 0.8, 0.24]}>
-        <Text style={{ fontFamily: "Andika", fontSize: 10.6, color: "#1A237E", lineHeight: 1.32 }}>{"Dear ...,\nHow are you?\nI'm fine. / I'm great.\nMy teacher is ...\nMy new friend is ...\nSee you soon! / Love, ..."}</Text>
+      <Pic b={BOX.postcard} src={A.postcard} name="postcard (drawn)" />
+      <At b={B(cx(9), ce(11), ry(91))}>
+        <Text style={{ fontFamily: "Andika", fontSize: 10.6, color: "#1A237E", lineHeight: 1.32 }}>{"Hi Grandma!\nSydney is great!\nThe weather is ...\nMy room is ...\nMy friends here are ...\nLots of love, ..."}</Text>
       </At>
     </BookPage>
   );
 }
 
-// --- real-book parts --------------------------------------------------------------------------
+// --- real-book parts ---------------------------------------------------------------------------
 const TITLE = "Bright Days";
-function Cover() {
+function CoverFront() {
   return (
-    <Page size={[W, H]} style={{ backgroundColor: "#7EC8F2" }}>
-      <Pic b={[0, 0, 1, 1]} src={A.cover} />
-      <At b={[0.06, 0.05, 0.88]}>
+    <>
+      <Fill b={FULL} color="#7EC8F2" />
+      <Pic b={FULL} src={A.cover} name="front cover" />
+      <At b={B(cx(1), ce(12), ry(2))}>
         <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 72, color: "#fff", textAlign: "center", lineHeight: 1 }}>{TITLE}</Text>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 18, color: "#1A237E", textAlign: "center", marginTop: 2 }}>English for young learners</Text>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 18, color: "#1A237E", textAlign: "center", marginTop: 14 }}>English for young learners</Text>
       </At>
-      <At b={[0.08, 0.2, 0.2]}>
-        <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: MAGENTA, borderWidth: 4, borderColor: "#fff", alignItems: "center", justifyContent: "center", transform: "rotate(-8deg)" }}>
+      <At b={B(cx(1), ce(2), ry(18))}>
+        <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: MAGENTA, borderWidth: 4, borderColor: "#fff", alignItems: "center", justifyContent: "center" }}>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 38, color: "#fff", lineHeight: 1, marginTop: 8 }}>1</Text>
         </View>
       </At>
-      <At b={[0.72, 0.19, 0.2]}>
-        <View style={{ width: 62, height: 62, borderRadius: 31, backgroundColor: GOLD, alignItems: "center", justifyContent: "center", transform: "rotate(10deg)" }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 24, color: SLATE, marginTop: 3 }}>A1</Text>
-        </View>
-      </At>
-      <At b={[0.34, 0.2, 0.32]}>
+      <At b={B(cx(5), ce(8), ry(20))}>
         <View style={{ backgroundColor: "#E53935", borderRadius: 16, paddingVertical: 4, borderWidth: 2, borderColor: "#fff" }}>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 17, color: "#fff", textAlign: "center", marginTop: 2 }}>Student&apos;s Book</Text>
         </View>
       </At>
-    </Page>
+      <At b={B(cx(11), ce(12), ry(18))}>
+        <View style={{ width: 62, height: 62, borderRadius: 31, backgroundColor: GOLD, alignItems: "center", justifyContent: "center", alignSelf: "flex-end" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 24, color: SLATE, marginTop: 3 }}>A1</Text>
+        </View>
+      </At>
+    </>
   );
 }
-
-function Imprint() {
+function CoverBack() {
   return (
-    <Page size={[W, H]} style={{ backgroundColor: "#fff", padding: 56 }}>
-      <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 30, color: STARTER_BLUE }}>{TITLE} 1</Text>
-      <Text style={{ ...t(11, 700, MAGENTA), marginBottom: 14 }}>Student&apos;s Book · English for young learners · CEFR A1</Text>
-      <Text style={{ ...t(10), marginBottom: 8 }}>
-        This sample contains the Starter unit and Theme 1 &quot;School Life&quot; (modules A and B). It was made by hand as a reference for an automatic coursebook maker: the page plan, page types, furniture and density follow a printed A1 coursebook (photographed with a phone), while every character, text, exercise and picture is new.
-      </Text>
-      <Text style={{ ...t(11, 700), marginTop: 10, marginBottom: 6 }}>Meet the characters</Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-        {(["Star-Bus", "Zara", "Theo", "Officer K-77", "Pip", "Maya", "Mr Okafor"] as const).map((n, i) => (
-          <View key={n} style={{ width: "25%", alignItems: "center", marginBottom: 10 }}>
-            {/* eslint-disable-next-line jsx-a11y/alt-text */}
-            <Image src={srcOf(A.cast[i])} style={{ width: 90, height: 90, objectFit: "contain" }} />
-            <Text style={t(9.5, 700)}>{n}</Text>
+    <>
+      <Fill b={FULL} color={STARTER_BLUE} />
+      <Pic b={B(0, W, ry(60), H)} src={A.cover} ay={0.85} name="back cover" />
+      <At b={B(cx(2), ce(11), ry(5))}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 36, color: "#fff" }}>{TITLE} 1</Text>
+        <Text style={{ ...t(12, 400, "#fff"), marginTop: 8, lineHeight: 1.45 }}>
+          In Brightwater, the school bus can fly! Meet Zara, her cousin Theo and their friends at Hill Park School - with Star-Bus, K-77 the crossing robot and Pip, Zara&apos;s robot owl. Learn English with them, one bright day at a time.
+        </Text>
+        {["A Starter unit that revises the basics: letters, colours, numbers, time and greetings", "Eight themes with modules A, B and C", "A comic story at the start of every theme", "Everyday Dialogues for real-life English", "Class audio for every listening task"].map((f) => (
+          <View key={f} style={{ flexDirection: "row", marginTop: 7 }}>
+            <Text style={{ fontFamily: "Sym", fontSize: 12, color: GOLD, width: 18 }}>✓</Text>
+            <Text style={{ ...t(11, 700, "#fff"), flex: 1 }}>{f}</Text>
           </View>
         ))}
-      </View>
-      <View style={{ position: "absolute", left: 56, right: 56, bottom: 56 }}>
+      </At>
+      <At b={B(cx(10), ce(11), ry(47))}>
+        <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: GOLD, alignItems: "center", justifyContent: "center", alignSelf: "flex-end" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 13, color: SLATE, marginTop: 2 }}>CEFR</Text>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 24, color: SLATE, lineHeight: 0.9 }}>A1</Text>
+        </View>
+      </At>
+    </>
+  );
+}
+const Cover = () => (
+  <Sheet>
+    <CoverFront />
+  </Sheet>
+);
+const BackCover = () => (
+  <Sheet>
+    <CoverBack />
+  </Sheet>
+);
+const Blank = () => <Sheet>{null}</Sheet>;
+
+const CAST_NAMES = ["Star-Bus", "Zara", "Theo", "K-77", "Pip", "Maya", "Mr Okafor"] as const;
+function Imprint() {
+  const cc = cells(cx(2), ce(11), 4, 6 * MM);
+  return (
+    <Sheet>
+      <At b={B(cx(2), ce(11), ry(4))}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 30, color: STARTER_BLUE }}>{TITLE} 1</Text>
+        <Text style={{ ...t(11, 700, MAGENTA), marginBottom: 14 }}>Student&apos;s Book · English for young learners · CEFR A1</Text>
+        <Text style={{ ...t(10), marginBottom: 8 }}>
+          This sample contains the Starter unit and Theme 1 &quot;My School&quot; (modules A and B). It was made by hand as a reference for an automatic coursebook maker: the page plan, page types, furniture and density follow a printed A1 coursebook (photographed with a phone), while every character, text, exercise and picture is new.
+        </Text>
+        <Text style={{ ...t(11, 700), marginTop: 10 }}>Meet the characters</Text>
+      </At>
+      {CAST_NAMES.map((n, i) => {
+        const x = cc.at(i % 4);
+        const y = ry(30 + Math.floor(i / 4) * 20);
+        return (
+          <React.Fragment key={n}>
+            <Pic b={B(x, x + cc.w, y, y + 13 * 2.5 * MM)} src={A.cast[i]} fit="contain" name={`${n} (cast)`} />
+            <At b={B(x, x + cc.w, y + 13 * 2.5 * MM + 1 * MM)}>
+              <Text style={{ ...t(9.5, 700), textAlign: "center" }}>{n}</Text>
+            </At>
+          </React.Fragment>
+        );
+      })}
+      <At b={B(cx(2), ce(11), ry(97))}>
         <Text style={{ ...t(8.5), color: "#555" }}>
-          Pictures: generated illustrations (GPT Image) and drawings made for this book. Small pictures: Twemoji, © Twitter, Inc. and other contributors, CC-BY 4.0. Fonts: Noto Sans, Baloo 2, Andika, Nunito (SIL Open Font License).
+          Pictures: generated illustrations (GPT Image) and drawings made for this book. Small pictures: Twemoji, © Twitter, Inc. and other contributors, CC-BY 4.0. Fonts: Noto Sans, Baloo 2, Andika (SIL Open Font License).
         </Text>
         <Text style={{ ...t(8.5), color: "#555", marginTop: 6 }}>Audio track codes (S.01, 1.01 ...) refer to the class audio. Not for sale - reference sample.</Text>
-      </View>
-    </Page>
+      </At>
+    </Sheet>
   );
 }
 
 const UNITS: { name: string; pp: string; col: string; v: string[]; g: string[]; r: string[]; w: string[]; s: string[]; d: string[] }[] = [
-  { name: "My School", pp: "15 - 35", col: "#5DADE2", v: ["People at school", "School rules", "Things we do at school"], g: ['The verb "to be"', "Subject pronouns & possessive adjectives", "Question words", "Imperatives", "like / love / hate + -ing", "must / can (permission)"], r: ["Moon Visitors", "Clubs Are Cool!", "Dos and Don'ts"], w: ["Write a reply to an email.", "Write a postcard to a friend.", "Write your class rules."], s: ["Ask and answer about favourites.", "Guess the job.", "Talk about the things you like and hate."], d: ["Greetings", "Asking about age and personality", "Giving directions at school"] },
+  { name: "My School", pp: "15 - 35", col: "#5DADE2", v: ["Jobs at school", "A day at school", "School clubs"], g: ['The verb "to be"', "Subject pronouns & possessive adjectives", "Question words", "Imperatives", "like / love / hate + -ing", "must / can (permission)"], r: ["The Glow Ball", "Clubs Are Cool!", "Dos and Don'ts"], w: ["Write a reply to an email.", "Write a postcard to your grandma.", "Write your class rules."], s: ["Ask and answer about clubs.", "Guess the job.", "Talk about the things you like and hate."], d: ["Meeting people", "Talking about friends", "Giving directions at school"] },
   { name: "School Days", pp: "36 - 50", col: "#EC407A", v: ["Daily routines", "School subjects", "Feelings"], g: ["Present simple", "Adverbs of frequency", "Object pronouns", "have to"], r: ["A Day on a Boat School"], w: ["Write an email about your day.", "Answer questions about a diary."], s: ["Ask and answer about routines.", "Talk about the rules at home."], d: ["Asking about frequency", "Asking for the time", "Making plans"] },
   { name: "All About Me", pp: "51 - 71", col: "#F5A25D", v: ["Appearance", "Clothes", "Personality"], g: ["have got", "can", "Present continuous", "Possessive 's", "Comparatives"], r: ["Super Talents", "Hot Day, Cold Day", "The Kite Festival"], w: ["Describe your best friend.", "Write about your talents.", "Write a party invitation."], s: ["Guess who it is.", "Mime a talent.", "Compare two pets."], d: ["What do you look like?", "Inviting - accepting - refusing", "Saying what you prefer"] },
   { name: "Home and Family", pp: "72 - 84", col: "#8BC34A", v: ["Family members", "Jobs", "Rooms and furniture"], g: ["Present continuous for the future", "will", "be going to"], r: ["Teens at Work", "My Life in 2040"], w: ["Write about a family trip.", "Write an email to a cousin."], s: ["Talk about weekend plans.", "Predict your future."], d: ["Making a request", "Talking about the future"] },
@@ -1788,63 +2011,69 @@ const UNITS: { name: string; pp: string; col: string; v: string[]; g: string[]; 
   { name: "Wild World", pp: "115 - 127", col: "#F4D03F", v: ["Countries", "Landscapes", "Animals"], g: ["Past continuous", "should"], r: ["The Long Way Home", "Lucky Escapes"], w: ["Describe an event.", "Write about a problem and a solution."], s: ["Tell a true or false story.", "Talk about saving animals."], d: ["when / while", "Asking for advice"] },
   { name: "Space and Beyond", pp: "128 - 134", col: "#48C9B0", v: ["Space"], g: ["Zero conditional", "First conditional"], r: ["A Day on the Moon"], w: ["—"], s: ["Make if-sentences with a partner."], d: ["Firstly, secondly, finally"] },
 ];
+const CONT = { head: ry(9), headEnd: ry(13), row: (r: number) => ry(14 + r * 11), rowEnd: (r: number) => ry(14 + r * 11 + 11) - 1 * MM };
 function ContentsLeft() {
   const cols: [string, string][] = [["VOCABULARY", "#4DB6AC"], ["GRAMMAR", "#5C6BC0"], ["READING", "#E91E63"], ["LISTENING", "#FF7043"]];
   return (
-    <Page size={[W, H]} style={{ backgroundColor: "#fff" }}>
-      <At b={[0, 0, 0.5, 0.1]}>
-        <View style={{ height: "100%", backgroundColor: "#D1D9FF", borderBottomRightRadius: 80 }} />
-      </At>
-      <At b={[0.05, 0.02]}>
+    <Sheet>
+      <Fill b={B(0, ce(6), 0, ry(7))} color="#D1D9FF" radii={{ borderBottomRightRadius: 80 }} />
+      <At b={B(cx(1), ce(6), ry(-2))}>
         <Title text="CONTENTS" size={30} fill="#FFC107" stroke="#6D4C00" />
       </At>
-      <At b={[0.25, 0.075, 0.75, 0.025]}>
-        <View style={{ backgroundColor: "#5C6BC0", height: "100%", borderTopLeftRadius: 12, borderBottomLeftRadius: 12, justifyContent: "center", paddingLeft: 10 }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 12, color: "#fff", marginTop: 2 }}>STARTER pp. 7 - 14 · alphabet, colours, numbers, days, time, greetings, classroom language, jobs</Text>
+      <Fill b={B(cx(4), W, ry(4), ry(8))} color="#5C6BC0" radii={{ borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }} />
+      <At b={B(cx(4) + INSET, W, ry(4), ry(8))}>
+        <View style={{ height: "100%", justifyContent: "center" }}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 9, color: "#fff", marginTop: 2 }}>STARTER pp. 7 - 14 · alphabet, colours, numbers, days, time, greetings, classroom, jobs, places</Text>
         </View>
       </At>
       <ContentsGrid cols={cols} first fields={(u) => [u.v, u.g, u.r, ["Short dialogues"]]} />
-    </Page>
+    </Sheet>
   );
 }
 function ContentsRight() {
   const cols: [string, string][] = [["WRITING", "#AB47BC"], ["SPEAKING", "#EC407A"], ["EVERYDAY DIALOGUES", "#42A5F5"]];
   return (
-    <Page size={[W, H]} style={{ backgroundColor: "#fff" }}>
+    <Sheet>
       <ContentsGrid cols={cols} fields={(u) => [u.w, u.s, u.d]} />
-    </Page>
+    </Sheet>
   );
 }
 function ContentsGrid({ cols, first, fields }: { cols: [string, string][]; first?: boolean; fields: (u: (typeof UNITS)[number]) => string[][] }) {
-  const x0 = first ? 0.2 : 0.02;
-  const wAll = first ? 0.8 : 0.93;
-  const top = 0.11;
-  const rowH = 0.105;
+  // whole columns: left page 3-4 | 5-7 | 8-10 | 11-12, right page 1-4 | 5-8 | 9-12
+  const spans = first ? [[3, 4], [5, 7], [8, 10], [11, 12]] : [[1, 4], [5, 8], [9, 12]];
+  const cc = { at: (i: number) => cx(spans[i][0]), wOf: (i: number) => ce(spans[i][1]) - cx(spans[i][0]) };
   return (
     <>
       {cols.map(([c, col], i) => (
-        <At key={c} b={[x0 + (i * wAll) / cols.length + 0.003, top, wAll / cols.length - 0.006, 0.035]}>
-          <View style={{ height: "100%", backgroundColor: col, borderTopLeftRadius: 10, borderTopRightRadius: 10, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: cols.length === 3 ? 12 : 11, color: "#fff", marginTop: 2 }}>{c}</Text>
-          </View>
-        </At>
+        <React.Fragment key={c}>
+          <Fill b={B(cc.at(i), cc.at(i) + cc.wOf(i), CONT.head, CONT.headEnd)} color={col} radii={{ borderTopLeftRadius: 10, borderTopRightRadius: 10 }} />
+          <At b={B(cc.at(i), cc.at(i) + cc.wOf(i), CONT.head, CONT.headEnd)}>
+            <View style={{ height: "100%", alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: cols.length === 3 ? 12 : 11, color: "#fff", marginTop: 2 }}>{c}</Text>
+            </View>
+          </At>
+        </React.Fragment>
       ))}
       {UNITS.map((u, r) => {
-        const y = top + 0.04 + r * rowH;
+        const y0 = CONT.row(r);
+        const y1 = CONT.rowEnd(r);
         return (
           <React.Fragment key={u.name}>
-            <Fill b={[first ? 0.03 : 0.02, y, first ? 0.97 : 0.93, rowH - 0.004]} color={u.col} opacity={0.35} />
+            <Fill b={first ? B(cx(1), W, y0, y1) : B(0, ce(12), y0, y1)} color={u.col} opacity={0.35} />
             {first ? (
-              <At b={[0.035, y + 0.003, 0.16, rowH - 0.01]}>
-                <View style={{ height: "100%", backgroundColor: u.col, borderTopLeftRadius: 14, borderBottomLeftRadius: 14, alignItems: "center", justifyContent: "center" }}>
-                  <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 11, color: "#fff", textAlign: "center", lineHeight: 1 }}>{u.name}</Text>
-                  <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 36, color: "#fff", lineHeight: 1 }}>{r + 1}</Text>
-                  <Text style={{ fontFamily: "Baloo", fontWeight: 500, fontSize: 9, color: "#fff" }}>pp. {u.pp}</Text>
-                </View>
-              </At>
+              <>
+                <Fill b={B(cx(1), ce(2), y0, y1)} color={u.col} radii={{ borderTopLeftRadius: 14, borderBottomLeftRadius: 14 }} />
+                <At b={B(cx(1), ce(2), y0, y1)}>
+                  <View style={{ height: "100%", alignItems: "center", justifyContent: "center" }}>
+                    <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 11, color: "#fff", textAlign: "center", lineHeight: 1 }}>{u.name}</Text>
+                    <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 28, color: "#fff", lineHeight: 1.1 }}>{r + 1}</Text>
+                    <Text style={{ fontFamily: "Baloo", fontWeight: 500, fontSize: 9, color: "#fff", marginTop: 3 }}>pp. {u.pp}</Text>
+                  </View>
+                </At>
+              </>
             ) : null}
             {fields(u).map((cell, i) => (
-              <At key={i} b={[x0 + (i * wAll) / cols.length + 0.008, y + 0.004, wAll / cols.length - 0.014]}>
+              <At key={i} b={B(cc.at(i) + 1.5 * MM, cc.at(i) + cc.wOf(i), y0 + 1.5 * MM)}>
                 {cell.map((x) => (
                   <Text key={x} style={{ ...t(7.6), lineHeight: 1.22 }}>
                     {cell.length > 1 || i < 3 ? "• " : ""}
@@ -1860,61 +2089,132 @@ function ContentsGrid({ cols, first, fields }: { cols: [string, string][]; first
   );
 }
 
-function BackCover() {
+// --- the cover spread: back | spine | front ------------------------------------------------------
+// Spine width: 20 interior pages = 10 leaves; 90 g/m2 uncoated offset is
+// about 0.1 mm a leaf -> 1.0 mm. (Saddle stitched there is no printed spine;
+// the width only places the fold.)
+export const INTERIOR_PAGES = 20;
+export const SPINE = (INTERIOR_PAGES / 2) * 0.1 * MM;
+function CoverSpread() {
+  const pw = 2 * W + SPINE + 2 * OFF;
+  const ph = H + 2 * OFF;
+  const half = SPINE / 2;
   return (
-    <Page size={[W, H]} style={{ backgroundColor: STARTER_BLUE }}>
-      <Pic b={[0, 0.55, 1, 0.45]} src={A.cover} pos="50% 85%" />
-      <At b={[0.1, 0.08, 0.8]}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 36, color: "#fff" }}>{TITLE} 1</Text>
-        <Text style={{ ...t(12, 400, "#fff"), marginTop: 8, lineHeight: 1.45 }}>
-          Zara and Theo come from Moon Base Luna - and this year they visit a school on Earth! Join them, Star-Bus and Pip the robot owl as they learn the rules, make new friends and discover English, one bright day at a time.
-        </Text>
-        {["A Starter unit that revises the basics: letters, colours, numbers, time and greetings", "Eight themes with modules A, B and C", "A comic story at the start of every theme", "Everyday Dialogues for real-life English", "Class audio for every listening task"].map((f) => (
-          <View key={f} style={{ flexDirection: "row", marginTop: 7 }}>
-            <Text style={{ fontFamily: "Sym", fontSize: 12, color: GOLD, width: 18 }}>✓</Text>
-            <Text style={{ ...t(11, 700, "#fff"), flex: 1 }}>{f}</Text>
-          </View>
-        ))}
-      </At>
-      <At b={[0.76, 0.43, 0.2]}>
-        <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: GOLD, alignItems: "center", justifyContent: "center" }}>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 13, color: SLATE, marginTop: 2 }}>CEFR</Text>
-          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 24, color: SLATE, lineHeight: 0.9 }}>A1</Text>
+    <Page size={[pw, ph]} style={{ backgroundColor: "#ffffff", fontFamily: "Noto" }}>
+      <EdgeCtx.Provider value={{ l: BLEED, r: half, t: BLEED, b: BLEED }}>
+        <View style={{ position: "absolute", left: OFF, top: OFF, width: W, height: H }}>
+          <CoverBack />
         </View>
-      </At>
+      </EdgeCtx.Provider>
+      <EdgeCtx.Provider value={{ l: half, r: BLEED, t: BLEED, b: BLEED }}>
+        <View style={{ position: "absolute", left: OFF + W + SPINE, top: OFF, width: W, height: H }}>
+          <CoverFront />
+        </View>
+      </EdgeCtx.Provider>
+      <CropMarks pw={pw} ph={ph} xs={[OFF, OFF + W, OFF + W + SPINE, OFF + 2 * W + SPINE]} ys={[OFF, OFF + H]} dashed={[OFF + W, OFF + W + SPINE]} />
+      <Text style={{ position: "absolute", left: OFF, top: OFF + H + BLEED + 2 * MM, fontFamily: "Noto", fontSize: 6, color: "#000000" }}>
+        {`${TITLE} 1 · cover spread · back | spine ${(SPINE / MM).toFixed(1)} mm | front · trim 2 x 210 x 297 mm + 3 mm bleed · fold marks dashed`}
+      </Text>
     </Page>
   );
 }
 
-async function main() {
-  A = await loadAssets();
-  const doc = (
-    <Document title={`${TITLE} 1 - Student's Book (sample)`} author="hand-made reference">
-      <Cover />
-      <Imprint />
-      <ContentsLeft />
-      <ContentsRight />
-      <P7StarterOpener />
-      <P8Alphabet />
-      <P9Colours />
-      <P10Numbers />
-      <P11Time />
-      <P12Classroom />
-      <P13Jobs />
-      <P14Places />
-      <P15ThemeOpener />
-      <P16Story />
-      <P17Vocabulary />
-      <P18Grammar />
-      <P19Speaking />
-      <P20ModuleB />
-      <P21Pronouns />
-      <P22Speaking />
-      <BackCover />
+// --- assembly -----------------------------------------------------------------------------------
+const BOOK: [string, React.FC][] = [
+  ["7", P7StarterOpener],
+  ["8", P8Alphabet],
+  ["9", P9Colours],
+  ["10", P10Numbers],
+  ["11", P11Time],
+  ["12", P12Classroom],
+  ["13", P13Jobs],
+  ["14", P14Places],
+  ["15", P15ThemeOpener],
+  ["16", P16Story],
+  ["17", P17Vocabulary],
+  ["18", P18Grammar],
+  ["19", P19Speaking],
+  ["20", P20ModuleB],
+  ["21", P21Pronouns],
+  ["22", P22Speaking],
+];
+// The interior as printed: page 1 is a right-hand page, so the contents
+// spread lands on 2-3 and the Starter opener (book p.7, odd) on a right page.
+const INTERIOR: [string, React.FC][] = [["imprint", Imprint], ["contents", ContentsLeft], ["contents", ContentsRight], ["blank (to keep p.7 on a right-hand page)", Blank], ...BOOK.map(([n, C]) => [`book p.${n}`, C] as [string, React.FC])];
+
+function interiorDoc() {
+  return (
+    <Document title={`${TITLE} 1 - Student's Book - interior`} author="hand-made reference">
+      {INTERIOR.map(([label, C], i) => (
+        <SlugCtx.Provider key={i} value={`${TITLE} 1 · interior page ${i + 1}/${INTERIOR.length} · ${label} · trim 210 x 297 mm, bleed 3 mm`}>
+          <C />
+        </SlugCtx.Provider>
+      ))}
     </Document>
   );
-  const out = path.join(process.cwd(), ".handmade-scan", "student-book.pdf");
-  fs.writeFileSync(out, await renderToBuffer(doc));
-  console.log("->", out);
+}
+function coverDoc() {
+  return (
+    <Document title={`${TITLE} 1 - Student's Book - cover`} author="hand-made reference">
+      <CoverSpread />
+    </Document>
+  );
+}
+function previewDoc() {
+  const pages: React.FC[] = [Cover, Blank, ...INTERIOR.map(([, C]) => C), Blank, BackCover];
+  return (
+    <Document title={`${TITLE} 1 - Student's Book (preview)`} author="hand-made reference">
+      {pages.map((C, i) => (
+        <C key={i} />
+      ))}
+    </Document>
+  );
+}
+
+async function resolvePictures() {
+  const jobs = [...PIC_REQ.entries()].filter(([k]) => !PIC_OUT.has(k));
+  PIC_REQ.clear();
+  let i = 0;
+  const worker = async () => {
+    for (let j = jobs.shift(); j; j = jobs.shift()) {
+      const [k, r] = j;
+      PIC_OUT.set(k, await printPicture(r.src, r.w, r.h, r.opt));
+      i++;
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
+  return i;
+}
+async function render(doc: () => React.ReactElement<DocumentProps>) {
+  // pass 1 collects every picture at its frame size; pass 2 embeds them
+  for (let pass = 0; pass < 3; pass++) {
+    const buf = await renderToBuffer(doc());
+    if (PIC_REQ.size === 0) return buf;
+    console.log(`  pictures prepared: ${await resolvePictures()}`);
+  }
+  return renderToBuffer(doc());
+}
+
+async function main() {
+  A = await loadAssets();
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  if (MODE === "print") {
+    fs.writeFileSync(path.join(OUT_DIR, "raw-interior.pdf"), await render(interiorDoc));
+    fs.writeFileSync(path.join(OUT_DIR, "raw-cover.pdf"), await render(coverDoc));
+    // one row per distinct picture frame
+    const seen = new Set<string>();
+    const rows = dpiTable.filter((r) => {
+      const k = `${r.name}|${r.widthMm}|${r.heightMm}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    fs.writeFileSync(path.join(OUT_DIR, "dpi-table.json"), JSON.stringify(rows, null, 1));
+    fs.writeFileSync(path.join(OUT_DIR, "spec.json"), JSON.stringify({ interiorPages: INTERIOR.length, spineMm: SPINE / MM, paper: "90 g/m2 uncoated offset, ~0.1 mm per leaf", dpi: DPI }, null, 1));
+    console.log("->", OUT_DIR, `(${DPI} dpi, spine ${(SPINE / MM).toFixed(2)} mm)`);
+  } else {
+    fs.writeFileSync(path.join(OUT_DIR, "onizleme.pdf"), await render(previewDoc));
+    console.log("->", path.join(OUT_DIR, "onizleme.pdf"));
+  }
 }
 void main();
