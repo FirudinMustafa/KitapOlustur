@@ -144,7 +144,7 @@ import { bubbleDialogue, bubblesFromBoxes, hasBigMainPicture, speakerLocationPro
 import {
   BLUEPRINT_INSTRUCTIONS,
   applyZonePlans,
-  chunkSourcePages,
+  chunkSourcePagesByWords,
   complementaryPlan,
   missingSourcePages,
   orderBySource,
@@ -168,6 +168,8 @@ const ALL_VARIANTS: Variant[] = ["student_book", "workbook", "teacher_book", "te
 // unit-side content (pages + glossary + listening audio scripts, or a full
 // teacher's book/test booklet side) more room before truncating.
 const UNIT_SIDE_MAX_OUTPUT_TOKENS = 32000;
+// Marks an answer that ran out of output tokens (see withObjectDiagnostics).
+const OUTPUT_TOO_LONG = "OUTPUT_TOO_LONG";
 
 // extractPageMap's output scales with the source PDF's total page count (one
 // entry with verbatim sourceText per page), not with a single unit like the
@@ -256,10 +258,21 @@ const repairDoubleEncodedJsonLeaves: RepairTextFunction = async ({ text }) => {
 // Also returns usage so callers can feed it to recordUsage for cost tracking.
 async function withObjectDiagnostics<T>(
   fn: () => Promise<{ object: T; usage: LanguageModelUsage }>,
+  // KIYAS-15 (2026-10-24): three writer attempts ran out of output tokens,
+  // each a paid ~32k-token answer, and none was recorded - the spend cap
+  // never saw them. A failed call's usage is billed like a good one's.
+  bill?: { runId: string; key: string; model?: string },
 ): Promise<{ object: T; usage: LanguageModelUsage }> {
   try {
     return await fn();
   } catch (err) {
+    if (NoObjectGeneratedError.isInstance(err) && bill && err.usage) {
+      await recordUsage(bill.runId, bill.key, err.usage, bill.model);
+    }
+    if (NoObjectGeneratedError.isInstance(err) && err.finishReason === "length") {
+      // The same input runs out the same way: not worth a step retry.
+      throw new FatalError(`${OUTPUT_TOO_LONG}: the answer did not fit in its output budget.`);
+    }
     if (NoObjectGeneratedError.isInstance(err)) {
       const snippet = err.text ? err.text.slice(0, 500) : "(no raw text captured)";
       // The repeated live model-escape incidents (glossary field
@@ -540,7 +553,7 @@ async function extractPageMapChunk(
         },
       ],
     }),
-  );
+  { runId, key: "pageMap" });
   await recordUsage(runId, "pageMap", usage);
 
   const texts = transcribe ? [] : await pdfPageTexts(pdf, from, to);
@@ -649,7 +662,7 @@ async function extractOutline(
         },
       ],
     }),
-  );
+  { runId, key: "outline" });
 
   await recordUsage(runId, "outline", usage);
   await db.insert(extractedOutlines).values({ runId, outline: { outline: object } });
@@ -711,7 +724,7 @@ async function generateOutlineFromBrief(
         "Leave declaredLevelAlignment unset - there is no source material to compare the declared level against.",
       ].join("\n\n"),
     }),
-  );
+  { runId, key: "outline" });
 
   await recordUsage(runId, "outline", usage);
   await db.insert(extractedOutlines).values({ runId, outline: { outline: object } });
@@ -758,7 +771,7 @@ async function generatePictureBookOutline(
         .filter(Boolean)
         .join("\n\n"),
     }),
-  );
+  { runId, key: "outline" });
 
   await recordUsage(runId, "outline", usage);
   await db.insert(extractedOutlines).values({ runId, outline: { outline: object } });
@@ -790,7 +803,7 @@ async function generatePictureBookPages(
         .filter(Boolean)
         .join("\n\n"),
     }),
-  );
+  { runId, key: "unitGeneration", model: input.textModel });
   await recordUsage(runId, "unitGeneration", usage, input.textModel);
 
   return object.pages.map((p, i) => ({
@@ -831,7 +844,7 @@ async function analyzeImprovements(
         "For every unit number present in the outline, list concrete, actionable improvements to apply while rewriting that unit's content. Keep the same unit numbers, titles intent, and overall progression - only improve depth, variety, and pedagogy. Ignore any standard improvement that doesn't apply to this subject.",
       ].join("\n\n"),
     }),
-  );
+  { runId, key: "improvementPlan" });
 
   await recordUsage(runId, "improvementPlan", usage);
   await db
@@ -867,7 +880,7 @@ async function buildStyleBible(
         .filter(Boolean)
         .join("\n\n"),
     }),
-  );
+  { runId, key: "styleBible" });
 
   await recordUsage(runId, "styleBible", usage);
   return object;
@@ -962,7 +975,7 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
         .filter(Boolean)
         .join("\n\n"),
     }),
-  );
+  { runId, key: "unitGeneration", model: input.textModel });
 
   await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return object;
@@ -975,8 +988,19 @@ async function generateMirroredSide(runId: string, input: UnitGenerationContext)
 // only sequences generateMirroredSide steps.
 async function generateMirroredInChunks(runId: string, input: UnitGenerationContext): Promise<GeneratedMirroredSide> {
   const parts: GeneratedMirroredSide[] = [];
-  for (const chunk of chunkSourcePages(input.unitSourcePages)) {
-    parts.push(await generateMirroredSide(runId, { ...input, unitSourcePages: chunk }));
+  // KIYAS-15: six dense A2 pages (200-460 words each) did not fit one
+  // answer. Chunks are sized by the source's words, and a chunk that still
+  // runs out of output is split in two and written again.
+  const pending = chunkSourcePagesByWords(input.unitSourcePages);
+  while (pending.length) {
+    const chunk = pending.shift()!;
+    try {
+      parts.push(await generateMirroredSide(runId, { ...input, unitSourcePages: chunk }));
+    } catch (err) {
+      if (chunk.length < 2 || !(err instanceof Error) || !err.message.includes(OUTPUT_TOO_LONG)) throw err;
+      const half = Math.ceil(chunk.length / 2);
+      pending.unshift(chunk.slice(0, half), chunk.slice(half));
+    }
   }
   let pages = parts.flatMap((p) => p.pages);
   const missing = missingSourcePages(pages, input.unitSourcePages);
@@ -1059,7 +1083,7 @@ async function generateSkeletonSide(runId: string, input: UnitGenerationContext,
         .filter(Boolean)
         .join("\n\n"),
     }),
-  );
+  { runId, key: "unitGeneration", model: input.textModel });
 
   await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return {
@@ -1104,7 +1128,7 @@ async function generateComplementarySide(
         .filter(Boolean)
         .join("\n\n"),
     }),
-  );
+  { runId, key: "unitGeneration", model: input.textModel });
 
   await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return object;
@@ -1199,7 +1223,7 @@ async function generateTeacherBookSide(
         `Produce "pages" as Teacher's Book content for this unit (2-4 pages is enough): a lesson flow broken into warm-up, presentation, practice, and production stages with a rough minute estimate for each; a list of materials needed to teach the unit (e.g. flashcards, audio playback, a projector); differentiation notes with alternative activity suggestions for stronger and weaker students; brief pacing/timing suggestions; notes on common learner errors for this topic; and a consolidated answer key covering every exercise above that has one. Do not repeat the student-facing text itself.`,
       ].join("\n\n"),
     }),
-  );
+  { runId, key: "unitGeneration", model: input.textModel });
 
   await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return object;
@@ -1223,7 +1247,7 @@ async function generateTestBookletSide(runId: string, input: UnitGenerationConte
         `Produce "pages" as a short assessment for this unit (1 page is enough): questions covering this unit's learning objectives and key terms, with a complete answer key. Vary question types where appropriate for the subject.`,
       ].join("\n\n"),
     }),
-  );
+  { runId, key: "unitGeneration", model: input.textModel });
 
   await recordUsage(runId, "unitGeneration", usage, input.textModel);
   return object;
@@ -1277,7 +1301,7 @@ async function generateCumulativeAssessment(
         `Produce "pages" (2-4 pages is enough) forming a single ${label} that draws questions from EVERY unit listed above, proportionally sampling each unit's key terms and learning objectives - do not skip any listed unit. Use a balanced mix of question types (multiple choice, fill-in-the-blank, short open-ended) appropriate for the subject. End with a complete, clearly separated answer key. Do not set imagePrompt on any page - this is a text-only exam.`,
       ].join("\n\n"),
     }),
-  );
+  { runId, key: "unitGeneration", model: book.textModel });
 
   await recordUsage(runId, "unitGeneration", usage, book.textModel);
   return object;
@@ -1338,7 +1362,7 @@ async function generateUnitReviewSide(
         instruction,
       ].join("\n\n"),
     }),
-  );
+  { runId, key: "unitGeneration", model: book.textModel });
 
   await recordUsage(runId, "unitGeneration", usage, book.textModel);
   return object;
@@ -1652,7 +1676,7 @@ async function reviewUnit(runId: string, unitNumber: number, outlineUnit: UnitOu
         "Check: (1) content matches the outline's learning objectives and key terms, (2) the level is consistent throughout, (3) practice items are pedagogically sound with clear instructions, (4) the complementary side (student book vs workbook) is genuinely independent, distinct content, with a complete answer key where applicable. List concrete issues if any. Set passed=true only if there are no significant issues.",
       ].join("\n\n"),
     }),
-  );
+  { runId, key: "review" });
 
   await recordUsage(runId, "review", usage);
   await db.insert(unitReviews).values({ runId, unitNumber, reviewType: "structure", passed: object.passed, issues: object.issues });
@@ -1823,7 +1847,7 @@ async function topUpExercises(
           system: "You are an exercise writer for a language coursebook. You write short, clear exercise items.",
           prompt: extendPrompt(short, contentLanguage),
         }),
-      );
+      { runId, key: "unitGeneration" });
       await recordUsage(runId, "unitGeneration", usage);
       const additions = object.exercises
         .filter((e) => short.some((s) => s.index === e.index))
@@ -1854,7 +1878,7 @@ async function topUpExercises(
             system: "You are an exercise writer for a language coursebook. You write short, clear, complete exercises.",
             prompt: topUpPrompt(page, count, rubricsByPage[page.sourcePageNumber] ?? [], contentLanguage),
           }),
-        );
+        { runId, key: "unitGeneration" });
         await recordUsage(runId, "unitGeneration", usage);
         const next = appendExercises(page, object.blocks.slice(0, count).map(dropLeakingTable));
         added += next.blocks.length - page.blocks.length;
@@ -1896,7 +1920,7 @@ async function fillMissingAnswerKeys(runId: string, unit: GeneratedUnit, content
           `For each exercise return its id and an answerKey with exactly one answer per item, in the same order as items. Answers are short (a word, a phrase or the completed sentence). For open or personal items (e.g. "Write about your town") give a model answer starting with "e.g.". Write in ${contentLanguage}.`,
         ].join("\n\n"),
       }),
-    );
+    { runId, key: "review" });
     await recordUsage(runId, "review", usage);
     const filled = applyAnswerKeys(unit, object.answers);
     const left = findAnswerKeyGaps(filled).length;
@@ -1936,7 +1960,7 @@ async function fillMissingPictures(runId: string, unit: GeneratedUnit): Promise<
           `For each activity return its id and exactly one picture per "shows" entry, in the same order: {label: the thing in 1-3 words, emoji: ONE emoji}. Pick the most recognisable object a child would name at once (a book stack for a library, a dinosaur for a museum, a money bag for a bank) and never use the same or a look-alike emoji twice in one activity.`,
         ].join("\n\n"),
       }),
-    );
+    { runId, key: "review" });
     await recordUsage(runId, "review", usage);
     const filled = applyPictures(unit, object.sets);
     const left = findPictureGaps(filled).length;
@@ -1977,7 +2001,7 @@ async function fillMissingListeningScripts(
           `For each exercise return its id and the script. "Listen and point / number / circle / tick" - say each item's word or sentence in item order, as a teacher would (e.g. "Number one. A pencil."); "Listen and sing / chant" - the complete song or chant, short lines, repetitive, singable; a story or dialogue - the full text, with dialogueLines (speaker + line) for each turn. Level ${level}, written in ${contentLanguage}, nothing above the level.`,
         ].join("\n\n"),
       }),
-    );
+    { runId, key: "review" });
     await recordUsage(runId, "review", usage);
     const filled = applyListeningScripts(pages, listeningAudio, object.scripts);
     const left = findListeningGaps(pages, filled).length;
@@ -3194,7 +3218,7 @@ async function rewritePageToFit(
         `Page (JSON):\n${JSON.stringify(page)}`,
       ].join("\n\n"),
     }),
-  );
+  { runId, key: "designFix" });
   await recordUsage(runId, "designFix", usage);
 
   // The exercises themselves come from the reviewed page, whatever the

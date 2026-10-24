@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyZonePlans, complementaryPlan, writerBlueprint } from "./source-blueprint";
+import { applyZonePlans, chunkSourcePagesByWords, complementaryPlan, writerBlueprint } from "./source-blueprint";
 import type { SourcePage } from "@/lib/ai/schemas";
 import type { SourcePageLayout } from "@/lib/source-layout";
 
@@ -82,5 +82,19 @@ describe("mirrored page count", () => {
     expect(missingSourcePages([{ sourcePageNumber: 12 }, { sourcePageNumber: 13 }], source)).toHaveLength(12);
     const ordered = orderBySource([{ sourcePageNumber: 14 }, { sourcePageNumber: 12 }, { sourcePageNumber: 99 }, { sourcePageNumber: 12 }], source);
     expect(ordered.map((p) => p.sourcePageNumber)).toEqual([12, 14]);
+  });
+});
+
+describe("chunkSourcePagesByWords", () => {
+  const page = (n: number, words: number) => ({ pageNumber: n, layout: { wordCount: words } });
+
+  it("keeps a light unit in one chunk of up to six pages", () => {
+    const pages = [1, 2, 3, 4, 5, 6, 7].map((n) => page(n, 20));
+    expect(chunkSourcePagesByWords(pages).map((c) => c.length)).toEqual([6, 1]);
+  });
+
+  it("splits dense pages by their words", () => {
+    const pages = [page(1, 200), page(2, 460), page(3, 230), page(4, 410), page(5, 265), page(6, 315)];
+    expect(chunkSourcePagesByWords(pages).map((c) => c.map((p) => p.pageNumber))).toEqual([[1, 2, 3], [4, 5], [6]]);
   });
 });

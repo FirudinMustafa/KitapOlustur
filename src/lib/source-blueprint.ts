@@ -148,6 +148,29 @@ export function chunkSourcePages<P>(pages: P[], size = MIRROR_CHUNK): P[][] {
   return out;
 }
 
+// Source words one answer can mirror. KIYAS-15: six i5 pages (~1,900 words
+// with their blueprint) ran a 32k-token answer out; Super Minds' six pages
+// (~130 words) fit easily. A page of unknown size counts as dense.
+export const MIRROR_CHUNK_WORDS = 900;
+
+export function chunkSourcePagesByWords<P extends { layout?: { wordCount: number } | null }>(pages: P[], maxWords = MIRROR_CHUNK_WORDS, maxPages = MIRROR_CHUNK): P[][] {
+  const out: P[][] = [];
+  let cur: P[] = [];
+  let words = 0;
+  for (const p of pages) {
+    const w = p.layout?.wordCount ?? maxWords / 2;
+    if (cur.length && (cur.length >= maxPages || words + w > maxWords)) {
+      out.push(cur);
+      cur = [];
+      words = 0;
+    }
+    cur.push(p);
+    words += w;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
 export function missingSourcePages(pages: { sourcePageNumber: number }[], sourcePages: { pageNumber: number }[]): number[] {
   const have = new Set(pages.map((p) => p.sourcePageNumber));
   return sourcePages.map((s) => s.pageNumber).filter((n) => !have.has(n));
