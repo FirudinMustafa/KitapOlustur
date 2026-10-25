@@ -183,7 +183,7 @@ async function loadAssets() {
   const sceneSrc = art.has("scene") ? art.img("scene") : await art.scenePlaceholder(sceneW, sceneH, SCENE.tags, SCENE.people);
   const scene = await art.splitSpread(art.has("scene") ? "img" : "ph", sceneSrc, W, BLEED, sceneH);
   const avatars = Object.fromEntries(
-    await Promise.all(K.CAST.map(async (c, i) => [c.key, castFigs ? await art.circleCrop(`cast-${c.key}`, castFigs[i], 60 * art.PX, CAST_COLOUR[c.key], { top: 0.02, zoom: 1.9 }) : await art.avatarPlaceholder(c.key, 60, CAST_COLOUR[c.key])])),
+    await Promise.all(K.CAST.map(async (c, i) => [c.key, castFigs ? await art.circleCrop(`cast2-${c.key}`, castFigs[i], 60 * art.PX, CAST_COLOUR[c.key], { top: 0, zoom: 1.5 }) : await art.avatarPlaceholder(c.key, 60, CAST_COLOUR[c.key])])),
   ) as Record<K.CastKey, Buffer>;
   return {
     castFigs,

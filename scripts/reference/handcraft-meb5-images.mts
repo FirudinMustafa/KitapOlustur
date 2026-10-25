@@ -58,7 +58,7 @@ const jobs: Job[] = [
     name: "scene",
     size: "3840x1584",
     quality: "high",
-    prompt: `${CASTDESC} A wide classroom scene on a Monday morning in a Turkish lower secondary school, seen from the front corner, for a double-page spread. Left part: coat hooks on the wall by the door with coats on them, a wooden bookshelf full of books, a cork notice board with a paper timetable pinned on it. Centre: student desks; ARDA stands by the coat hooks waving; DEFNE hangs up a coat; CAN, the new student with a blue school bag on the floor, stands smiling. Right part: a big dark smart board with an empty screen on the front wall, above it a Turkish flag and a framed black-and-white portrait photo and a framed poem board (the classroom's Atatürk corner), a round wall clock with an EMPTY face (no hands, no numbers) to the right of the board; MS AKSOY stands beside the smart board; KEREM in his wheelchair at a desk with a green pencil case on it; ZEHRA sits at the next desk. Exactly these five children and one teacher, no other people. Keep the very centre of the picture (the middle 8 percent of the width) free of faces. The top 20 percent is plain wall for speech bubbles.`,
+    prompt: `${CASTDESC} A wide classroom scene on a Monday morning in a Turkish lower secondary school, seen from the front corner, for a double-page spread. Left part: coat hooks on the wall by the door with coats on them, a wooden bookshelf full of books, a cork notice board with a paper timetable pinned on it. Centre: student desks; ARDA stands by the coat hooks waving; DEFNE hangs up a coat; CAN, the new student with a blue school bag on the floor, stands smiling. Right part: a big dark smart board with an empty screen on the front wall, above it a Turkish flag and a small framed portrait seen from a distance with no recognisable face (only a soft grey silhouette) and a framed board with the lines of a national anthem poem (the classroom's national corner), a round wall clock with an EMPTY face (no hands, no numbers) to the right of the board; MS AKSOY stands beside the smart board; KEREM in his wheelchair at a desk with a green pencil case on it; ZEHRA sits at the next desk. Exactly these five children and one teacher, no other people. Keep the very centre of the picture (the middle 8 percent of the width) free of faces. The top 20 percent is plain wall for speech bubbles.`,
     estimate: 0.18,
     why: "opening spread pp. 4-5 (426 x 175 mm incl. bleed): ~229 dpi at 3840 px",
   },
@@ -113,15 +113,8 @@ const jobs: Job[] = [
     estimate: 0.2,
     why: "Student's Book cover (216 x 303 mm): ~270 dpi",
   },
-  {
-    name: "wbcover",
-    size: "2304x3200",
-    quality: "high",
-    prompt: `${CASTDESC} Workbook cover artwork: the same five children at home and at a library table doing homework together, a big paper kite pinned on the wall, warm afternoon light, coral and teal colours. The top 32 percent is a plain warm wall for the title.`,
-    estimate: 0.2,
-    why: "Workbook cover (216 x 303 mm): ~270 dpi; optional (the SB cover art can be reused for free)",
-  },
 ];
+// The Workbook cover reuses the Student's Book cover art (owner's decision, 2026-10-25).
 
 function promptOf(job: Job) {
   return job.cards ? `${cardSheetItemsPrompt(job.cards)}\n\n${cardSheetStyle(job.cards.length, STYLE)}` : `${job.prompt}\n\n${STYLE}`;
