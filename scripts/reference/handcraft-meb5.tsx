@@ -180,7 +180,7 @@ const SCENE = {
     { n: 3, x: 0.768, y: 0.215, label: "flag" },
     { n: 4, x: 0.307, y: 0.16, label: "notice board" },
     { n: 5, x: 0.03, y: 0.24, label: "bookshelf" },
-    { n: 6, x: 0.272, y: 0.225, label: "coat hooks" },
+    { n: 6, x: 0.205, y: 0.262, label: "coat hooks" },
     { n: 7, x: 0.296, y: 0.555, label: "school bag" },
     { n: 8, x: 0.695, y: 0.53, label: "pencil case" },
   ],
@@ -212,15 +212,18 @@ const SPREAD_BUBBLES: { i: number; page: "l" | "r"; b: Box; tail: Tail }[] = [
 ];
 /** Story panel 4: the empty clock face (fractions of the panel, measured on story-4.png). */
 const STORY_CLOCK_AT = { x: 0.056, y: 0.439, r: 0.043 };
-/** Story bubbles: measured on the pictures so no bubble covers a face. Two columns by default (left share in %). */
-const STORY_SHARE: Record<number, number> = { 0: 40, 1: 60, 2: 62, 4: 52 };
-/** Panel 4 (index 3): Defne's long bubble across the top, right of the clock; Zehra's over the empty desks at the left. */
-const STORY_FREE: Record<number, { x: number; y: number; w: number; tail: Tail; tailLeft?: number }[]> = {
-  3: [
-    { x: 0.13, y: 0.02, w: 0.84, tail: "bl", tailLeft: 0.42 },
-    { x: 0.03, y: 0.52, w: 0.44, tail: "tr" },
-  ],
-};
+/**
+ * Story bubbles per panel, in speaking order: the box (fractions of the panel) and sx, the x of the
+ * speaker's head measured on the picture, where the tail points. Every bubble sits above the heads.
+ */
+const STORY_BUBBLES: { x: number; y: number; w: number; sx: number }[][] = [
+  [{ x: 0.03, y: 0.02, w: 0.45, sx: 0.577 }, { x: 0.5, y: 0.02, w: 0.47, sx: 0.743 }],
+  [{ x: 0.03, y: 0.02, w: 0.94, sx: 0.47 }, { x: 0.03, y: 0.275, w: 0.41, sx: 0.31 }],
+  [{ x: 0.03, y: 0.02, w: 0.62, sx: 0.53 }, { x: 0.68, y: 0.02, w: 0.29, sx: 0.76 }],
+  [{ x: 0.13, y: 0.02, w: 0.5, sx: 0.54 }, { x: 0.65, y: 0.02, w: 0.32, sx: 0.86 }],
+  [{ x: 0.03, y: 0.02, w: 0.94, sx: 0.87 }, { x: 0.03, y: 0.2, w: 0.72, sx: 0.27 }],
+  [{ x: 0.03, y: 0.02, w: 0.58, sx: 0.47 }, { x: 0.63, y: 0.02, w: 0.34, sx: 0.62 }],
+];
 
 async function loadAssets() {
   await loadEmoji([...Object.values(SUBJECT_EMOJI), ...Object.values(OBJECT_EMOJI), ...Object.values(FLAGS), ...Object.values(GAME_EMOJI), ...K.RULE_ICONS, ...K.BOARD.flatMap((s) => (s.icon ? [s.icon] : []))]);
@@ -298,10 +301,11 @@ function Clock({ b, time, rim = C.teal, numerals = true }: { b: Box; time: strin
       </>
     );
   }
-  const fs = Math.max(9, r * 0.2);
+  // small clocks (teacher pages) get smaller numerals so 11 and 12 keep apart; children's clocks stay >= 9 pt
+  const fs = r < 34 ? r * 0.22 : Math.max(9, r * 0.2);
   return (
     <>
-      <At b={B(x0, x0 + d, y0, y0 + d)}>
+      <At b={B0(x0, x0 + d, y0, y0 + d)}>
         <Svg width={d} height={d}>
           <Circle cx={c} cy={c} r={R} fill={rim} />
           <Circle cx={c} cy={c} r={r} fill="#ffffff" />
@@ -320,7 +324,7 @@ function Clock({ b, time, rim = C.teal, numerals = true }: { b: Box; time: strin
         ? Array.from({ length: 12 }, (_, i) => {
             const [nx, ny] = pt(((i + 1) / 12) * 2 * Math.PI, r * 0.69);
             return (
-              <At key={i} b={B(x0 + nx - fs, x0 + nx + fs, y0 + ny - fs * 0.86)}>
+              <At key={i} b={B0(x0 + nx - fs, x0 + nx + fs, y0 + ny - fs * 0.86)}>
                 <Text style={{ fontFamily: "Andika", fontWeight: 700, fontSize: fs, color: INK, textAlign: "center", lineHeight: 1 }}>{i + 1}</Text>
               </At>
             );
@@ -493,7 +497,7 @@ function Intonation({ s, marks = true }: { s: string; marks?: boolean }) {
           <View key={i} style={{ flexDirection: "row", alignItems: "flex-end", marginRight: 3.5 }}>
             <View style={{ alignItems: "center" }}>
               <View style={{ height: 10, justifyContent: "center" }}>{marks && neg ? <StressDot /> : null}</View>
-              <Text style={a(BODY, INK, neg ? 700 : 400)}>{w}</Text>
+              <Text style={a(BODY, INK, neg && marks ? 700 : 400)}>{w}</Text>
             </View>
             {last ? <View style={{ marginLeft: 2, marginBottom: 3, width: 11, height: 11, borderBottomWidth: marks ? 0 : 0.6, borderBottomColor: "#9AA3B5" }}>{marks ? <Arrow up={false} color={DARK} /> : null}</View> : null}
           </View>
@@ -886,11 +890,35 @@ function SpreadBubbles({ page }: { page: "l" | "r" }) {
     </>
   );
 }
+/** The class-rules poster on the wall (measured on scene.png, left page): the five rule icons of SB p. 5, in rule order. */
+const POSTER = { x0: 48 * MM, x1: 116.2 * MM, y0: 15.6 * MM, y1: 33.6 * MM };
+function RulesPoster() {
+  const p = POSTER;
+  const n = K.RULE_ICONS.length;
+  const cw = (p.x1 - p.x0) / n;
+  const s = Math.min(cw, p.y1 - p.y0) - 2.4 * MM;
+  return (
+    <>
+      <Fill b={B0(p.x0, p.x1, p.y0, p.y1)} color="#F4F1EA" r={2} />
+      {K.RULE_ICONS.map((_, i) => {
+        const cx0 = p.x0 + i * cw + (cw - s) / 2;
+        const cy0 = p.y0 + (p.y1 - p.y0 - s) / 2;
+        return (
+          <React.Fragment key={i}>
+            <Fill b={B0(cx0 - 0.6 * MM, cx0 + s + 0.6 * MM, cy0 - 0.6 * MM, cy0 + s + 0.6 * MM)} color={[C.leafTint, C.tealTint, C.sunTint, C.coralTint, "#EEE8FA"][i]} r={(s + 1.2 * MM) / 2} />
+            <Pic b={B0(cx0 + 1.6 * MM, cx0 + s - 1.6 * MM, cy0 + 1.6 * MM, cy0 + s - 1.6 * MM)} src={A.rule(i)} fit="contain" name={`poster rule ${i + 1}`} />
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
 function SbScene4() {
   return (
     <BookPage n={4}>
       <Pic b={B(0, W, 0, SCENE_H)} src={A.scene.left} name="opening scene (left)" />
       <SceneOverlays page="l" />
+      <RulesPoster />
       <SceneTags page="l" />
       <SpreadBubbles page="l" />
       <At b={B(cx(1), ce(12), ry(67))}>
@@ -1022,7 +1050,7 @@ function SbFocus6() {
               <View style={{ flexDirection: "row", alignItems: "center", height: "100%" }}>
                 <Tick on={i === 0} />
                 <Text style={{ ...a(BODY), marginLeft: 7, flex: 1 }}>{topic}</Text>
-                {i === 0 ? <ExampleTag /> : null}
+                {i === 0 ? <View style={{ marginRight: -9 }}><ExampleTag /></View> : null}
               </View>
             </At>
           </React.Fragment>
@@ -1670,7 +1698,7 @@ function SbGrammar12() {
         </View>
       </At>
       <At b={B(cx(1), ce(12), ry(68))}>
-        <Ex n={exN("e21")}>Look at the timetable on page 7. Answer: Yes, he does. / No, she doesn&apos;t. / Yes, we do.</Ex>
+        <Ex n={exN("e21")}>Look at the timetable on page 7. Answer: Yes, ... does. / No, ... doesn&apos;t. / Yes, we do.</Ex>
         {[K.EX_DOES.example, ...K.EX_DOES.items].map((it, i) => (
           <Row key={i} n={i} ex={i === 0}>
             <Text style={{ ...a(BODY), flex: 1 }}>{it.q}</Text>
@@ -1974,15 +2002,6 @@ function storyPanels() {
   const ph = (STORY_BOX.h! - 2 * 4 * MM) / 3;
   return K.STORY.map((_, i) => B(g.at(i % 2), g.at(i % 2) + g.w, STORY_BOX.y + Math.floor(i / 2) * (ph + 4 * MM), STORY_BOX.y + Math.floor(i / 2) * (ph + 4 * MM) + ph));
 }
-/** The left bubble's share of the panel width (%), by the length of the texts. */
-function storyShare(i: number) {
-  if (STORY_SHARE[i] !== undefined) return STORY_SHARE[i];
-  const len = (b: { who: K.CastKey; text: string }) => nameOf(b.who).length + b.text.length;
-  const [first, ...rest] = K.STORY[i].bubbles;
-  const l0 = len(first);
-  const l1 = Math.max(...rest.map(len));
-  return Math.min(60, Math.max(42, (100 * l0) / (l0 + l1)));
-}
 function SbStory17() {
   const panels = storyPanels();
   return (
@@ -2006,37 +2025,20 @@ function SbStory17() {
                 <Text style={{ ...a(11, "#fff", 700), lineHeight: 1, marginTop: LIFTA(11) }}>{i + 1}</Text>
               </View>
             </At>
-            {STORY_FREE[i]
-              ? K.STORY[i].bubbles.map((bb, j) => {
-                  const f = STORY_FREE[i][j];
-                  return (
-                    <At key={j} b={B(pb.x + f.x * pb.w, pb.x + (f.x + f.w) * pb.w, pb.y + f.y * pb.h!)}>
-                      <BubbleBody tail={f.tail} border={CAST_COLOUR[bb.who]} tailX={f.tailLeft !== undefined ? f.tailLeft * f.w * pb.w : undefined}>
-                        <Speaker who={bb.who} />
-                        {bb.text}
-                      </BubbleBody>
-                    </At>
-                  );
-                })
-              : null}
-            {STORY_FREE[i] ? null : (
-            <At b={B(pb.x + 2 * MM, pb.x + pb.w - 2 * MM, pb.y + 2 * MM)}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                {[K.STORY[i].bubbles.slice(0, 1), K.STORY[i].bubbles.slice(1)].map((col, c) => (
-                  <View key={c} style={{ width: `${(c ? 97 - storyShare(i) : storyShare(i)).toFixed(1)}%` }}>
-                    {col.map((bb, j) => (
-                      <View key={j} style={{ marginBottom: 6 }}>
-                        <BubbleBody tail={c ? "br" : "bl"} border={CAST_COLOUR[bb.who]}>
-                          <Speaker who={bb.who} />
-                          {bb.text}
-                        </BubbleBody>
-                      </View>
-                    ))}
-                  </View>
-                ))}
-              </View>
-            </At>
-            )}
+            {K.STORY[i].bubbles.map((bb, j) => {
+              const f = STORY_BUBBLES[i][j];
+              const bw = f.w * pb.w;
+              // the tail points down at the speaker's head (measured on the picture)
+              const tailX = Math.min(bw - 22, Math.max(10, (f.sx - f.x) * pb.w - 5));
+              return (
+                <At key={j} b={B0(pb.x + f.x * pb.w, pb.x + (f.x + f.w) * pb.w, pb.y + f.y * pb.h!)}>
+                  <BubbleBody tail="bl" border={CAST_COLOUR[bb.who]} tailX={tailX}>
+                    <Speaker who={bb.who} />
+                    {bb.text}
+                  </BubbleBody>
+                </At>
+              );
+            })}
           </React.Fragment>
         );
       })}
@@ -2110,7 +2112,7 @@ function SbProject18() {
       })}
       <At b={B(poster.x + INSET, poster.x + poster.w - INSET, poster.y + 49 * MM)}>
         <Text style={{ ...a(BODY), lineHeight: 1.2 }}>There are twelve desks. The coat hooks are next to the door.</Text>
-        <Text style={{ ...a(BODY, DARK, 700), marginTop: 2 }}>Thursday: Turkish, Maths, IT, IT, P.E.</Text>
+        <Text style={{ ...a(BODY, DARK, 700), marginTop: 2 }}>Thursday: Turkish, Maths, IT, IT, P.E., P.E., elective</Text>
         <Text style={{ ...a(BODY), marginTop: 2, lineHeight: 1.2 }}>Helpers: Arda – board, Zehra – plants.</Text>
         <Text style={{ ...a(BODY, DARK, 700), marginTop: 2 }}>Please raise your hand!</Text>
       </At>
@@ -2701,10 +2703,14 @@ function Wb5() {
           Read and write the classroom object. The pictures can help you.
         </Ex>
         {K.WB_RIDDLES.map((r, i) => (
-          <Row key={i} n={i} ex={i === 0}>
-            <Text style={{ ...a(BODY), width: 86 * MM }}>{r.q}</Text>
-            <Line w={44 * MM}>{i === 0 ? r.a : null}</Line>
-          </Row>
+          // number and EXAMPLE tag on the first line of the riddle; the write-on line under its last line
+          <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", minHeight: LINE_H, paddingTop: 2, marginBottom: 1 }} wrap={false}>
+            {i === 0 ? <ExampleTag /> : <Num n={i} />}
+            <Text style={{ ...a(BODY), width: 86 * MM - (i === 0 ? 42 : 0), lineHeight: 1.2 }}>{r.q}</Text>
+            <View style={{ alignSelf: "flex-end" }}>
+              <Line w={44 * MM}>{i === 0 ? r.a : null}</Line>
+            </View>
+          </View>
         ))}
       </At>
       <Fill b={B(cx(11), ce(12), ry(8), ry(33))} color={C.sunTint} r={6} />
@@ -3470,7 +3476,7 @@ function Teacher2() {
         <Text style={lab(9, RED)}>WB 2, EXERCISE 1: THE CLOCKS</Text>
       </At>
       {K.WB_DRAW.items.map((tm, i) => (
-        <Clock key={tm} b={B(g.at(i), g.at(i) + g.w, clockY, clockY + 22 * MM)} time={tm} rim={C.coral} />
+        <Clock key={tm} b={B(g.at(i), g.at(i) + g.w, clockY, clockY + 26 * MM)} time={tm} rim={C.coral} />
       ))}
       <TeacherFoot n={2} />
     </BookPage>
@@ -3690,7 +3696,7 @@ function previewDoc() {
 function wordRegex(key: string) {
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const neg = key.startsWith("not ");
-  const words = (neg ? key.slice(4) : key).split(" ").map((w) => (w === "someone" ? "[A-Za-z]+" : w === "a" ? "(?:a|the)" : /[^aeiou]y$/.test(w) ? `${esc(w.slice(0, -1))}(?:y|ies)` : `${esc(w)}(?:s|es)?`));
+  const words = (neg ? key.slice(4) : key).split(" ").map((w) => (w === "someone" ? "(?:[A-Za-z]+ )?[A-Za-z]+" : w === "a" ? "(?:a|the)" : /[^aeiou]y$/.test(w) ? `${esc(w.slice(0, -1))}(?:y|ies)` : `${esc(w)}(?:s|es)?`));
   return new RegExp(`${neg ? "(?:not |n't )" : "(?:^|[^A-Za-z])"}${words.join(" ")}(?:$|[^A-Za-z])`);
 }
 /** The word list's page numbers: the first Student's Book page (3–19) where each word is printed. */

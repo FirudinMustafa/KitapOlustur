@@ -217,8 +217,11 @@ for (let p = 0; p < n; p++) {
       // a rounded corner's control points lie on the box's edges too; a drawn
       // curve's do not. A box has no curves, or one per corner.
       let curves = 0;
-      pathObj.walk({ moveTo: onEdge, lineTo: onEdge, curveTo: (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) => (curves++, onEdge(x1, y1), onEdge(x2, y2), onEdge(x3, y3)) });
+      let lines = 0;
+      pathObj.walk({ moveTo: onEdge, lineTo: (x: number, y: number) => (lines++, onEdge(x, y)), curveTo: (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) => (curves++, onEdge(x1, y1), onEdge(x2, y2), onEdge(x3, y3)) });
       if (curves !== 0 && curves % 4 !== 0) boxLike = false;
+      // a circle (four curves, no straight edge: a clock rim, a dot) has no edge to line up
+      if (curves === 4 && lines === 0) boxLike = false;
 
       const a = T(b[0], b[1]);
       const c = T(b[2], b[3]);

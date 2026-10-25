@@ -81,7 +81,7 @@ export const addMin = (hhmm: string, min: number) => {
 export const SCENE_TIME = "08:30";
 export const SCENE_BUBBLES: { who: CastKey; text: string }[] = [
   { who: "aksoy", text: "Good morning, everyone! This is Can. He's our new classmate." },
-  { who: "arda", text: "Hi, Can! Our class rules are on the wall. Rule number one: don't shout!" },
+  { who: "arda", text: "Hi, Can! Our class rules are on the wall. Rule number three: don't shout!" },
   { who: "defne", text: "Welcome to 5/C! You can hang your coat here." },
   { who: "can", text: "Thank you! What's the first lesson today?" },
   { who: "zehra", text: "It's Turkish. It starts at twenty to nine." },
@@ -103,7 +103,7 @@ export const EX1 = {
 export const EX2 = {
   example: { parts: ["Can is a new ", ["teacher", "student"], "."] as const, a: 1 },
   items: [
-    { parts: ["Rule number one: Don't ", ["shout", "run"], "!"] as const, a: 0 },
+    { parts: ["Rule number three: Don't ", ["shout", "run"], "!"] as const, a: 0 },
     { parts: ["The first lesson is ", ["Turkish", "English"], "."] as const, a: 0 },
     { parts: ["It starts at ", ["twenty to nine", "half past eight"], "."] as const, a: 0 },
     { parts: ["P.E. is on ", ["Mondays", "Thursdays"], "."] as const, a: 1 },
@@ -256,7 +256,7 @@ export const BOARD: { t: string; kind?: "start" | "end" | "fwd" | "back" | "help
   { t: "Spell: Wednesday", icon: "🔤" },
   { t: "Is there a flag in your classroom?", icon: "🇹🇷" },
   { t: "What time is it? 13:55", icon: "🕑" },
-  { t: "You forget your homework. Go back 2.", kind: "back", icon: "📓" },
+  { t: "You forget your homework. Go back 2.", kind: "back", icon: "📝" },
   { t: "What day comes after Thursday?", icon: "📅" },
   { t: "Say a class rule.", icon: "✋" },
   { t: "Zehra is my friend. I like ...", icon: "💜" },
@@ -348,12 +348,12 @@ export const EX31 = {
 // upper part is plain wall or sky for the bubbles. Panel 4 has an empty clock face: the book
 // draws the time (STORY_CLOCK) on it.
 export const STORY_TITLE = "The Tidy Robot";
-export const STORY_CLOCK = "12:50";
+export const STORY_CLOCK = "13:00";
 export const STORY: { scene: string; bubbles: { who: CastKey; text: string }[] }[] = [
   { scene: "Tuesday morning in the classroom: Arda sits at his desk holding his head; Ms Aksoy bends down to him with a glass of water.", bubbles: [{ who: "arda", text: "I don't feel all right this morning. My head hurts." }, { who: "aksoy", text: "Drink some water, Arda, and go and see the school nurse." }] },
   { scene: "Later in the classroom: Kerem in his wheelchair shows a drawing of a small cardboard-box robot to Defne and Zehra.", bubbles: [{ who: "kerem", text: "Look! This is my robot for the Science Fair on Friday. It picks up rubbish." }, { who: "defne", text: "Cool! Can I give you a hand?" }] },
-  { scene: "Lunch break in the classroom: Kerem, Defne and Zehra build the robot from one big cardboard box and three paper cups; Zehra holds a roll of sticky tape.", bubbles: [{ who: "zehra", text: "There is one big box, and there are three paper cups. We need tape!" }, { who: "defne", text: "Here you are." }] },
-  { scene: "The classroom with a round wall clock with an EMPTY face (no hands, no numbers): Defne points at the half-finished robot, Zehra shakes her head.", bubbles: [{ who: "defne", text: "It's ten to one. We have Music at one o'clock on Tuesdays. Let's stay here and finish the robot!" }, { who: "zehra", text: "No, please don't skip the lesson, Defne. We can finish after school." }] },
+  { scene: "Lunch break in the classroom: Kerem, Defne and Zehra build the robot from one big cardboard box and three paper cups; Zehra holds a roll of sticky tape.", bubbles: [{ who: "defne", text: "There is one big box, and there are three paper cups. We need tape!" }, { who: "zehra", text: "Here you are." }] },
+  { scene: "The classroom with a round wall clock with an EMPTY face (no hands, no numbers): Defne points at the half-finished robot, Zehra shakes her head.", bubbles: [{ who: "defne", text: "Listen, the bell for Music! Can we skip the lesson and finish the robot?" }, { who: "zehra", text: "No, Defne! We can finish after school." }] },
   { scene: "Friday, the Science Fair in the school hall: the little robot picks up paper; Kerem, Defne, Zehra and Ms Aksoy smile for a photo.", bubbles: [{ who: "aksoy", text: "Well done, Kerem! Your robot makes the grade. Smile for the photo!" }, { who: "kerem", text: "Thank you! It's our robot. We did it together." }] },
   { scene: "After the fair in the school hall: Kerem talks to Arda, who is well again and smiles; Defne and Zehra hold the robot.", bubbles: [{ who: "kerem", text: "Next year, let's make a robot team. Do you want to join us, Arda?" }, { who: "arda", text: "I'd love to!" }] },
 ];
@@ -372,7 +372,7 @@ export const EX35 = {
 export const STORY_EVENTS: [string, number][] = [
   ["Kerem shows his robot plan.", 2],
   ["Arda's head hurts.", 1],
-  ["Zehra says: \"Don't skip the lesson!\"", 4],
+  ["The bell rings for Music.", 4],
   ["Arda wants to be in the robot team.", 6],
   ["The friends build the robot.", 3],
   ["The robot makes the grade at the fair.", 5],
@@ -613,7 +613,7 @@ export const WB_WHO = [
   { s: "This is my robot for the Science Fair.", a: "Kerem" },
   { s: "I'd love to!", a: "Arda" },
   { s: "Drink some water, Arda.", a: "Ms Aksoy" },
-  { s: "Let's stay here and finish the robot!", a: "Defne" },
+  { s: "Can we skip the lesson and finish the robot?", a: "Defne" },
 ];
 export const WB_EXPRESSIONS = {
   left: ["Oh, I don't feel all right.", "Can you give me a hand, please?", "Do you want to join our team?", "Please don't skip the Music lesson!"],
@@ -762,7 +762,8 @@ export function checkContent() {
   const zehra = ROUTINE_TEXT[1];
   for (const t of SURVEY_ZEHRA) if (!zehra.includes(timeWords(t))) errs.push(`Zehra's ${t} (${timeWords(t)}) is not in her text`);
   // story: Music at one on Tuesdays, the clock at ten to one, the counts in picture 3
-  if (startOf("Music", "Tuesday") !== "13:00" || timeWords(STORY_CLOCK) !== "ten to one" || !STORY[3].bubbles[0].text.includes(timeWords(STORY_CLOCK))) errs.push("story timing");
+  // panel 4: the clock shows the start of Tuesday's Music lesson, and Defne hears the bell for it
+  if (startOf("Music", "Tuesday") !== STORY_CLOCK || !STORY[3].bubbles[0].text.includes("Music") || !STORY[3].bubbles[0].text.includes("bell")) errs.push("story timing");
   if (!STORY[2].scene.includes("one big cardboard box") || !STORY[2].scene.includes("three paper cups")) errs.push("story picture 3 counts");
   if ([...STORY_EVENTS.map((e) => e[1])].sort().join() !== "1,2,3,4,5,6") errs.push("story events");
   // check page
