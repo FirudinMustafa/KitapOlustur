@@ -11,6 +11,8 @@
 //              vertical units and their insets, the trim and bleed edges):
 //              a near miss. Edges further than 3 pt from every line are
 //              free-placed (a picture centred in a derived cell) - counted.
+//              Inline pieces under 12 mm (icons, chips, tags, number badges)
+//              sit in the text flow and are not checked against the grid.
 //              Text is checked by the alignment rule; its containers are
 //              placed on the grid by the layout code.
 //   align      two neighbouring left edges (text of different blocks, or
@@ -27,6 +29,8 @@
 //              size; ALL-CAPS labels, numbers and folios are exempt, and so
 //              are the pages given with --skip-small 11-12 (teacher pages).
 //   hairline   a stroked line inside the bleed thinner than 0.25 pt.
+//   overflow   text running into other text on its line (< 0.8 pt apart),
+//              or text that starts in a painted box and runs out of it.
 //   over-text  text that a cut-out picture (with transparency) painted
 //              after it lies over.
 // Writes <out>/report.txt, <out>/report.json and an annotated PNG per page
@@ -255,11 +259,15 @@ for (let p = 0; p < n; p++) {
       else if (d > 3) free++;
     }
   };
-  for (const i of pageImgs) gridCheck("picture", i, ["l", "r", "t", "b"]);
+  // inline pieces (an icon, a chip, a tag, a number badge: under 12 mm) sit in the text flow, not on the grid
+  const inline = (r: R, both: boolean) => (both ? r.x1 - r.x0 < 12 * MM && r.y1 - r.y0 < 12 * MM : r.y1 - r.y0 < 12 * MM);
+  for (const i of pageImgs) if (!inline(i, true)) gridCheck("picture", i, ["l", "r", "t", "b"]);
   // a painted box is placed by its top-left corner; its size may follow its
   // text (a speech bubble). White fills print no ink - their edge is the
   // border drawn round them, measured as a box of its own.
-  for (const b of boxes) if (b.boxLike && b.color !== "#ffffff") gridCheck(`painted box ${b.color}`, b, ["l", "t"]);
+  // a box inside a panel follows the panel's inset, not the page grid
+  const nested = (b: Paint) => boxes.some((o) => o !== b && !isGround(o) && o.boxLike && o.x0 <= b.x0 + 0.1 && o.x1 >= b.x1 - 0.1 && o.y0 <= b.y0 + 0.1 && o.y1 >= b.y1 - 0.1 && (o.x1 - o.x0) * (o.y1 - o.y0) > 1.2 * (b.x1 - b.x0) * (b.y1 - b.y0));
+  for (const b of boxes) if (b.boxLike && b.color !== "#ffffff" && !inline(b, false) && !nested(b)) gridCheck(`painted box ${b.color}`, b, ["l", "t"]);
 
   // shared alignments that slipped
   const lh = (l: Line) => l.y1 - l.y0;
@@ -280,6 +288,7 @@ for (let p = 0; p < n; p++) {
     for (let j = i + 1; j < pageImgs.length; j++) {
       const a = pageImgs[i];
       const b = pageImgs[j];
+      if (inline(a, true) || inline(b, true)) continue;
       const sameRow = inter(a, b).h > 0 || Math.abs(a.y0 - b.y0) < 3;
       const sameCol = inter(a, b).w > 0 || Math.abs(a.x0 - b.x0) < 3;
       const near = (e: string, d: number, ok: boolean) => ok && d > 1 && d <= 3 && W.push({ kind: "align", msg: `picture ${e} edges ${fmt(d)} pt apart`, box: a, other: b });
@@ -298,6 +307,32 @@ for (let p = 0; p < n; p++) {
       if (a.text.trim() === b.text.trim()) continue; // outlined titles: copies of one text
       const o = inter(a, b);
       if (o.w > 1 && o.h > 0.3 * Math.min(lh(a), lh(b))) W.push({ kind: "overlap", msg: `text "${a.text.trim().slice(0, 24)}" overlaps "${b.text.trim().slice(0, 24)}"`, box: a, other: b });
+    }
+  // text running into text on the same line (two blocks closer than 0.8 pt)
+  for (let i = 0; i < content.length; i++)
+    for (let j = i + 1; j < content.length; j++) {
+      const a = content[i];
+      const b = content[j];
+      if (a.block === b.block || a.text.trim() === b.text.trim()) continue;
+      const o = inter(a, b);
+      if (o.h < 0.5 * Math.min(lh(a), lh(b))) continue;
+      const gap = Math.max(a.x0, b.x0) - Math.min(a.x1, b.x1);
+      if (gap > -1 && gap < 0.8) W.push({ kind: "overflow", msg: `text "${a.text.trim().slice(0, 24)}" runs into "${b.text.trim().slice(0, 24)}" (${fmt(gap)} pt)`, box: a, other: b });
+    }
+  // text that starts inside a painted box and runs out of it
+  for (const l of content)
+    for (const b of boxes) {
+      // badges (an exercise number disc, a lesson number) carry one short
+      // label and the heading text runs on beside them: not text boxes
+      if (!b.boxLike || isGround(b) || b.x1 - b.x0 < 15 * MM) continue;
+      const cy = (l.y0 + l.y1) / 2;
+      const cx = (l.x0 + l.x1) / 2;
+      const startsIn = l.x0 >= b.x0 && l.x0 < b.x1 && cy > b.y0 && cy < b.y1;
+      if (startsIn && l.x1 > b.x1 + 0.8) W.push({ kind: "overflow", msg: `text "${l.text.trim().slice(0, 30)}" runs out of its box (right, ${fmt(l.x1 - b.x1)} pt)`, box: l, other: b });
+      const topIn = l.y0 >= b.y0 && l.y0 < b.y1 - 1 && cx > b.x0 && cx < b.x1 && l.x0 >= b.x0 - 0.5 && l.x1 <= b.x1 + 0.5;
+      // the ink band reaches 0.2 em below the baseline; without descenders the ink stops at it
+      const room = 0.8 + (/[gjpqy(),;]/.test(l.text) ? 0 : 0.2 * l.size);
+      if (topIn && l.y1 > b.y1 + room) W.push({ kind: "overflow", msg: `text "${l.text.trim().slice(0, 30)}" runs out of its box (bottom, ${fmt(l.y1 - b.y1)} pt)`, box: l, other: b });
     }
   for (const l of content)
     for (const i of pageImgs) {

@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { DPI, knockOutside } from "./print-kit";
-import { CORNER, CUPBOARD } from "./handcraft-meb5-content";
+import { CORNER, CORNER_B, CUPBOARD } from "./handcraft-meb5-content";
 
 const ROOT = path.join(process.cwd(), ".handmade-meb5");
 export const IMG_DIR = path.join(ROOT, "img");
@@ -125,14 +125,15 @@ export function kite(name: string, wPt: number, hPt: number, tail = true) {
   });
 }
 
-// --- the class corner (Ex 18): exactly CORNER --------------------------------------------------------
-export function classCorner(wPt: number, hPt: number) {
-  return draw(`class-corner-${CORNER.posters}-${CORNER.windows}`, wPt, hPt, (W, H) => {
+// --- the class corner (Ex 17, pictures A and B of the pair game): exactly CORNER / CORNER_B --------------------------------------------------------
+export function classCorner(wPt: number, hPt: number, variant: "A" | "B" = "A") {
+  const K = variant === "A" ? CORNER : CORNER_B;
+  return draw(`class-corner-${variant}-${K.posters}-${K.chairs}-${K.plants}-${K.bins}`, wPt, hPt, (W, H) => {
     const u = W / 100;
     const floorY = H * 0.72;
     let s = `<rect width="${W}" height="${H}" fill="#FFF3D6"/><rect y="${floorY}" width="${W}" height="${H - floorY}" fill="#E8C9A0"/><rect y="${floorY - u * 0.8}" width="${W}" height="${u * 1.6}" fill="#C9A27A"/>`;
     // windows (2)
-    for (let i = 0; i < CORNER.windows; i++) {
+    for (let i = 0; i < K.windows; i++) {
       const x = u * (6 + i * 20);
       s += `<rect x="${x}" y="${H * 0.12}" width="${u * 15}" height="${H * 0.34}" rx="${u}" fill="#ffffff"/><rect x="${x + u}" y="${H * 0.12 + u}" width="${u * 13}" height="${H * 0.34 - 2 * u}" fill="#BFE6FB"/><line x1="${x + u * 7.5}" y1="${H * 0.12}" x2="${x + u * 7.5}" y2="${H * 0.46}" stroke="#ffffff" stroke-width="${u * 0.9}"/><line x1="${x}" y1="${H * 0.29}" x2="${x + u * 15}" y2="${H * 0.29}" stroke="#ffffff" stroke-width="${u * 0.9}"/>`;
     }
@@ -140,7 +141,7 @@ export function classCorner(wPt: number, hPt: number) {
     s += clockSvg(u * 52, H * 0.16, u * 4.6, "10:10", C.coral, { numerals: false });
     // posters (3)
     const pc = [C.coral, C.teal, C.lilac];
-    for (let i = 0; i < CORNER.posters; i++) {
+    for (let i = 0; i < K.posters; i++) {
       const x = u * (60 + i * 13);
       const y = H * (0.1 + (i % 2) * 0.05);
       s += `<rect x="${x + u * 0.4}" y="${y + u * 0.5}" width="${u * 10}" height="${H * 0.27}" fill="#00000018"/><rect x="${x}" y="${y}" width="${u * 10}" height="${H * 0.27}" fill="#ffffff" stroke="${pc[i]}" stroke-width="${u * 0.7}"/><circle cx="${x + u * 5}" cy="${y + H * 0.09}" r="${u * 2.6}" fill="${pc[i]}"/><rect x="${x + u * 1.8}" y="${y + H * 0.17}" width="${u * 6.4}" height="${u * 0.9}" fill="#C7CCD8"/><rect x="${x + u * 1.8}" y="${y + H * 0.21}" width="${u * 4.6}" height="${u * 0.9}" fill="#C7CCD8"/>`;
@@ -160,19 +161,21 @@ export function classCorner(wPt: number, hPt: number) {
     // teacher's desk with 2 chairs
     const dx = u * 34;
     s += `<rect x="${dx}" y="${H * 0.62}" width="${u * 30}" height="${u * 2.4}" fill="#A86B43"/><rect x="${dx + u}" y="${H * 0.62 + u * 2.4}" width="${u * 2}" height="${H * 0.25}" fill="#8D5A3B"/><rect x="${dx + u * 27}" y="${H * 0.62 + u * 2.4}" width="${u * 2}" height="${H * 0.25}" fill="#8D5A3B"/>`;
-    for (let c = 0; c < CORNER.chairs; c++) {
-      const cx2 = u * (70 + c * 14);
+    for (let c = 0; c < K.chairs; c++) {
+      const cx2 = K.chairs > 2 ? u * (66 + c * 11) : u * (70 + c * 14);
       s += `<rect x="${cx2}" y="${H * 0.52}" width="${u * 9}" height="${H * 0.16}" rx="${u}" fill="${C.teal}"/><rect x="${cx2}" y="${H * 0.67}" width="${u * 9}" height="${u * 2}" fill="${C.tealDark}"/><rect x="${cx2 + u * 0.6}" y="${H * 0.67 + u * 2}" width="${u * 1.4}" height="${H * 0.2}" fill="#5B6476"/><rect x="${cx2 + u * 7}" y="${H * 0.67 + u * 2}" width="${u * 1.4}" height="${H * 0.2}" fill="#5B6476"/>`;
     }
-    // rubbish bin (not counted in Ex 18)
-    s += `<path d="M${u * 93} ${H * 0.74} h${u * 6} l${-u * 0.8} ${H * 0.16} h${-u * 4.4} Z" fill="#78909C"/>`;
+    // rubbish bin
+    if (K.bins) s += `<path d="M${u * 93} ${H * 0.74} h${u * 6} l${-u * 0.8} ${H * 0.16} h${-u * 4.4} Z" fill="#78909C"/>`;
+    // a plant in a pot
+    if (K.plants) s += `<path d="M${u * 28} ${H * 0.78} h${u * 5} l${-u * 0.7} ${H * 0.12} h${-u * 3.6} Z" fill="#C8693B"/><ellipse cx="${u * 29}" cy="${H * 0.7}" rx="${u * 2}" ry="${H * 0.07}" fill="#43A047"/><ellipse cx="${u * 32}" cy="${H * 0.68}" rx="${u * 2}" ry="${H * 0.08}" fill="#2E7D32"/><ellipse cx="${u * 30.5}" cy="${H * 0.63}" rx="${u * 1.6}" ry="${H * 0.07}" fill="#66BB6A"/>`;
     return s;
   });
 }
 
-// --- the Art cupboard (WB): exactly CUPBOARD, doors open --------------------------------------------
+// --- the class cupboard (WB): exactly CUPBOARD, doors open --------------------------------------------
 export function artCupboard(wPt: number, hPt: number) {
-  return draw(`art-cupboard-${CUPBOARD.brushes}-${CUPBOARD.paintPots}-${CUPBOARD.glueSticks}-${CUPBOARD.aprons}`, wPt, hPt, (W, H) => {
+  return draw(`class-cupboard-${CUPBOARD.dictionaries}-${CUPBOARD.rulers}-${CUPBOARD.pencilCases}-${CUPBOARD.crayons}`, wPt, hPt, (W, H) => {
     const u = W / 100;
     const x0 = u * 18;
     const x1 = u * 82;
@@ -180,36 +183,32 @@ export function artCupboard(wPt: number, hPt: number) {
     const y1 = H * 0.96;
     const shelfY = [y0 + (y1 - y0) * 0.36, y0 + (y1 - y0) * 0.68];
     let s = `<rect width="${W}" height="${H}" fill="#EAF6F6"/>`;
-    // the open doors
     s += `<polygon points="${x0},${y0} ${u * 4},${y0 + H * 0.05} ${u * 4},${y1 - H * 0.05} ${x0},${y1}" fill="#A8D8D4" stroke="${C.tealDark}" stroke-width="${u * 0.6}"/><polygon points="${x1},${y0} ${u * 96},${y0 + H * 0.05} ${u * 96},${y1 - H * 0.05} ${x1},${y1}" fill="#A8D8D4" stroke="${C.tealDark}" stroke-width="${u * 0.6}"/>`;
     s += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="#FFFFFF" stroke="${C.tealDark}" stroke-width="${u * 0.9}"/>`;
     for (const sy of shelfY) s += `<rect x="${x0}" y="${sy}" width="${x1 - x0}" height="${u * 1.6}" fill="${C.tealDark}"/>`;
-    // top shelf: paint pots (3)
-    const pots = ["#E53935", "#1E88E5", "#FDD835"];
-    for (let i = 0; i < CUPBOARD.paintPots; i++) {
-      const cx = x0 + (x1 - x0) * (0.2 + i * 0.3);
-      const pw = u * 11;
-      const ph = H * 0.14;
-      s += `<rect x="${cx - pw / 2}" y="${shelfY[0] - ph}" width="${pw}" height="${ph}" rx="${u}" fill="#ffffff" stroke="#607080" stroke-width="${u * 0.5}"/><rect x="${cx - pw / 2}" y="${shelfY[0] - ph}" width="${pw}" height="${ph * 0.35}" rx="${u}" fill="${pots[i]}"/><rect x="${cx - pw / 2 - u}" y="${shelfY[0] - ph - u * 1.6}" width="${pw + 2 * u}" height="${u * 2}" rx="${u * 0.6}" fill="${pots[i]}"/>`;
+    // top shelf: thick red dictionaries standing (3)
+    for (let i = 0; i < CUPBOARD.dictionaries; i++) {
+      const bx = x0 + (x1 - x0) * 0.18 + i * u * 14;
+      const bh = H * 0.24;
+      s += `<rect x="${bx}" y="${shelfY[0] - bh}" width="${u * 11}" height="${bh}" rx="${u * 0.8}" fill="#C62828" stroke="#7F1414" stroke-width="${u * 0.5}"/><rect x="${bx + u * 2}" y="${shelfY[0] - bh * 0.75}" width="${u * 7}" height="${bh * 0.12}" fill="#FFD54F"/><rect x="${bx + u * 2}" y="${shelfY[0] - bh * 0.35}" width="${u * 7}" height="${bh * 0.06}" fill="#FFD54F"/>`;
     }
-    // middle shelf: a jar with brushes (5) and glue sticks (2)
-    const jx = x0 + (x1 - x0) * 0.28;
-    const jw = u * 16;
-    const jh = H * 0.13;
-    for (let i = 0; i < CUPBOARD.brushes; i++) {
-      const bx = jx - jw * 0.36 + (i * jw * 0.72) / (CUPBOARD.brushes - 1);
-      const tilt = (i - 2) * 5;
-      s += `<g transform="rotate(${tilt} ${bx} ${shelfY[1] - jh})"><rect x="${bx - u * 0.8}" y="${shelfY[1] - jh - H * 0.15}" width="${u * 1.6}" height="${H * 0.15}" fill="#A0522D"/><rect x="${bx - u * 1.1}" y="${shelfY[1] - jh - H * 0.19}" width="${u * 2.2}" height="${H * 0.05}" rx="${u}" fill="${["#E53935", "#43A047", "#1E88E5", "#FB8C00", "#8E24AA"][i]}"/></g>`;
+    // middle shelf: two yellow rulers lying, one green pencil case
+    for (let i = 0; i < CUPBOARD.rulers; i++) {
+      const ry0 = shelfY[1] - u * (3.4 + i * 4.2);
+      s += `<rect x="${x0 + u * 4}" y="${ry0}" width="${u * 30}" height="${u * 3.4}" fill="#FDD835" stroke="#9A7B00" stroke-width="${u * 0.3}"/>${Array.from({ length: 15 }, (_, k) => `<line x1="${x0 + u * (5 + k * 2)}" y1="${ry0}" x2="${x0 + u * (5 + k * 2)}" y2="${ry0 + u * (k % 5 === 0 ? 1.8 : 1)}" stroke="#5D4A00" stroke-width="${u * 0.25}"/>`).join("")}`;
     }
-    s += `<rect x="${jx - jw / 2}" y="${shelfY[1] - jh}" width="${jw}" height="${jh}" rx="${u * 1.5}" fill="#CFE8F7" stroke="#607080" stroke-width="${u * 0.5}" opacity="0.95"/>`;
-    for (let i = 0; i < CUPBOARD.glueSticks; i++) {
-      const gx = x0 + (x1 - x0) * (0.62 + i * 0.2);
-      s += `<rect x="${gx - u * 3}" y="${shelfY[1] - H * 0.15}" width="${u * 6}" height="${H * 0.15}" rx="${u * 1.2}" fill="#FFFFFF" stroke="#607080" stroke-width="${u * 0.5}"/><rect x="${gx - u * 3}" y="${shelfY[1] - H * 0.15}" width="${u * 6}" height="${H * 0.04}" rx="${u * 1.2}" fill="#7E57C2"/>`;
+    for (let i = 0; i < CUPBOARD.pencilCases; i++) {
+      const px0 = x0 + u * 40;
+      s += `<rect x="${px0}" y="${shelfY[1] - H * 0.13}" width="${u * 20}" height="${H * 0.13}" rx="${u * 4}" fill="#66BB6A" stroke="#2E7D32" stroke-width="${u * 0.6}"/><line x1="${px0 + u * 2}" y1="${shelfY[1] - H * 0.11}" x2="${px0 + u * 18}" y2="${shelfY[1] - H * 0.11}" stroke="#2E7D32" stroke-width="${u * 0.6}"/><circle cx="${px0 + u * 17}" cy="${shelfY[1] - H * 0.11}" r="${u * 0.9}" fill="#BDBDBD"/>`;
     }
-    // bottom: an apron (1) on a hook
-    const ax = x0 + (x1 - x0) * 0.5;
-    const at = shelfY[1] + H * 0.05;
-    s += `<circle cx="${ax}" cy="${at}" r="${u * 1.2}" fill="#607080"/><path d="M${ax - u * 5} ${at + u * 1.5} h${u * 10} l${u * 4} ${H * 0.07} l${-u * 2} ${H * 0.12} h${-u * 14} l${-u * 2} ${-H * 0.12} Z" fill="${C.coral}"/><rect x="${ax - u * 4}" y="${at + H * 0.1}" width="${u * 8}" height="${H * 0.05}" rx="${u}" fill="#FFD9CF"/>`;
+    // bottom shelf: a cup with four crayons
+    const cx0 = x0 + (x1 - x0) * 0.42;
+    for (let i = 0; i < CUPBOARD.crayons; i++) {
+      const kx = cx0 + u * (1.5 + i * 3.2);
+      const col = ["#E53935", "#1E88E5", "#43A047", "#FB8C00"][i];
+      s += `<rect x="${kx}" y="${y1 - H * 0.26}" width="${u * 2.4}" height="${H * 0.16}" fill="${col}"/><polygon points="${kx},${y1 - H * 0.26} ${kx + u * 1.2},${y1 - H * 0.31} ${kx + u * 2.4},${y1 - H * 0.26}" fill="${col}"/>`;
+    }
+    s += `<rect x="${cx0}" y="${y1 - H * 0.15}" width="${u * 15}" height="${H * 0.13}" rx="${u}" fill="#90A4AE"/>`;
     return s;
   });
 }

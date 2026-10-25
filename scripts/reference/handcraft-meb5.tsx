@@ -24,7 +24,24 @@ import { cardSheetGrid } from "../../src/lib/ai/card-sheet";
 import * as art from "./handcraft-meb5-art";
 import { C } from "./handcraft-meb5-art";
 import * as K from "./handcraft-meb5-content";
-import { MM, W, H, BLEED, SLUG, LAST_ROW, cx, ce, ry, cells, B, type Box, DPI, printPicture, dpiTable, sheetFigures } from "./print-kit";
+import { MM, W, H, BLEED, SLUG, LAST_ROW, cx, ce, ry, cells, B as B0, GRID, type Box, DPI, printPicture, dpiTable, sheetFigures } from "./print-kit";
+// Every box edge within ~1 mm of a grid line (column edges and their 4 mm insets, the 2.5 mm
+// units and their insets, the trim and bleed) is set exactly on it: no near misses at press check.
+const GX = [0, W, -BLEED, W + BLEED, ...Array.from({ length: 12 }, (_, i) => cx(i + 1)).flatMap((l) => [l, l + GRID.col, l + 4 * MM, l + GRID.col - 4 * MM, l - 4 * MM, l + GRID.col + 4 * MM])];
+const GY = [0, H, -BLEED, H + BLEED, ...Array.from({ length: 123 }, (_, i) => ry(i - 6)).flatMap((y) => [y, y + 4 * MM, y - 4 * MM])];
+const snap = (v: number, lines: number[]) => {
+  let best = v;
+  let d = Infinity;
+  for (const l of lines) if (Math.abs(v - l) < d) [d, best] = [Math.abs(v - l), l];
+  return d > 0.2 && d <= 3.3 ? best : v;
+};
+const B = (x0: number, x1: number, y0: number, y1?: number): Box => {
+  let [a, b] = [snap(x0, GX), snap(x1, GX)];
+  if (b - a < 0.8 * (x1 - x0)) [a, b] = [x0, x1];
+  let [c, d] = [snap(y0, GY), y1 === undefined ? undefined : snap(y1, GY)];
+  if (y1 !== undefined && d! - c < 0.8 * (y1 - y0)) [c, d] = [y0, y1];
+  return B0(a, b, c, d);
+};
 
 const FONTS = path.join(process.cwd(), "public", "fonts");
 Font.register({ family: "Baloo", fonts: [{ src: path.join(FONTS, "Baloo2-Medium.ttf"), fontWeight: 500 }, { src: path.join(FONTS, "Baloo2-Bold.ttf"), fontWeight: 700 }] });
@@ -51,6 +68,16 @@ type Part = "sb" | "wb";
 
 const a = (size = BODY, color: string = INK, weight: 400 | 700 = 400) => ({ fontFamily: "Andika", fontSize: size, color, fontWeight: weight, lineHeight: 1.28 });
 const lab = (size = 9, color: string = DARK) => ({ fontFamily: "Andika", fontSize: size, color, fontWeight: 700 as const, lineHeight: 1.1, letterSpacing: 0.3, marginTop: -0.2 * size });
+/**
+ * Student's Book exercise numbers by id, in the order the pages render them
+ * (the key and the audio-script headings ask by the same id, so adding an
+ * exercise renumbers everything after it consistently).
+ */
+const EXNUM = new Map<string, number>();
+const exN = (id: string) => {
+  if (!EXNUM.has(id)) EXNUM.set(id, EXNUM.size + 1);
+  return EXNUM.get(id)!;
+};
 /** Shift a one-line label up so its capitals sit centred in a tight box (Andika and Baloo carry tall ascenders). */
 const LIFTA = (size: number) => -0.26 * size;
 const LIFTB = (size: number) => -0.1 * size;
@@ -135,69 +162,106 @@ const FLAGS: Record<string, string> = { "South Korea": "🇰🇷", Brazil: "🇧
 const GAME_EMOJI = { dice: "🎲", coin: "🪙" };
 // Stand-in icons for the subject and object cards until the paid card sheets exist.
 const SUBJECT_EMOJI: Record<string, string> = { Maths: "📐", Science: "🔬", Turkish: "📖", "Social Studies": "🌍", English: "💬", "P.E.": "⚽", Art: "🎨", Music: "🎵", IT: "💻", "Religion and Morals": "🕌" };
-const OBJECT_EMOJI: Record<string, string> = { scissors: "✂️", notebook: "📓", ruler: "📏", crayons: "🖍️", "school bag": "🎒", glue: "🧴", calculator: "🧮", "pencil case": "👝" };
+const OBJECT_EMOJI: Record<string, string> = { scissors: "✂️", notebook: "📓", ruler: "📏", crayons: "🖍️", "school bag": "🎒", glue: "🧴", rubber: "🧽", "pencil case": "👝", "board marker": "🖊️", "rubbish bin": "🗑️", "sheet of paper": "📄" };
 const CAST_COLOUR: Record<K.CastKey, string> = { defne: "#F2B705", kerem: "#2F80ED", zehra: C.lilac, arda: C.leaf, can: "#F2994A", aksoy: C.teal };
 /** Each character's name colour as text (dark enough on white). */
 const CAST_TEXT: Record<K.CastKey, string> = { defne: "#8A5A00", kerem: "#1D5BB5", zehra: "#5B3FA0", arda: "#2E7031", can: "#A3500F", aksoy: C.tealDark };
 const nameOf = (k: K.CastKey) => K.CAST.find((c) => c.key === k)!.name;
+/** Small pictures of the cast for picture-poor pages (one sheet: handcraft-meb5-images.mts "vignettes"). */
+const VIGNETTES = K.VIGNETTES.map((v) => v.key);
 
-// The opening scene (fractions of the whole spread picture). Nothing within 10 mm of the spine.
+// The opening scene (fractions of the whole spread picture), measured on the generated picture.
+// Nothing within 10 mm of the spine.
 const SCENE = {
+  // measured on scene.png (3840 x 1584): fractions of the whole picture
   tags: [
-    { n: 1, x: 0.64, y: 0.24, label: "smart board" },
-    { n: 2, x: 0.79, y: 0.12, label: "clock" },
-    { n: 3, x: 0.88, y: 0.14, label: "flag" },
-    { n: 4, x: 0.34, y: 0.2, label: "notice board" },
-    { n: 5, x: 0.08, y: 0.36, label: "bookshelf" },
-    { n: 6, x: 0.2, y: 0.32, label: "coat hooks" },
-    { n: 7, x: 0.27, y: 0.8, label: "school bag" },
-    { n: 8, x: 0.6, y: 0.74, label: "pencil case" },
+    { n: 1, x: 0.548, y: 0.175, label: "smart board" },
+    { n: 2, x: 0.703, y: 0.105, label: "clock" },
+    { n: 3, x: 0.768, y: 0.215, label: "flag" },
+    { n: 4, x: 0.307, y: 0.16, label: "notice board" },
+    { n: 5, x: 0.03, y: 0.24, label: "bookshelf" },
+    { n: 6, x: 0.272, y: 0.225, label: "coat hooks" },
+    { n: 7, x: 0.296, y: 0.555, label: "school bag" },
+    { n: 8, x: 0.695, y: 0.53, label: "pencil case" },
   ],
   people: [
-    { x: 0.72, y: 0.4, who: "Ms Aksoy", colour: C.teal },
-    { x: 0.13, y: 0.55, who: "Arda", colour: C.leaf },
-    { x: 0.24, y: 0.5, who: "Defne", colour: "#F2B705" },
-    { x: 0.38, y: 0.56, who: "Can", colour: "#F2994A" },
-    { x: 0.66, y: 0.62, who: "Kerem", colour: "#2F80ED" },
-    { x: 0.84, y: 0.58, who: "Zehra", colour: C.lilac },
+    { x: 0.095, y: 0.3, who: "Arda", colour: C.leaf },
+    { x: 0.23, y: 0.3, who: "Defne", colour: "#F2B705" },
+    { x: 0.34, y: 0.32, who: "Can", colour: "#F2994A" },
+    { x: 0.795, y: 0.42, who: "Kerem", colour: "#2F80ED" },
+    { x: 0.655, y: 0.24, who: "Ms Aksoy", colour: C.teal },
+    { x: 0.93, y: 0.43, who: "Zehra", colour: C.lilac },
   ],
-  clock: { x: 0.79, y: 0.12, r: 0.024 },
-  board: { x0: 0.57, y0: 0.08, x1: 0.71, y1: 0.36 },
+  clock: { x: 0.7275, y: 0.184, r: 0.0205 },
+  // the part of the smart board on the right page (the board crosses the spine)
+  board: { x0: 0.535, y0: 0.15, x1: 0.645, y1: 0.27 },
+  // the inside of the small empty frame next to the flag
+  portrait: { x0: 0.8365, y0: 0.146, x1: 0.8585, y1: 0.232 },
 };
 const SCENE_H = ry(64);
+/** The speech bubbles, numbered in reading order: on the empty board and on the empty desks in front (never over a face or the clock). */
+const SPREAD_BUBBLES: { i: number; page: "l" | "r"; b: Box; tail: Tail }[] = [
+  { i: 0, page: "r", b: B(15 * MM, 54 * MM, 45 * MM), tail: "br" },
+  { i: 1, page: "l", b: B(12 * MM, 70 * MM, 127 * MM), tail: "tl" },
+  { i: 2, page: "l", b: B(76 * MM, 132 * MM, 127 * MM), tail: "tl" },
+  { i: 3, page: "l", b: B(138 * MM, 196 * MM, 127 * MM), tail: "tl" },
+  { i: 4, page: "r", b: B(140 * MM, 198 * MM, 128 * MM), tail: "tr" },
+  { i: 5, page: "l", b: B(76 * MM, 136 * MM, 151 * MM), tail: "none" },
+  { i: 6, page: "r", b: B(14 * MM, 68 * MM, 128 * MM), tail: "tr" },
+  { i: 7, page: "r", b: B(76 * MM, 134 * MM, 128 * MM), tail: "tr" },
+];
+/** Story panel 4: the empty clock face (fractions of the panel, measured on story-4.png). */
+const STORY_CLOCK_AT = { x: 0.056, y: 0.439, r: 0.043 };
+/** Story bubbles: measured on the pictures so no bubble covers a face. Two columns by default (left share in %). */
+const STORY_SHARE: Record<number, number> = { 0: 40, 1: 60, 2: 62, 4: 52 };
+/** Panel 4 (index 3): Defne's long bubble across the top, right of the clock; Zehra's over the empty desks at the left. */
+const STORY_FREE: Record<number, { x: number; y: number; w: number; tail: Tail; tailLeft?: number }[]> = {
+  3: [
+    { x: 0.13, y: 0.02, w: 0.84, tail: "bl", tailLeft: 0.42 },
+    { x: 0.03, y: 0.52, w: 0.44, tail: "tr" },
+  ],
+};
 
 async function loadAssets() {
-  await loadEmoji([...Object.values(SUBJECT_EMOJI), ...Object.values(OBJECT_EMOJI), ...Object.values(FLAGS), ...Object.values(GAME_EMOJI)]);
+  await loadEmoji([...Object.values(SUBJECT_EMOJI), ...Object.values(OBJECT_EMOJI), ...Object.values(FLAGS), ...Object.values(GAME_EMOJI), ...K.RULE_ICONS, ...K.BOARD.flatMap((s) => (s.icon ? [s.icon] : []))]);
   const ph = art.placeholder;
   const cardSheet = async (name: string, n: number) => {
     if (!art.has(name)) return null;
     const g = cardSheetGrid(n);
     return sheetFigures(art.img(name), g.cols, g.rows, n);
   };
+  const OBJECTS = [...K.EX16.cards, ...K.EXTRA_OBJECTS];
   const castFigs = await cardSheet("cast", K.CAST.length);
   const subjectFigs = await cardSheet("subjects", K.SUBJECTS.length);
-  const objectFigs = await cardSheet("objects", K.EX16.cards.length);
+  const objectFigs = await cardSheet("objects", OBJECTS.length);
   const clilFigs = await cardSheet("clil", K.CLIL_PICS.length);
+  const vigs = await cardSheet("vignettes", VIGNETTES.length);
+  // read once: the picture cache knows a picture by its buffer
+  const storyImgs = K.STORY.map((_, i) => (art.has(`story-${i + 1}`) ? art.img(`story-${i + 1}`) : null));
   const sceneW = 2 * W + 2 * BLEED;
   const sceneH = SCENE_H + BLEED;
   const sceneSrc = art.has("scene") ? art.img("scene") : await art.scenePlaceholder(sceneW, sceneH, SCENE.tags, SCENE.people);
   const scene = await art.splitSpread(art.has("scene") ? "img" : "ph", sceneSrc, W, BLEED, sceneH);
   const avatars = Object.fromEntries(
-    await Promise.all(K.CAST.map(async (c, i) => [c.key, castFigs ? await art.circleCrop(`cast2-${c.key}`, castFigs[i], 60 * art.PX, CAST_COLOUR[c.key], { top: 0, zoom: 1.5 }) : await art.avatarPlaceholder(c.key, 60, CAST_COLOUR[c.key])])),
+    await Promise.all(K.CAST.map(async (c, i) => [c.key, castFigs ? await art.circleCrop(`cast4-${c.key}`, castFigs[i], 60 * art.PX, CAST_COLOUR[c.key], { top: 0, zoom: 1.5 }) : await art.avatarPlaceholder(c.key, 60, CAST_COLOUR[c.key])])),
   ) as Record<K.CastKey, Buffer>;
   return {
     castFigs,
     avatars,
     scene,
+    portrait: art.has("portrait") ? art.img("portrait") : null,
     opener: art.has("opener") ? art.img("opener") : await ph("opener", W, ry(46), "PICTURE TO COME: Yeşiltepe Lower Secondary School on a sunny morning - the friends arrive at the gate, the Turkish flag on the pole", "#CDEBFA"),
-    story: art.has("story") ? art.img("story") : null,
+    story: (i: number) => storyImgs[i],
     cover: art.has("cover") ? art.img("cover") : await ph("cover", W, H, "COVER PICTURE TO COME: the friends fly a big paper kite in front of their school", "#BDE3F6"),
-    wbCover: art.has("wbcover") ? art.img("wbcover") : art.has("cover") ? art.img("cover") : await ph("wbcover", W, H, "WORKBOOK COVER PICTURE TO COME", "#FFD9CF"),
+    wbCover: art.has("cover") ? art.img("cover") : await ph("wbcover", W, H, "COVER PICTURE TO COME", "#FFD9CF"),
     subject: (s: string) => (subjectFigs ? subjectFigs[K.SUBJECTS.indexOf(s as (typeof K.SUBJECTS)[number])] : EM[SUBJECT_EMOJI[s]]),
-    object: (s: string) => (objectFigs ? objectFigs[K.EX16.cards.indexOf(s as (typeof K.EX16.cards)[number])] : EM[OBJECT_EMOJI[s]]),
+    object: (s: string) => (objectFigs ? objectFigs[OBJECTS.indexOf(s as (typeof OBJECTS)[number])] : EM[OBJECT_EMOJI[s]]),
     clil: (i: number, w: number, h: number) => (clilFigs ? Promise.resolve(clilFigs[i]) : ph(`clil-${i}`, w, h, `PICTURE ${i + 1}: ${K.CLIL_PICS[i].desc}`, "#E7F5E5")),
     flag: (c: string) => EM[FLAGS[c]],
     game: (k: keyof typeof GAME_EMOJI) => EM[GAME_EMOJI[k]],
+    emoji: (e: string) => EM[e],
+    rule: (i: number) => EM[K.RULE_ICONS[i]],
+    vignette: (k: string) => (vigs ? vigs[VIGNETTES.indexOf(k)] : null),
   };
 }
 type Assets = Awaited<ReturnType<typeof loadAssets>>;
@@ -234,7 +298,7 @@ function Clock({ b, time, rim = C.teal, numerals = true }: { b: Box; time: strin
       </>
     );
   }
-  const fs = Math.max(7, r * 0.2);
+  const fs = Math.max(9, r * 0.2);
   return (
     <>
       <At b={B(x0, x0 + d, y0, y0 + d)}>
@@ -320,7 +384,7 @@ function Ex({ n, children, audio, stars }: { n: number | string; children: React
   );
 }
 const ExampleTag = () => (
-  <View style={{ backgroundColor: C.sun, borderRadius: 6, paddingHorizontal: 5, height: 15, justifyContent: "center", marginRight: 6, marginTop: 1 }}>
+  <View style={{ backgroundColor: C.sun, borderRadius: 6, paddingHorizontal: 3.4, height: 15, justifyContent: "center", marginRight: 11.2, marginTop: 1 }}>
     <Text style={lab(9, INK)}>EXAMPLE</Text>
   </View>
 );
@@ -411,7 +475,13 @@ function Arrow({ up, color = RED, s = 11 }: { up: boolean; color?: string; s?: n
     </Svg>
   );
 }
-/** A sentence with ↗ over its negative word and ↘ after its last word. */
+/** The stress mark: a dot over the word you say strongly. */
+const StressDot = ({ color = RED }: { color?: string }) => (
+  <Svg width={8} height={8}>
+    <Circle cx={4} cy={4} r={3.2} fill={color} />
+  </Svg>
+);
+/** A sentence with a stress dot over its negative word and ↘ after its last word (marks = false: empty places to draw them). */
 function Intonation({ s, marks = true }: { s: string; marks?: boolean }) {
   const words = s.split(" ");
   return (
@@ -422,7 +492,7 @@ function Intonation({ s, marks = true }: { s: string; marks?: boolean }) {
         return (
           <View key={i} style={{ flexDirection: "row", alignItems: "flex-end", marginRight: 3.5 }}>
             <View style={{ alignItems: "center" }}>
-              <View style={{ height: 11 }}>{marks && neg ? <Arrow up /> : null}</View>
+              <View style={{ height: 10, justifyContent: "center" }}>{marks && neg ? <StressDot /> : null}</View>
               <Text style={a(BODY, INK, neg ? 700 : 400)}>{w}</Text>
             </View>
             {last ? <View style={{ marginLeft: 2, marginBottom: 3, width: 11, height: 11, borderBottomWidth: marks ? 0 : 0.6, borderBottomColor: "#9AA3B5" }}>{marks ? <Arrow up={false} color={DARK} /> : null}</View> : null}
@@ -437,36 +507,52 @@ function Panel({ b, color = C.tealTint, border, title, titleColor = DARK, childr
     <>
       <Fill b={b} color={color} r={r} border={border} bw={1.2} />
       {title ? (
-        <At b={B(b.x + INSET, b.x + b.w, b.y - 7)}>
-          <View style={{ alignSelf: "flex-start", backgroundColor: titleColor, borderRadius: 7, paddingHorizontal: 7, height: 15, justifyContent: "center" }}>
-            <Text style={lab(9, "#fff")}>{title}</Text>
+        <At b={B(b.x + INSET, b.x + b.w, b.y - 8)}>
+          <View style={{ alignSelf: "flex-start", backgroundColor: titleColor, borderRadius: 8, paddingHorizontal: 8, height: 17, justifyContent: "center" }}>
+            <Text style={lab(11, "#fff")}>{title}</Text>
           </View>
         </At>
       ) : null}
-      <At b={B(b.x + INSET, b.x + b.w - INSET, b.y + (title ? 10 : INSET), b.y + (b.h ?? 0) - INSET)}>{children}</At>
+      <At b={B(b.x + INSET, b.x + b.w - INSET, b.y + (title ? 11 : INSET), b.y + (b.h ?? 0) - INSET)}>{children}</At>
     </>
   );
 }
-function Bubble({ b, children, border = INK, tail = "bl" }: { b: Box; children: React.ReactNode; border?: string; tail?: "bl" | "br" | "tl" | "tr" | "none" }) {
-  const tailStyle =
-    tail === "none" ? null : { position: "absolute" as const, width: 10, height: 10, backgroundColor: "#fff", borderColor: border, transform: "rotate(45deg)", ...(tail[0] === "b" ? { bottom: -5.5, borderBottomWidth: 1.3, borderRightWidth: 1.3 } : { top: -5.5, borderTopWidth: 1.3, borderLeftWidth: 1.3 }), ...(tail[1] === "l" ? { left: 14 } : { right: 14 }) };
+type Tail = "bl" | "br" | "tl" | "tr" | "none";
+function Bubble({ b, children, border = INK, tail = "bl", num }: { b: Box; children: React.ReactNode; border?: string; tail?: Tail; num?: number }) {
   return (
     <At b={b}>
-      <View style={{ backgroundColor: "#fff", borderWidth: 1.3, borderColor: border, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 4 }}>
-        {tailStyle ? <View style={tailStyle} /> : null}
-        <Text style={{ ...a(BODY), lineHeight: 1.22 }}>{children}</Text>
-      </View>
+      <BubbleBody border={border} tail={tail} num={num}>
+        {children}
+      </BubbleBody>
     </At>
   );
 }
-const Speaker = ({ who }: { who: K.CastKey }) => <Text style={{ fontWeight: 700, color: CAST_TEXT[who] }}>{nameOf(who)}: </Text>;
-/** A model dialogue line: avatar + bubble (in the flow). */
+/** A speech bubble in the flow (the story lays its bubbles out side by side, so they never overlap). */
+function BubbleBody({ children, border = INK, tail = "bl", num, tailX }: { children: React.ReactNode; border?: string; tail?: Tail; num?: number; tailX?: number }) {
+  const tailStyle =
+    tail === "none" ? null : { position: "absolute" as const, width: 10, height: 10, backgroundColor: "#fff", borderColor: border, transform: "rotate(45deg)", ...(tail[0] === "b" ? { bottom: -5.5, borderBottomWidth: 1.3, borderRightWidth: 1.3 } : { top: -5.5, borderTopWidth: 1.3, borderLeftWidth: 1.3 }), ...(tailX !== undefined ? { left: tailX } : tail[1] === "l" ? { left: 14 } : { right: 14 }) };
+  return (
+    <>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", backgroundColor: "#fff", borderWidth: 1.3, borderColor: border, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 4 }}>
+        {tailStyle ? <View style={tailStyle} /> : null}
+        {num !== undefined ? (
+          <View style={{ width: 15, height: 15, borderRadius: 7.5, backgroundColor: INK, alignItems: "center", justifyContent: "center", marginRight: 4, marginTop: 1 }}>
+            <Text style={{ ...a(9.5, "#fff", 700), lineHeight: 1, marginTop: LIFTA(9.5) }}>{num}</Text>
+          </View>
+        ) : null}
+        <Text style={{ ...a(BODY), lineHeight: 1.22, flex: 1 }}>{children}</Text>
+      </View>
+    </>
+  );
+}
+const Speaker =({ who }: { who: K.CastKey }) => <Text style={{ fontWeight: 700, color: CAST_TEXT[who] }}>{nameOf(who)}: </Text>;
+/** A model dialogue line: avatar + bubble (in the flow; the bubble takes the rest of the row and wraps). */
 function Say({ who, children, right }: { who: K.CastKey; children: React.ReactNode; right?: boolean }) {
   return (
     <View style={{ flexDirection: right ? "row-reverse" : "row", alignItems: "center", marginBottom: 5 }} wrap={false}>
       <FlowPic src={A.avatars[who]} d={28} />
-      <View style={{ marginHorizontal: 6, flexShrink: 1, backgroundColor: right ? C.tealTint : "#fff", borderWidth: 1, borderColor: right ? C.teal : C.coral, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3.5 }}>
-        <Text style={{ ...a(BODY), lineHeight: 1.2 }}>{children}</Text>
+      <View style={{ marginHorizontal: 6, flex: 1, backgroundColor: right ? C.tealTint : "#fff", borderWidth: 1, borderColor: right ? C.teal : C.coral, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3.5 }}>
+        <Text style={{ ...a(BODY), lineHeight: 1.2, textAlign: right ? "right" : "left" }}>{children}</Text>
       </View>
     </View>
   );
@@ -475,14 +561,13 @@ function WordBox({ words, struck, ml = 25 }: { words: string[]; struck?: string;
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", marginLeft: ml, marginBottom: 4 }}>
       {words.map((w) => (
-        <View key={w} style={{ borderWidth: 1, borderColor: C.teal, borderRadius: 8, paddingHorizontal: 7, height: 19, justifyContent: "center", marginRight: 6, marginBottom: 3, backgroundColor: w === struck ? C.tealTint : "#fff" }}>
-          <Text style={{ ...a(BODY, DARK, 700), lineHeight: 1, textDecoration: w === struck ? "line-through" : "none" }}>{w}</Text>
+        <View key={w} style={{ borderWidth: 1, borderColor: C.teal, borderRadius: 8, paddingHorizontal: 7, height: 22, justifyContent: "center", marginRight: 6, marginBottom: 3, backgroundColor: w === struck ? C.tealTint : "#fff" }}>
+          <Text style={{ ...a(BODY, DARK, 700), lineHeight: 1, marginTop: LIFTA(BODY), textDecoration: w === struck ? "line-through" : "none" }}>{w}</Text>
         </View>
       ))}
     </View>
   );
 }
-
 // --- lesson header and footer -----------------------------------------------------------------
 const HEAD_H = 5; // units
 function LessonHead({ n, title, skills, y = 0, part = "sb" }: { n: number | string; title: string; skills: string[]; y?: number; part?: Part }) {
@@ -491,7 +576,7 @@ function LessonHead({ n, title, skills, y = 0, part = "sb" }: { n: number | stri
     <>
       <At b={B(cx(1), ce(12), ry(y), ry(y + HEAD_H))}>
         <View style={{ flexDirection: "row", alignItems: "center", height: "100%" }}>
-          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: part === "sb" ? RED : DARK, alignItems: "center", justifyContent: "center", marginRight: 9 }}>
+          <View style={{ width: 32, height: 32, borderRadius: 7, backgroundColor: DARK, alignItems: "center", justifyContent: "center", marginRight: 9 }}>
             <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: String(n).length > 2 ? 12 : 18, color: "#fff", lineHeight: 1, marginTop: LIFTB(String(n).length > 2 ? 12 : 18) }}>{n}</Text>
           </View>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 24, color: part === "sb" ? DARK : RED, lineHeight: 1, marginTop: LIFTB(24), flex: 1 }}>{title}</Text>
@@ -572,7 +657,7 @@ function BookPage({ children, n, part = "sb", bg }: { children: React.ReactNode;
   );
 }
 const IMPRINT = (part: Part) =>
-  `${TITLE} ${LEVEL} · ${part === "sb" ? "Student's Book" : "Workbook"} · Unit 2 "Our Classroom" · First edition, 2026. This unit follows the English curriculum for Year 5 of the Türkiye Yüzyılı Maarif Modeli, Theme 2 "Classroom Life". Text, exercises, characters, illustrations and design: ${TITLE} editorial and design team. Fonts: Baloo 2 and Andika (SIL Open Font License). Flag and game icons: Twemoji (CC-BY 4.0). All rights reserved.`;
+  `${TITLE} ${LEVEL} · ${part === "sb" ? "Student's Book" : "Workbook"} · Unit 2 "Our Classroom" · First edition, 2026. This unit follows the English curriculum for Year 5 of the Türkiye Yüzyılı Maarif Modeli, Theme 2 "Classroom Life". Text, exercises, characters, illustrations and design: ${TITLE} editorial and design team. Fonts: Baloo 2 and Andika (SIL Open Font License). Flag and game icons: Twemoji (CC-BY 4.0).${part === "sb" ? " Portrait of Atatürk (p. 5): photograph of 1932, unknown author, public domain in Türkiye (PD-TR), via Wikimedia Commons, File:Ataturk1930s.jpg." : ""} All rights reserved.`;
 
 // ================================================================================================
 // STUDENT'S BOOK
@@ -625,17 +710,17 @@ function SbTitle() {
 
 const CONTENTS: [string, string, string, string][] = [
   ["Unit opener", "3", "What I will learn · a warm-up game", "THEME 2"],
-  ["Get Ready!", "4-5", "A new classmate on Monday", "LISTENING · READING"],
-  ["1  Listen and Look", "6-7", "Telling the time · our timetable", "LISTENING · SPEAKING"],
+  ["Get Ready!", "4–5", "A new classmate · The Week Chant · class rules", "LISTENING · READING"],
+  ["1  Listen and Look", "6–7", "Telling the time · our timetable", "LISTENING · SPEAKING"],
   ["2  Say It Right", "8", "Negative sentences", "PRONUNCIATION"],
-  ["3  Word Bank", "8-10", "Subjects · days · numbers 50-100 · objects", "VOCABULARY"],
-  ["4  Game Time: Who am I?", "10", "Riddles about school things", "SPEAKING"],
-  ["5  Grammar Spot", "11-12", "There is / are · me, him, her ... · has, does", "LANGUAGE IN USE"],
+  ["3  Word Bank", "8–10", "Subjects · days · numbers 50–100 · objects", "VOCABULARY"],
+  ["4  Game Time: Who am I?", "10", "Riddles · a classroom rhyme", "SPEAKING"],
+  ["5  Grammar Spot", "11–12", "There is / are · him, her · has, does", "LANGUAGE IN USE"],
   ["6  Game Time: Classroom Race", "13", "A board game", "SPEAKING"],
   ["7  Read", "14", "Can's blog · our class helpers", "READING"],
   ["8  Write", "15", "What time do you get up?", "WRITING · SPEAKING"],
   ["9  Around the World", "16", "School days in four countries", "CLIL & CULTURE"],
-  ["10  Story Time", "17-18", "The Tidy Robot", "READING · LISTENING"],
+  ["10  Story Time", "17–18", "The Tidy Robot · act it out", "READING · LISTENING"],
   ["11  Project", "18", "A class guide for a new student", "PROJECT"],
   ["12  Check Yourself", "19", "Mini test · I can ...", "SELF-ASSESSMENT"],
   ["Word List", "20", "English · Türkçe", ""],
@@ -670,11 +755,11 @@ function SbContents() {
           </At>
         </React.Fragment>
       ))}
-      <Panel b={B(cx(1), ce(12), ry(94), ry(105))} color={C.sunTint} title="SYMBOLS IN THIS BOOK" titleColor="#8A5A00">
+      <Panel b={B(cx(1), ce(12), ry(90), ry(106))} color={C.sunTint} title="SYMBOLS IN THIS BOOK" titleColor="#8A5A00">
         <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", width: "50%", marginBottom: 4 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", width: "100%", marginBottom: 4 }}>
             <AudioTag track="2.01" />
-            <T>Listen to track 2.01.</T>
+            <Text style={{ ...a(BODY), flex: 1, lineHeight: 1.15 }}>Listen to track 2.01. No audio? Your teacher reads it.</Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", width: "50%", marginBottom: 4 }}>
             <ExampleTag />
@@ -740,19 +825,20 @@ function SbOpener() {
   );
 }
 
-// --- pp. 4-5: the opening scene --------------------------------------------------------------------
+// --- pp. 4–5: the opening scene --------------------------------------------------------------------
 const SPINE_GAP = 10 * MM;
 function scenePt(fx: number, fy: number, page: "l" | "r") {
   const sx = fx * (2 * W + 2 * BLEED) - BLEED;
   const y = fy * (SCENE_H + BLEED) - BLEED;
   return { x: page === "l" ? sx : sx - W, y };
 }
+const onPage = (x: number, page: "l" | "r") => x > (page === "l" ? 6 * MM : SPINE_GAP) && x < W - (page === "l" ? SPINE_GAP : 6 * MM);
 function SceneTags({ page }: { page: "l" | "r" }) {
   return (
     <>
       {SCENE.tags.map((tg) => {
         const p = scenePt(tg.x, tg.y, page);
-        if (p.x < (page === "l" ? 6 * MM : SPINE_GAP) || p.x > W - (page === "l" ? SPINE_GAP : 6 * MM)) return null;
+        if (!onPage(p.x, page)) return null;
         return (
           <At key={tg.n} b={B(p.x - 8, p.x + 8, p.y - 8, p.y + 8)}>
             <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: C.sun, borderWidth: 1.5, borderColor: "#fff", alignItems: "center", justifyContent: "center" }}>
@@ -764,43 +850,34 @@ function SceneTags({ page }: { page: "l" | "r" }) {
     </>
   );
 }
+/** Drawn on the picture where it has empty places: the clock's hands, the board's text, the portrait in the empty frame. */
 function SceneOverlays({ page }: { page: "l" | "r" }) {
   const c = scenePt(SCENE.clock.x, SCENE.clock.y, page);
   const r = SCENE.clock.r * (2 * W + 2 * BLEED);
   const b0 = scenePt(SCENE.board.x0, SCENE.board.y0, page);
   const b1 = scenePt(SCENE.board.x1, SCENE.board.y1, page);
+  const p0 = scenePt(SCENE.portrait.x0, SCENE.portrait.y0, page);
+  const p1 = scenePt(SCENE.portrait.x1, SCENE.portrait.y1, page);
   return (
     <>
-      {c.x > SPINE_GAP && c.x < W - SPINE_GAP ? <Clock b={B(c.x - r, c.x + r, c.y - r, c.y + r)} time={K.SCENE_TIME} rim={C.coral} numerals={false} /> : null}
-      {b0.x > SPINE_GAP && b1.x < W - SPINE_GAP ? (
-        <>
-          <Fill b={B(b0.x, b1.x, b0.y, b1.y)} color="#1F3B57" r={3} border="#8A94A6" bw={2} />
-          <At b={B(b0.x + 4, b1.x - 4, b0.y + 6, b1.y - 4)}>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: C.sun, textAlign: "center", lineHeight: 1 }}>MONDAY</Text>
-            <Text style={{ ...a(13, "#ffffff", 700), textAlign: "center", marginTop: 6 }}>Welcome, Can!</Text>
-          </At>
-        </>
+      {onPage(c.x, page) ? <Clock b={B(c.x - r, c.x + r, c.y - r, c.y + r)} time={K.SCENE_TIME} rim={C.coral} numerals={false} /> : null}
+      {onPage(b0.x, page) && onPage(b1.x, page) ? (
+        <At b={B(b0.x + 4, b1.x - 4, b0.y + 6, b1.y - 4)}>
+          <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: C.sun, textAlign: "center", lineHeight: 1 }}>MONDAY</Text>
+          <Text style={{ ...a(13, "#ffffff", 700), textAlign: "center", marginTop: 6 }}>Welcome, Can!</Text>
+        </At>
       ) : null}
+      {A.portrait && onPage(p0.x, page) && onPage(p1.x, page) ? <Pic b={B(p0.x, p1.x, p0.y, p1.y)} src={A.portrait} name="portrait (Wikimedia Commons, public domain)" /> : null}
     </>
   );
 }
-const SPREAD_BUBBLES: { i: number; page: "l" | "r"; b: Box; tail: "bl" | "br" | "tl" | "tr" }[] = [
-  { i: 0, page: "r", b: B(cx(4), ce(8), ry(36)), tail: "tr" },
-  { i: 1, page: "l", b: B(cx(1), ce(4), ry(2)), tail: "bl" },
-  { i: 2, page: "l", b: B(cx(5), ce(8), ry(4)), tail: "bl" },
-  { i: 3, page: "l", b: B(cx(8), ce(11), ry(22)), tail: "bl" },
-  { i: 4, page: "r", b: B(cx(9), ce(12), ry(30)), tail: "bl" },
-  { i: 5, page: "l", b: B(cx(1), ce(4), ry(44)), tail: "tl" },
-  { i: 6, page: "r", b: B(cx(5), ce(9), ry(2)), tail: "bl" },
-  { i: 7, page: "r", b: B(cx(2), ce(5), ry(48)), tail: "tr" },
-];
 function SpreadBubbles({ page }: { page: "l" | "r" }) {
   return (
     <>
       {SPREAD_BUBBLES.filter((s) => s.page === page).map((s) => {
         const bub = K.SCENE_BUBBLES[s.i];
         return (
-          <Bubble key={s.i} b={s.b} tail={s.tail} border={CAST_COLOUR[bub.who]}>
+          <Bubble key={s.i} b={s.b} tail={s.tail} border={CAST_COLOUR[bub.who]} num={s.i + 1}>
             <Speaker who={bub.who} />
             {bub.text}
           </Bubble>
@@ -822,7 +899,7 @@ function SbScene4() {
             <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 17, color: "#fff", lineHeight: 1, marginTop: LIFTB(17) }}>Get Ready!</Text>
           </View>
         </View>
-        <Ex n={1}>Look at the picture. Answer the questions.</Ex>
+        <Ex n={exN("e1")}>Look at the picture. Answer the questions.</Ex>
         <Row ex>
           <T>{K.EX1.example.q} </T>
           <Line w={45 * MM}>{K.EX1.example.a}</Line>
@@ -836,10 +913,24 @@ function SbScene4() {
           </Row>
         ))}
       </At>
+      <Panel b={B(cx(1), ce(12), ry(97), ry(107))} color={C.sunTint} border="#E2B33A" title={`CHANT: ${K.CHANT.title.toUpperCase()}`} titleColor="#8A5A00">
+        <View style={{ flexDirection: "row" }}>
+          {[K.CHANT.lines.slice(0, 2), K.CHANT.lines.slice(2)].map((col, j) => (
+            <View key={j} style={{ width: "50%" }}>
+              {col.map((l) => (
+                <Text key={l} style={{ ...a(BODY, INK, 700), lineHeight: 1.25 }}>
+                  {l}
+                </Text>
+              ))}
+            </View>
+          ))}
+        </View>
+      </Panel>
     </BookPage>
   );
 }
 function SbScene5() {
+  const g = cells(cx(1), ce(12), 5, 4 * MM);
   return (
     <BookPage n={5}>
       <Pic b={B(0, W, 0, SCENE_H)} src={A.scene.right} name="opening scene (right)" />
@@ -847,23 +938,52 @@ function SbScene5() {
       <SceneTags page="r" />
       <SpreadBubbles page="r" />
       <At b={B(cx(1), ce(12), ry(67))}>
-        <Ex n={2} audio="2.01">
+        <Ex n={exN("e2")} audio="2.01">
           Listen and read the speech bubbles. Then circle the correct words.
         </Ex>
-        <Row ex>
+        <Row ex h={8.2 * MM}>
           <Choice parts={K.EX2.example.parts} answer={K.EX2.example.a} />
         </Row>
         {K.EX2.items.map((it, i) => (
-          <Row key={i} n={i + 1}>
+          <Row key={i} n={i + 1} h={8.2 * MM}>
             <Choice parts={it.parts} />
           </Row>
         ))}
+      </At>
+      <At b={B(cx(1), ce(12), ry(88))}>
+        <Ex n={exN("rules")}>Our class rules. Look at the pictures. Write the number of the rule.</Ex>
+      </At>
+      {K.RULE_PICS.map((ri, i) => {
+        const x = g.at(i);
+        const y = ry(93);
+        return (
+          <React.Fragment key={i}>
+            <Fill b={B(x, x + g.w, y, y + 13 * MM)} color={i === 0 ? C.sunTint : C.tealTint} r={6} />
+            <At b={B(x + 2 * MM, x + 6 * MM, y + 1 * MM)}>
+              <Text style={a(BODY, DARK, 700)}>{"abcde"[i]}</Text>
+            </At>
+            <Pic b={B(x + 7 * MM, x + 17 * MM, y + 1.5 * MM, y + 11.5 * MM)} src={A.rule(ri)} fit="contain" name={`rule picture ${ri + 1}`} />
+            <At b={B(x + g.w - 10 * MM, x + g.w - 2 * MM, y + 2.5 * MM)}>
+              <WriteBox>{i === 0 ? String(ri + 1) : null}</WriteBox>
+            </At>
+          </React.Fragment>
+        );
+      })}
+      <At b={B(cx(1), ce(12), ry(99))}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+          {K.RULES.map((r, i) => (
+            <Text key={r} style={{ ...a(BODY), width: "50%", lineHeight: 1.2, paddingRight: 6 }}>
+              <Bo c={DARK}>{i + 1} </Bo>
+              {r}
+            </Text>
+          ))}
+        </View>
       </At>
     </BookPage>
   );
 }
 
-// --- pp. 6-7: Listen and look -------------------------------------------------------------------------
+// --- pp. 6–7: Listen and look -------------------------------------------------------------------------
 const PAST_TO: [string, number][] = [
   ["o'clock", 0],
   ["five past", 5],
@@ -885,12 +1005,12 @@ function SbFocus6() {
   const ccx = cx(1) + 66 * MM;
   const ccy = ry(45);
   const R = d / 2 + 3 * MM;
-  const clocks6 = cells(cx(1), ce(12), 6, 3 * MM);
+  const clocks6 = cells(cx(1), ce(7), 3, 4 * MM);
   return (
     <BookPage n={6}>
       <LessonHead n={1} title="Listen and Look" skills={["Listening", "Speaking"]} />
       <At b={B(cx(1), ce(12), ry(7))}>
-        <Ex n={3}>What is this unit about? Look at pages 4-5. Tick (✓) the topics.</Ex>
+        <Ex n={exN("e3")}>What is this unit about? Look at pages 4–5. Tick (✓) the topics.</Ex>
       </At>
       {K.EX3_TOPICS.map(([topic], i) => {
         const x = g3.at(i % 3);
@@ -901,7 +1021,8 @@ function SbFocus6() {
             <At b={B(x + 3 * MM, x + g3.w, y, y + 9 * MM)}>
               <View style={{ flexDirection: "row", alignItems: "center", height: "100%" }}>
                 <Tick on={i === 0} />
-                <Text style={{ ...a(BODY), marginLeft: 7 }}>{topic}</Text>
+                <Text style={{ ...a(BODY), marginLeft: 7, flex: 1 }}>{topic}</Text>
+                {i === 0 ? <ExampleTag /> : null}
               </View>
             </At>
           </React.Fragment>
@@ -934,24 +1055,24 @@ function SbFocus6() {
         </View>
       </At>
       <At b={B(cx(1), ce(12), ry(66))}>
-        <Ex n={4}>What time is it? Read and match. Write the letter.</Ex>
+        <Ex n={exN("e4")}>What time is it? Read and match. Write the letter.</Ex>
       </At>
       {K.EX4_CLOCKS.map((tm, i) => {
-        const x = clocks6.at(i);
-        const y = ry(71);
+        const x = clocks6.at(i % 3);
+        const y = ry(70 + Math.floor(i / 3) * 14);
         return (
           <React.Fragment key={tm}>
-            <Clock b={B(x, x + clocks6.w, y, y + 27 * MM)} time={tm} rim={[C.teal, C.coral, "#F2B705", C.lilac, C.leaf, "#2F80ED"][i]} />
+            <Clock b={B(x + 2 * MM, x + clocks6.w, y, y + 31 * MM)} time={tm} rim={[C.teal, C.coral, "#F2B705", C.lilac, C.leaf, "#2F80ED"][i]} />
             <At b={B(x, x + 6 * MM, y - 1 * MM)}>
               <Text style={a(13, DARK, 700)}>{"abcdef"[i]}</Text>
             </At>
           </React.Fragment>
         );
       })}
-      <At b={B(cx(1), ce(12), ry(83))}>
-        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+      <At b={B(cx(8), ce(12), ry(72))}>
+        <View>
           {K.EX4_TIMES.map((tm, i) => (
-            <View key={tm} style={{ width: "50%", flexDirection: "row", alignItems: "center", height: LINE_H, paddingRight: 14 }}>
+            <View key={tm} style={{ flexDirection: "row", alignItems: "center", height: 9.4 * MM }}>
               <Num n={i + 1} />
               <Text style={{ ...a(BODY), flex: 1 }}>It&apos;s {K.timeWords(tm)}.</Text>
               <WriteBox>{i === 0 ? "abcdef"[K.EX4_CLOCKS.indexOf(tm)] : null}</WriteBox>
@@ -959,6 +1080,7 @@ function SbFocus6() {
           ))}
         </View>
       </At>
+      <Vig k="sb6" b={B(cx(9), ce(12), ry(95), ry(107))} />
     </BookPage>
   );
 }
@@ -976,7 +1098,7 @@ function Timetable({ b, gaps, exampleGap = 0, showAll }: { b: Box; gaps: [string
   const hh = 8 * MM;
   const rh = (b.h! - hh) / rows.length;
   const gapAt = (d: string, i: number) => gaps.findIndex(([gd, gi]) => gd === d && gi === i);
-  const dayCol = [C.coral, C.sun, C.teal, C.lilac, C.leaf];
+  const dayCol = [RED, "#8A5A00", DARK, "#5B3FA0", "#2E7031"];
   return (
     <>
       <Fill b={b} color="#fff" r={6} border={DARK} bw={1} />
@@ -987,7 +1109,7 @@ function Timetable({ b, gaps, exampleGap = 0, showAll }: { b: Box; gaps: [string
         <View style={{ flexDirection: "row", height: "100%", alignItems: "center" }}>
           <Text style={{ ...lab(9, DARK), width: tw, textAlign: "center" }}>TIME</Text>
           {K.DAYS5.map((d) => (
-            <Text key={d} style={{ ...a(BODY, INK, 700), width: dw, textAlign: "center" }}>{d}</Text>
+            <Text key={d} style={{ ...a(BODY, "#ffffff", 700), width: dw, textAlign: "center" }}>{d}</Text>
           ))}
         </View>
       </At>
@@ -999,7 +1121,7 @@ function Timetable({ b, gaps, exampleGap = 0, showAll }: { b: Box; gaps: [string
             <At b={B(b.x, b.x + b.w, y, y + rh)}>
               {r.i < 0 ? (
                 <View style={{ height: "100%", justifyContent: "center" }}>
-                  <Text style={{ ...a(BODY, "#7A5200", 700), textAlign: "center" }}>Lunch break  12:10 - 13:00</Text>
+                  <Text style={{ ...a(BODY, "#7A5200", 700), textAlign: "center" }}>Lunch break  12:10–13:00</Text>
                 </View>
               ) : (
                 <View style={{ flexDirection: "row", height: "100%", alignItems: "center" }}>
@@ -1033,7 +1155,7 @@ function SbFocus7() {
   return (
     <BookPage n={7}>
       <At b={B(cx(1), ce(12), ry(0))}>
-        <Ex n={5} stars={2}>
+        <Ex n={exN("e5")} stars={2}>
           Write the times in words. Use &quot;in the morning&quot; or &quot;in the afternoon&quot;.
         </Ex>
         <Row ex>
@@ -1054,7 +1176,7 @@ function SbFocus7() {
         </View>
       </At>
       <At b={B(cx(1), ce(12), ry(21))}>
-        <Ex n={6} audio="2.02">
+        <Ex n={exN("e6")} audio="2.02">
           Listen to Ms Aksoy. Complete the timetable of 5/C with the words in the box.
         </Ex>
         <WordBox words={[...box].sort()} struck={box[0]} />
@@ -1064,7 +1186,7 @@ function SbFocus7() {
         <Text style={a(BODY, "#3F4A63")}>A lesson is {K.LESSON_MIN} minutes. Breaks are 15 minutes (20 minutes after the second lesson).</Text>
       </At>
       <At b={B(cx(1), ce(12), ry(86))}>
-        <Ex n={7}>Work in pairs. Take turns: one asks, one answers. Use the timetable.</Ex>
+        <Ex n={exN("e7")}>Work in pairs. Take turns: one asks, one answers. Use the timetable.</Ex>
         <View style={{ flexDirection: "row" }}>
           <View style={{ width: "50%", paddingRight: 6 }}>
             <Say who={K.EX7_MODEL[0].who}>{K.EX7_MODEL[0].text}</Say>
@@ -1093,16 +1215,16 @@ function SbSay8() {
       <LessonHead n={2} title="Say It Right" skills={["Pronunciation"]} />
       <Panel b={B(cx(1), ce(5), ry(9), ry(25))} color={C.coralTint} title="LISTEN FOR IT" titleColor={RED}>
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-          <Arrow up />
-          <Text style={{ ...a(BODY), marginLeft: 5, flex: 1 }}>isn&apos;t, don&apos;t: say it strongly</Text>
+          <View style={{ width: 12, alignItems: "center" }}><StressDot /></View>
+          <Text style={{ ...a(BODY), marginLeft: 5, flex: 1 }}>say this word strongly (isn&apos;t, don&apos;t)</Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
-          <Arrow up={false} color={DARK} />
+          <View style={{ width: 12, alignItems: "center" }}><Arrow up={false} color={DARK} /></View>
           <Text style={{ ...a(BODY), marginLeft: 5, flex: 1 }}>the end: your voice goes down</Text>
         </View>
       </Panel>
       <At b={B(cx(6), ce(12), ry(8))}>
-        <Ex n={8} audio="2.03">
+        <Ex n={exN("e8")} audio="2.03">
           Listen and repeat.
         </Ex>
         {K.EX9.map((s, i) => (
@@ -1113,8 +1235,8 @@ function SbSay8() {
         ))}
       </At>
       <At b={B(cx(1), ce(12), ry(29))}>
-        <Ex n={9} audio="2.04">
-          Listen. Draw ↗ over the negative word and ↘ at the end. Then say the sentences.
+        <Ex n={exN("e9")} audio="2.04">
+          Listen. Draw a big dot (•) over the word you say strongly and ↘ at the end. Then say the sentences.
         </Ex>
         <View style={{ flexDirection: "row", alignItems: "flex-end", marginBottom: 3, marginTop: 3 }}>
           <ExampleTag />
@@ -1129,8 +1251,8 @@ function SbSay8() {
       </At>
       <LessonHead n={3} title="Word Bank" skills={["Vocabulary", "Listening"]} y={57} />
       <At b={B(cx(1), ce(12), ry(64))}>
-        <Ex n={10} audio="2.05">
-          Listen, point and say. Then write the school subjects.
+        <Ex n={exN("e10")} audio="2.05">
+          Listen, point and say. Then write the school subjects. (English is our Foreign Language.)
         </Ex>
         <WordBox words={[...K.SUBJECTS].sort()} struck={K.EX11_TILES[0]} />
       </At>
@@ -1151,6 +1273,7 @@ function SbSay8() {
           </React.Fragment>
         );
       })}
+      <Vig k="sb8" b={B(cx(8), ce(12), ry(39), ry(57))} />
     </BookPage>
   );
 }
@@ -1163,7 +1286,7 @@ function SbWords9() {
   return (
     <BookPage n={9}>
       <At b={B(cx(1), ce(12), ry(0))}>
-        <Ex n={11}>Put the days of the week in order. Write 1-7.</Ex>
+        <Ex n={exN("e11")}>Put the days of the week in order. Write 1–7.</Ex>
       </At>
       {K.EX12_CHIPS.map((d, i) => {
         const x = chips.at(i);
@@ -1191,7 +1314,7 @@ function SbWords9() {
         </View>
       </At>
       <At b={B(cx(1), ce(12), ry(19))}>
-        <Ex n={12}>Look at the numbers. Then match the numbers with the words.</Ex>
+        <Ex n={exN("e12")}>Look at the numbers. Then match the numbers with the words.</Ex>
       </At>
       {[50, 60, 70, 80, 90, 100].map((n, i) => {
         const x = tens.at(i);
@@ -1209,19 +1332,21 @@ function SbWords9() {
       <At b={B(cx(1), ce(12), ry(31))}>
         <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: C.sunTint, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 7 }}>
           <Text style={a(BODY, INK, 700)}>55 = fifty + five = fifty-five</Text>
-          <Text style={{ ...a(BODY), marginLeft: 14 }}>sixty-two · seventy-eight · ninety-nine</Text>
+          <Text style={{ ...a(BODY), marginLeft: 14 }}>sixty-two · seventy-seven · ninety-nine</Text>
         </View>
       </At>
-      <At b={B(cx(1), ce(4), ry(35))}>
+      <At b={B(cx(1), ce(6), ry(35))}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
         {K.EX13.numbers.map((n, i) => (
-          <View key={n} style={{ flexDirection: "row", alignItems: "center", height: 8 * MM }}>
+          <View key={n} style={{ width: "50%", flexDirection: "row", alignItems: "center", height: 11 * MM }}>
             <Num n={i + 1} />
             <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 16, color: INK, width: 34, lineHeight: 1, marginTop: 3 }}>{n}</Text>
             <WriteBox>{i === 0 ? "abcdef"[K.EX13.words.indexOf(n)] : null}</WriteBox>
           </View>
         ))}
+        </View>
       </At>
-      <At b={B(cx(6), ce(12), ry(35))}>
+      <At b={B(cx(8), ce(12), ry(35))}>
         {K.EX13.words.map((n, i) => (
           <View key={n} style={{ flexDirection: "row", alignItems: "center", height: 8 * MM }}>
             <Text style={{ ...a(BODY, DARK, 700), width: 16 }}>{"abcdef"[i]}</Text>
@@ -1230,7 +1355,7 @@ function SbWords9() {
         ))}
       </At>
       <At b={B(cx(1), ce(12), ry(56))}>
-        <Ex n={13} audio="2.06">
+        <Ex n={exN("e13")} audio="2.06">
           Listen to Ms Aksoy. Circle the number you hear.
         </Ex>
       </At>
@@ -1274,8 +1399,8 @@ function SbWords9() {
         </View>
       </At>
       <At b={B(cx(1), ce(12), ry(86))}>
-        <Ex n={14} audio="2.07">
-          Look at the picture on pages 4-5. Find the numbers 1-8. Write the words.
+        <Ex n={exN("e14")} audio="2.07">
+          Look at the picture on pages 4–5. Find the numbers 1–8. Write the words.
         </Ex>
         <WordBox words={[...K.SCENE_OBJECTS].sort()} struck={K.SCENE_OBJECTS[0]} />
         <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
@@ -1303,7 +1428,7 @@ function SbWords10() {
     <BookPage n={10}>
       <LessonHead n={4} title="Game Time: Who am I?" skills={["Speaking"]} />
       <At b={B(cx(1), ce(12), ry(7))}>
-        <Ex n={15}>Read the riddles. Match them with the pictures. Write the letter.</Ex>
+        <Ex n={exN("e15")}>Read the riddles and match. Then play: your partner reads a riddle, you point to the picture.</Ex>
       </At>
       {K.EX16.cards.map((c, i) => {
         const x = g8.at(i % 4);
@@ -1338,7 +1463,7 @@ function SbWords10() {
         <Text style={{ ...a(BODY), lineHeight: 1.25, marginTop: 4 }}>Read it to your partner. Can your partner guess?</Text>
       </Panel>
       <At b={B(cx(1), ce(12), ry(71))}>
-        <Ex n={16}>What school materials do you use in these lessons? Tell your partner.</Ex>
+        <Ex n={exN("e16")}>What school materials do you use in these lessons? Tell your partner.</Ex>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
           <View style={{ width: "55%" }}>
             <Say who="kerem">In Science, I use a notebook and a ruler.</Say>
@@ -1366,11 +1491,27 @@ function SbWords10() {
           </View>
         </View>
       </At>
+      <Panel b={B(cx(1), ce(7), ry(89), ry(107))} color={C.lilacTint} border={C.lilac} title={`RHYME: ${K.RHYME.title.toUpperCase()}`} titleColor="#5B3FA0">
+        {K.RHYME.lines.map((l) => (
+          <Text key={l} style={{ ...a(13, INK, 700), lineHeight: 1.4 }}>
+            {l}
+          </Text>
+        ))}
+        <Text style={{ ...a(BODY, "#3F4A63"), marginTop: 3 }}>Say it with a friend. Clap on every line!</Text>
+      </Panel>
+      <Panel b={B(cx(8), ce(12), ry(89), ry(107))} color={C.sunTint} title="MORE CLASSROOM WORDS" titleColor="#8A5A00">
+        {K.EXTRA_OBJECTS.map((o) => (
+          <View key={o} style={{ flexDirection: "row", alignItems: "center", marginBottom: 3 }}>
+            <FlowPic src={A.object(o)} d={34} />
+            <Text style={{ ...a(BODY, INK, 700), marginLeft: 8 }}>{o}</Text>
+          </View>
+        ))}
+      </Panel>
     </BookPage>
   );
 }
 
-// --- pp. 11-12: grammar spot -------------------------------------------------------------------------
+// --- pp. 11–12: grammar spot -------------------------------------------------------------------------
 const G = ({ children }: { children: React.ReactNode }) => <Text style={{ fontWeight: 700, color: "#1D5BB5", backgroundColor: "#E3EEFC" }}>{children}</Text>;
 function Pattern({ b, title, color, lines, notice }: { b: Box; title: string; color: string; lines: React.ReactNode[]; notice?: string }) {
   return (
@@ -1382,7 +1523,7 @@ function Pattern({ b, title, color, lines, notice }: { b: Box; title: string; co
       ))}
       {notice ? (
         <View style={{ flexDirection: "row", marginTop: 3, backgroundColor: C.sunTint, borderRadius: 5, padding: 4 }}>
-          <Text style={{ ...lab(9, "#7A5200"), marginRight: 5, marginTop: 2 }}>NOTICE</Text>
+          <Text style={{ ...lab(11, "#7A5200"), marginRight: 5, marginTop: 1 }}>NOTICE</Text>
           <Text style={{ ...a(BODY), flex: 1 }}>{notice}</Text>
         </View>
       ) : null}
@@ -1390,66 +1531,68 @@ function Pattern({ b, title, color, lines, notice }: { b: Box; title: string; co
   );
 }
 function SbGrammar11() {
-  const corner = B(cx(7), ce(12), ry(8), ry(35));
+  const picA = B(cx(1), ce(6), ry(22), ry(38));
+  const picB = B(cx(7), ce(12), ry(22), ry(38));
   return (
     <BookPage n={11}>
       <LessonHead n={5} title="Grammar Spot" skills={["Language in use"]} />
       <Pattern
-        b={B(cx(1), ce(6), ry(8), ry(35))}
+        b={B(cx(1), ce(12), ry(7), ry(21))}
         title="THERE IS / THERE ARE"
         color={C.teal}
         lines={[
           <>
-            <G>There is</G> a clock on the wall.
+            <G>There is</G> a map on the wall. · <G>There are</G> four desks. · <G>There isn&apos;t</G> a TV.
           </>,
           <>
-            <G>There are</G> two windows.
-          </>,
-          <>
-            <G>There isn&apos;t</G> a computer.
-          </>,
-          <>
-            <G>Is there</G> a bookcase? Yes, there is.
-          </>,
-          <>
-            How many chairs <G>are there</G>?
+            <G>Is there</G> a piano? Yes, there is. · How many books <G>are there</G>?
           </>,
         ]}
         notice={K.NOTICE_THERE.q}
       />
-      <ArtPic id="class-corner" b={corner} make={() => art.classCorner(corner.w, corner.h!)} r={6} />
-      <At b={B(cx(1), ce(12), ry(38))}>
-        <Ex n={17}>Look at the picture. Circle the correct words.</Ex>
+      <ArtPic id="class-corner-a" b={picA} make={() => art.classCorner(picA.w, picA.h!, "A")} r={6} />
+      <ArtPic id="class-corner-b" b={picB} make={() => art.classCorner(picB.w, picB.h!, "B")} r={6} />
+      {(["A", "B"] as const).map((k, i) => (
+        <At key={k} b={B(i ? picB.x + 2 * MM : picA.x + 2 * MM, (i ? picB.x : picA.x) + 22 * MM, picA.y + 2 * MM)}>
+          <View style={{ backgroundColor: INK, borderRadius: 6, paddingHorizontal: 6, height: 17, justifyContent: "center", alignSelf: "flex-start" }}>
+            <Text style={{ ...a(11, "#fff", 700), lineHeight: 1, marginTop: LIFTA(11) }}>{k}</Text>
+          </View>
+        </At>
+      ))}
+      <At b={B(cx(1), ce(12), ry(40))}>
+        <Ex n={exN("e17")}>Look at picture A. Circle the correct words.</Ex>
         {[K.EX18.example, ...K.EX18.items].map((it, i) => (
-          <Row key={i} n={i} ex={i === 0} h={8.4 * MM}>
-            <Choice parts={it.parts} answer={i === 0 ? it.a : undefined} />
-          </Row>
-        ))}
+            <Row key={i} n={i} ex={i === 0} h={8 * MM}>
+              <Choice parts={it.parts} answer={i === 0 ? it.a : undefined} />
+            </Row>
+          ))}
+      </At>
+      <At b={B(cx(1), ce(12), ry(65))}>
+        <Ex n={exN("spot")}>
+          Play in pairs. Student A looks at picture A, Student B at picture B. Ask: &quot;Is there a ...? How many ... are there?&quot; Find four differences.
+        </Ex>
       </At>
       <Pattern
-        b={B(cx(1), ce(12), ry(66), ry(80))}
-        title="ME, HIM, HER, US, THEM"
+        b={B(cx(1), ce(12), ry(71), ry(84))}
+        title="ME, YOU, HIM, HER, IT, US, THEM"
         color={C.lilac}
         lines={[
           <>
-            Can is new. Kerem helps <G>him</G>. · Ms Aksoy is kind. We like <G>her</G>.
+            Can is new. Kerem helps <G>him</G>. · Ms Aksoy is kind. We like <G>her</G>. · The ball is here. Throw <G>it</G>!
           </>,
           <>
-            The posters are nice. Look at <G>them</G>! · We&apos;re late. Wait for <G>us</G>! · Can you help <G>me</G>?
+            The books are new. I like <G>them</G>. · Our teacher calls <G>us</G>. · Can you help <G>me</G>? · I can see <G>you</G>!
           </>,
         ]}
         notice={K.NOTICE_PRON.q}
       />
-      <At b={B(cx(1), ce(12), ry(82))}>
-        <Ex n={18}>Circle the correct words.</Ex>
-        <Row ex h={8.4 * MM}>
-          <Choice parts={K.EX_PRON.example.parts} answer={K.EX_PRON.example.a} />
-        </Row>
-        {K.EX_PRON.items.map((it, i) => (
-          <Row key={i} n={i + 1} h={8.4 * MM}>
-            <Choice parts={it.parts} />
-          </Row>
-        ))}
+      <At b={B(cx(1), ce(12), ry(86))}>
+        <Ex n={exN("e18")}>Circle the correct words.</Ex>
+        {[K.EX_PRON.example, ...K.EX_PRON.items].map((it, i) => (
+            <Row key={i} n={i} ex={i === 0} h={7.6 * MM}>
+              <Choice parts={it.parts} answer={i === 0 ? it.a : undefined} />
+            </Row>
+          ))}
       </At>
     </BookPage>
   );
@@ -1495,41 +1638,39 @@ function SbGrammar12() {
         ]}
       />
       <At b={B(cx(1), ce(12), ry(32))}>
-        <Ex n={19}>Look at the timetable on page 7. Write have or don&apos;t have.</Ex>
+        <Ex n={exN("e19")}>Look at the timetable on page 7. Write have or don&apos;t have.</Ex>
         <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
           {[K.EX19.example, ...K.EX19.items].map((it, i) => (
             <View key={i} style={{ width: i === 0 ? "100%" : "50%", paddingRight: 8 }}>
               <Row n={i} ex={i === 0}>
                 <T>We </T>
                 <Line w={32 * MM}>{i === 0 ? (K.has(it.subject, it.day) ? "have" : "don't have") : null}</Line>
-                <T>
-                  {" "}
+                <Text style={{ ...a(BODY), marginLeft: 4 }}>
                   {it.subject} on {it.day}s.
-                </T>
+                </Text>
               </Row>
             </View>
           ))}
         </View>
       </At>
       <At b={B(cx(1), ce(12), ry(50))}>
-        <Ex n={20}>Read about 5/C&apos;s helpers. Write the verb with -s.</Ex>
+        <Ex n={exN("e20")}>Write the verb with -s.</Ex>
         <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
           {[K.EX_3RD.example, ...K.EX_3RD.items].map((it, i) => (
             <View key={i} style={{ width: i === 0 ? "100%" : "50%", paddingRight: 8 }}>
               <Row n={i} ex={i === 0}>
                 <T>{it.who} </T>
                 <Line w={32 * MM}>{i === 0 ? it.a : null}</Line>
-                <T>
-                  {" "}
+                <Text style={{ ...a(BODY), marginLeft: 4 }}>
                   ({it.verb}) {it.rest}
-                </T>
+                </Text>
               </Row>
             </View>
           ))}
         </View>
       </At>
       <At b={B(cx(1), ce(12), ry(68))}>
-        <Ex n={21}>Look at the timetable on page 7. Answer: Yes, he does. / No, she doesn&apos;t. / Yes, we do.</Ex>
+        <Ex n={exN("e21")}>Look at the timetable on page 7. Answer: Yes, he does. / No, she doesn&apos;t. / Yes, we do.</Ex>
         {[K.EX_DOES.example, ...K.EX_DOES.items].map((it, i) => (
           <Row key={i} n={i} ex={i === 0}>
             <Text style={{ ...a(BODY), flex: 1 }}>{it.q}</Text>
@@ -1537,12 +1678,13 @@ function SbGrammar12() {
           </Row>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(91))}>
-        <Ex n={22} stars={2}>
+      <At b={B(cx(1), ce(12), ry(93))}>
+        <Ex n={exN("e22")} stars={2}>
           Work in pairs. Ask and answer about the timetable on page 7.
         </Ex>
         <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
           <ExampleTag />
+          <View style={{ width: 3.5 }} />
           <Ws s={`${K.EX20.example.subject} / ${K.EX20.example.day}s:`} bold />
           <Ws s={` What time does the ${K.EX20.example.subject} lesson start on ${K.EX20.example.day}s? It starts at ${K.timeWords(K.startOf(K.EX20.example.subject, K.EX20.example.day))}.`} color={ANS} />
         </View>
@@ -1574,7 +1716,7 @@ function SbGame13() {
     <BookPage n={13}>
       <LessonHead n={6} title="Game Time: Classroom Race" skills={["Speaking"]} />
       <At b={B(cx(1), ce(12), ry(7))}>
-        <Ex n={23}>Play the game. Answer the questions on the squares.</Ex>
+        <Ex n={exN("e23")}>Play the game. Answer the questions on the squares.</Ex>
       </At>
       <Panel b={B(cx(1), ce(12), ry(13), ry(28))} color={C.sunTint} title="RULES" titleColor="#8A5A00">
         <View style={{ flexDirection: "row" }}>
@@ -1604,7 +1746,12 @@ function SbGame13() {
         return (
           <At key={i} b={B(x + 2 * MM, x + cw * 0.88 - 2 * MM, y + 1.5 * MM, y + chh * 0.86 - 1.5 * MM)}>
             <View style={{ height: "100%", justifyContent: "center" }}>
-              {!end ? <Text style={{ ...lab(9, DARK), textAlign: "center" }}>{i}</Text> : null}
+              {!end ? (
+                <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 2 }}>
+                  <Text style={{ ...lab(9, DARK), marginRight: 4 }}>{i}</Text>
+                  {sq.icon ? <FlowPic src={A.emoji(sq.icon)} d={15} /> : null}
+                </View>
+              ) : null}
               <Text style={{ ...(end ? { fontFamily: "Baloo", fontWeight: 700 as const, fontSize: 20, color: "#fff", lineHeight: 1, marginTop: LIFTB(20) } : a(BODY, INK, 700)), textAlign: "center", lineHeight: 1.15 }}>{sq.t}</Text>
             </View>
           </At>
@@ -1623,7 +1770,7 @@ function SbRead14() {
     <BookPage n={14}>
       <LessonHead n={7} title="Read" skills={["Reading"]} />
       <At b={B(cx(1), ce(12), ry(7))}>
-        <Ex n={24}>{K.EX23.q}</Ex>
+        <Ex n={exN("e24")}>{K.EX23.q}</Ex>
       </At>
       <Fill b={blog} color={C.paper} r={6} border="#D9C9A3" bw={1} />
       <Pic b={B(blog.x + INSET, blog.x + INSET + 24 * MM, blog.y + INSET, blog.y + INSET + 24 * MM)} src={A.avatars.can} fit="contain" name="avatar Can" />
@@ -1636,10 +1783,10 @@ function SbRead14() {
         ))}
       </At>
       <Fill b={chart} color="#fff" r={6} border={C.lilac} bw={1.2} />
-      <Fill b={B(chart.x, chart.x + chart.w, chart.y, chart.y + 7 * MM)} color={C.lilac} radii={{ borderTopLeftRadius: 6, borderTopRightRadius: 6 }} />
+      <Fill b={B(chart.x, chart.x + chart.w, chart.y, chart.y + 7 * MM)} color="#5B3FA0" radii={{ borderTopLeftRadius: 6, borderTopRightRadius: 6 }} />
       <At b={chart}>
         <View style={{ height: 7 * MM, justifyContent: "center", paddingLeft: INSET }}>
-          <Text style={lab(9.5, "#fff")}>OUR CLASS HELPERS</Text>
+          <Text style={lab(11, "#fff")}>OUR CLASS HELPERS</Text>
         </View>
         {K.HELPERS.map(([who, job, what], i) => (
           <View key={who} style={{ flexDirection: "row", alignItems: "center", height: (chart.h! - 7 * MM) / K.HELPERS.length, paddingLeft: INSET, borderTopWidth: i ? 0.6 : 0, borderTopColor: "#D9CFF0" }}>
@@ -1652,7 +1799,7 @@ function SbRead14() {
         ))}
       </At>
       <At b={B(cx(1), ce(9), ry(71))}>
-        <Ex n={25}>Read again. Write T (true) or F (false).</Ex>
+        <Ex n={exN("e25")}>Read again. Write T (true) or F (false).</Ex>
         {[K.EX24.example, ...K.EX24.items].map((it, i) => (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", height: LINE_H }}>
             {i === 0 ? <ExampleTag /> : <Num n={i} />}
@@ -1661,6 +1808,7 @@ function SbRead14() {
           </View>
         ))}
       </At>
+      <Vig k="sb14" b={B(cx(10), ce(12), ry(78), ry(104))} />
     </BookPage>
   );
 }
@@ -1677,7 +1825,7 @@ function SurveyTable({ b, cols, filled }: { b: Box; cols: string[]; filled?: (st
       <Fill b={B(b.x, b.x + b.w, b.y, b.y + hh)} color={C.tealTint} radii={{ borderTopLeftRadius: 5, borderTopRightRadius: 5 }} />
       <At b={b}>
         <View style={{ flexDirection: "row", height: hh, alignItems: "center" }}>
-          <Text style={{ ...lab(9, DARK), width: aw, paddingLeft: 5 }}>ACTIVITY</Text>
+          <Text style={{ ...lab(11, DARK), width: aw, paddingLeft: 5 }}>ACTIVITY</Text>
           {cols.map((c) => (
             <Text key={c} style={{ ...a(BODY, INK, 700), width: cw, textAlign: "center" }}>{c}</Text>
           ))}
@@ -1698,56 +1846,47 @@ function SurveyTable({ b, cols, filled }: { b: Box; cols: string[]; filled?: (st
 }
 function SbWrite15() {
   const half = cells(cx(1), ce(12), 2, 6 * MM);
+  const vig = A.vignette("sb15");
   return (
     <BookPage n={15}>
       <LessonHead n={8} title="Write" skills={["Writing", "Speaking"]} />
       <At b={B(cx(1), ce(12), ry(7))}>
-        <Ex n={26}>Ask a friend: &quot;What time do you ...?&quot; Write the times. Choose one table.</Ex>
+        <Ex n={exN("read15")}>Read Defne&apos;s text about her day and her friend Zehra.</Ex>
       </At>
-      <At b={B(half.at(0), half.at(0) + half.w, ry(12))}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <StarTag n={1} />
-          <T>Use the times in the box.</T>
-        </View>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 3 }}>
-          {K.SURVEY_BOX.map((tm) => (
-            <View key={tm} style={{ borderWidth: 1, borderColor: C.teal, borderRadius: 7, paddingHorizontal: 5, height: 18, justifyContent: "center", marginRight: 4, marginBottom: 2 }}>
-              <Text style={{ ...a(BODY, DARK, 700), lineHeight: 1, marginTop: LIFTA(BODY) }}>{tm}</Text>
-            </View>
-          ))}
-        </View>
-      </At>
-      <SurveyTable b={B(half.at(0), half.at(0) + half.w, ry(22), ry(44))} cols={["Defne", "My friend"]} filled={K.SURVEY_DEFNE.map((tm) => [tm, null])} />
-      <At b={B(half.at(1), half.at(1) + half.w, ry(12))}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <StarTag n={2} />
-          <T>Ask two friends.</T>
-        </View>
-      </At>
-      <SurveyTable b={B(half.at(1), half.at(1) + half.w, ry(22), ry(44))} cols={["Me", "Friend 1", "Friend 2"]} />
-      <At b={B(half.at(1), half.at(1) + half.w, ry(45))}>
-        <Text style={{ ...a(BODY), lineHeight: 1.2 }}>Tell the class: &quot;My friend gets up at ...&quot;</Text>
-      </At>
-      <At b={B(cx(1), ce(12), ry(51))}>
-        <Ex n={27}>Read Defne&apos;s text.</Ex>
-      </At>
-      <Fill b={B(cx(1), ce(12), ry(56), ry(75))} color={C.paper} r={6} border="#D9C9A3" bw={1} />
-      <Pic b={B(cx(1) + INSET, cx(1) + INSET + 22 * MM, ry(57), ry(57) + 22 * MM)} src={A.avatars.defne} fit="contain" name="avatar Defne" />
-      <At b={B(cx(3) + 6 * MM, ce(12) - INSET, ry(57))}>
+      <Fill b={B(cx(1), ce(12), ry(12), ry(34))} color={C.paper} r={6} border="#D9C9A3" bw={1} />
+      <Pic b={B(cx(1) + INSET, cx(1) + INSET + 24 * MM, ry(13), ry(13) + 24 * MM)} src={vig ?? A.avatars.defne} fit="contain" name="Defne" />
+      <At b={B(cx(3) + 8 * MM, ce(12) - INSET, ry(13))}>
         {K.ROUTINE_TEXT.map((p, i) => (
-          <Text key={i} style={{ ...a(READ), lineHeight: 1.38, marginBottom: 3 }}>
+          <Text key={i} style={{ ...a(READ), lineHeight: 1.36, marginBottom: 3 }}>
             {p}
           </Text>
         ))}
       </At>
-      <At b={B(cx(1), ce(8), ry(78))}>
-        <Ex n={28}>Write about you and a friend.</Ex>
+      <At b={B(cx(1), ce(12), ry(37))}>
+        <Ex n={exN("survey15")}>What time do you ...? Choose one table.</Ex>
+      </At>
+      <At b={B(half.at(0), half.at(0) + half.w, ry(42))}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+          <StarTag n={1} />
+          <Text style={{ ...a(BODY), flex: 1, lineHeight: 1.2 }}>Find Zehra&apos;s times in the text. Then ask a friend.</Text>
+        </View>
+      </At>
+      <SurveyTable b={B(half.at(0), half.at(0) + half.w, ry(48), ry(70))} cols={["Zehra", "My friend"]} filled={K.SURVEY_ZEHRA.map((tm, i) => [i === 0 ? tm : null, null])} />
+      <At b={B(half.at(1), half.at(1) + half.w, ry(42))}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+          <StarTag n={2} />
+          <Text style={{ ...a(BODY), flex: 1, lineHeight: 1.2 }}>Ask two friends. Then tell the class: &quot;Ece gets up at ...&quot;</Text>
+        </View>
+      </At>
+      <SurveyTable b={B(half.at(1), half.at(1) + half.w, ry(48), ry(70))} cols={["Me", "Friend 1", "Friend 2"]} />
+      <At b={B(cx(1), ce(8), ry(74))}>
+        <Ex n={exN("write15")}>Write about you and a friend.</Ex>
         <Line>I get up at ...</Line>
         {Array.from({ length: 3 }, (_, i) => (
           <Line key={i} />
         ))}
       </At>
-      <Panel b={B(cx(9), ce(12), ry(80), ry(106))} color={C.leafTint} border={C.leaf} title="CHECK YOUR TEXT" titleColor="#2E7031">
+      <Panel b={B(cx(9), ce(12), ry(77), ry(105))} color={C.leafTint} border={C.leaf} title="CHECK YOUR TEXT" titleColor="#2E7031">
         {K.WRITE_CHECK.map((c) => (
           <View key={c} style={{ flexDirection: "row", alignItems: "center", marginBottom: 5 }}>
             <Tick />
@@ -1768,7 +1907,7 @@ function SbClil16() {
     <BookPage n={16}>
       <LessonHead n={9} title="Around the World" skills={["CLIL & Culture"]} />
       <At b={B(cx(1), ce(12), ry(7))}>
-        <Ex n={29}>Look at the pictures. Read the texts and match. There is one extra picture.</Ex>
+        <Ex n={exN("e29")}>Look at the pictures. Read the texts and match. There is one extra picture.</Ex>
       </At>
       {K.CLIL_PICS.map((p, i) => {
         const x = pics.at(i);
@@ -1812,7 +1951,7 @@ function SbClil16() {
         );
       })}
       <At b={B(cx(1), ce(9), ry(73))}>
-        <Ex n={30}>Read again. Which text is it? Write A, B, C or D.</Ex>
+        <Ex n={exN("e30")}>Read again. Which text is it? Write A, B, C or D.</Ex>
         {[K.EX31.example, ...K.EX31.items].map((it, i) => (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", height: LINE_H - 0.6 * MM }}>
             {i === 0 ? <ExampleTag /> : <Num n={i} />}
@@ -1828,34 +1967,21 @@ function SbClil16() {
   );
 }
 
-// --- p. 17: story (full page) -------------------------------------------------------------------------
+// --- p. 17: story (full page, six separate panel pictures) --------------------------------------------
 const STORY_BOX = B(cx(1), ce(12), ry(12), ry(106));
-/** Where the speech bubbles sit in each panel (fractions of the panel). */
-const STORY_BUBBLES: { x: number; y: number; w: number; tail: "bl" | "br" | "tl" | "tr" }[][] = [
-  [{ x: 0.03, y: 0.04, w: 0.6, tail: "bl" }, { x: 0.45, y: 0.4, w: 0.52, tail: "br" }, { x: 0.03, y: 0.62, w: 0.5, tail: "tl" }],
-  [{ x: 0.03, y: 0.04, w: 0.56, tail: "bl" }, { x: 0.62, y: 0.04, w: 0.35, tail: "br" }, { x: 0.03, y: 0.62, w: 0.6, tail: "tl" }, { x: 0.67, y: 0.7, w: 0.3, tail: "tr" }],
-  [{ x: 0.03, y: 0.04, w: 0.68, tail: "bl" }, { x: 0.55, y: 0.72, w: 0.42, tail: "tr" }],
-  [{ x: 0.03, y: 0.04, w: 0.6, tail: "bl" }, { x: 0.38, y: 0.62, w: 0.59, tail: "tr" }],
-  [{ x: 0.03, y: 0.04, w: 0.7, tail: "bl" }, { x: 0.3, y: 0.56, w: 0.67, tail: "tr" }],
-  [{ x: 0.03, y: 0.04, w: 0.62, tail: "bl" }, { x: 0.5, y: 0.45, w: 0.47, tail: "br" }, { x: 0.03, y: 0.7, w: 0.52, tail: "tl" }],
-];
 function storyPanels() {
   const g = cells(STORY_BOX.x, STORY_BOX.x + STORY_BOX.w, 2, 4 * MM);
   const ph = (STORY_BOX.h! - 2 * 4 * MM) / 3;
   return K.STORY.map((_, i) => B(g.at(i % 2), g.at(i % 2) + g.w, STORY_BOX.y + Math.floor(i / 2) * (ph + 4 * MM), STORY_BOX.y + Math.floor(i / 2) * (ph + 4 * MM) + ph));
 }
-async function storyPanel(i: number) {
-  const src = A.story!;
-  const m = await sharp(src).metadata();
-  const iw = m.width ?? 1;
-  const ih = m.height ?? 1;
-  const cw = Math.floor(iw / 2);
-  const chh = Math.floor(ih / 3);
-  const inset = Math.round(cw * 0.012);
-  return sharp(src)
-    .extract({ left: (i % 2) * cw + inset, top: Math.floor(i / 2) * chh + inset, width: cw - 2 * inset, height: chh - 2 * inset })
-    .png()
-    .toBuffer();
+/** The left bubble's share of the panel width (%), by the length of the texts. */
+function storyShare(i: number) {
+  if (STORY_SHARE[i] !== undefined) return STORY_SHARE[i];
+  const len = (b: { who: K.CastKey; text: string }) => nameOf(b.who).length + b.text.length;
+  const [first, ...rest] = K.STORY[i].bubbles;
+  const l0 = len(first);
+  const l1 = Math.max(...rest.map(len));
+  return Math.min(60, Math.max(42, (100 * l0) / (l0 + l1)));
 }
 function SbStory17() {
   const panels = storyPanels();
@@ -1863,71 +1989,101 @@ function SbStory17() {
     <BookPage n={17}>
       <LessonHead n={10} title={`Story Time: ${K.STORY_TITLE}`} skills={["Reading", "Listening"]} />
       <At b={B(cx(1), ce(12), ry(7))}>
-        <Ex n={31} audio="2.08">
+        <Ex n={exN("e31")} audio="2.08">
           {K.EX33.q} Then listen and read.
         </Ex>
       </At>
-      {panels.map((pb, i) => (
-        <React.Fragment key={i}>
-          {A.story ? (
-            <ArtPic id={`story-${i}`} b={pb} make={() => storyPanel(i)} r={6} />
-          ) : (
-            <ArtPic id={`ph-story-${i}`} b={pb} make={() => art.placeholder(`story-${i}`, pb.w, pb.h!, `PANEL ${i + 1}: ${K.STORY[i].scene}`, ["#CDEBFA", "#FFE8E1", "#E7F5E5", "#FFF5D6", "#EFE9FB", "#CDEBFA"][i])} r={6} />
-          )}
-          <Fill b={pb} color="transparent" r={6} border={INK} bw={1.4} />
-          <At b={B(pb.x + pb.w - 9 * MM, pb.x + pb.w - 1 * MM, pb.y + pb.h! - 9 * MM)}>
-            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: RED, borderWidth: 1.2, borderColor: "#fff", alignItems: "center", justifyContent: "center" }}>
-              <Text style={{ ...a(11, "#fff", 700), lineHeight: 1, marginTop: LIFTA(11) }}>{i + 1}</Text>
-            </View>
-          </At>
-          {K.STORY[i].bubbles.map((bb, j) => {
-            const p = STORY_BUBBLES[i][j];
-            const x0 = pb.x + p.x * pb.w;
-            return (
-              <Bubble key={j} b={B(x0, x0 + p.w * pb.w, pb.y + p.y * pb.h!)} tail={p.tail} border={CAST_COLOUR[bb.who]}>
-                <Speaker who={bb.who} />
-                {bb.text}
-              </Bubble>
-            );
-          })}
-        </React.Fragment>
-      ))}
+      {panels.map((pb, i) => {
+        const src = A.story(i);
+        const ck = STORY_CLOCK_AT;
+        return (
+          <React.Fragment key={i}>
+            {src ? <Pic b={pb} src={src} r={6} name={`story panel ${i + 1}`} /> : <ArtPic id={`ph-story2-${i}`} b={pb} make={() => art.placeholder(`story2-${i}`, pb.w, pb.h!, `PANEL ${i + 1}: ${K.STORY[i].scene}`, ["#CDEBFA", "#FFE8E1", "#E7F5E5", "#FFF5D6", "#EFE9FB", "#CDEBFA"][i])} r={6} />}
+            {i === 3 ? <Clock b={B(pb.x + (ck.x - ck.r) * pb.w, pb.x + (ck.x + ck.r) * pb.w, pb.y + ck.y * pb.h! - ck.r * pb.w, pb.y + ck.y * pb.h! + ck.r * pb.w)} time={K.STORY_CLOCK} rim={C.coral} numerals={false} /> : null}
+            <Fill b={pb} color="transparent" r={6} border={INK} bw={1.4} />
+            <At b={B(pb.x + pb.w - 9 * MM, pb.x + pb.w - 1 * MM, pb.y + pb.h! - 9 * MM)}>
+              <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: RED, borderWidth: 1.2, borderColor: "#fff", alignItems: "center", justifyContent: "center" }}>
+                <Text style={{ ...a(11, "#fff", 700), lineHeight: 1, marginTop: LIFTA(11) }}>{i + 1}</Text>
+              </View>
+            </At>
+            {STORY_FREE[i]
+              ? K.STORY[i].bubbles.map((bb, j) => {
+                  const f = STORY_FREE[i][j];
+                  return (
+                    <At key={j} b={B(pb.x + f.x * pb.w, pb.x + (f.x + f.w) * pb.w, pb.y + f.y * pb.h!)}>
+                      <BubbleBody tail={f.tail} border={CAST_COLOUR[bb.who]} tailX={f.tailLeft !== undefined ? f.tailLeft * f.w * pb.w : undefined}>
+                        <Speaker who={bb.who} />
+                        {bb.text}
+                      </BubbleBody>
+                    </At>
+                  );
+                })
+              : null}
+            {STORY_FREE[i] ? null : (
+            <At b={B(pb.x + 2 * MM, pb.x + pb.w - 2 * MM, pb.y + 2 * MM)}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                {[K.STORY[i].bubbles.slice(0, 1), K.STORY[i].bubbles.slice(1)].map((col, c) => (
+                  <View key={c} style={{ width: `${(c ? 97 - storyShare(i) : storyShare(i)).toFixed(1)}%` }}>
+                    {col.map((bb, j) => (
+                      <View key={j} style={{ marginBottom: 6 }}>
+                        <BubbleBody tail={c ? "br" : "bl"} border={CAST_COLOUR[bb.who]}>
+                          <Speaker who={bb.who} />
+                          {bb.text}
+                        </BubbleBody>
+                      </View>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            </At>
+            )}
+          </React.Fragment>
+        );
+      })}
     </BookPage>
   );
 }
 
-// --- p. 18: story questions + project ----------------------------------------------------------------
+// --- p. 18: story questions + sequencing + project ----------------------------------------------------
 function SbProject18() {
-  const poster = B(cx(7), ce(12), ry(43), ry(80));
-  const scale = B(cx(1), ce(12), ry(87), ry(106));
+  const poster = B(cx(7), ce(12), ry(47), ry(85));
+  const scale = B(cx(1), ce(12), ry(88), ry(106));
   return (
     <BookPage n={18}>
       <At b={B(cx(1), ce(12), ry(0))}>
-        <Ex n={32}>Read the story on page 17 again. Answer the questions.</Ex>
+        <Ex n={exN("e32")}>Read the story on page 17 again. Answer the questions. Then act it out in groups.</Ex>
         {[K.EX35.example, ...K.EX35.items].map((it, i) => (
-          <Row key={i} n={i} ex={i === 0} h={8.6 * MM}>
+          <Row key={i} n={i} ex={i === 0} h={8.4 * MM}>
             <Text style={{ ...a(BODY), flex: 1 }}>{it.q}</Text>
-            <Line w={72 * MM} h={8.6 * MM}>
+            <Line w={70 * MM} h={8.4 * MM}>
               {i === 0 ? it.a : null}
             </Line>
           </Row>
         ))}
-        <View style={{ marginTop: 5 }}>
-          <Ex n={33}>Act out the story in groups. Then talk: How do the friends help Kerem?</Ex>
+      </At>
+      <At b={B(cx(1), ce(12), ry(25.5))}>
+        <Ex n={exN("seq")}>Put the story in order. Write 1–6.</Ex>
+        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+          {K.STORY_EVENTS.map(([e, k], i) => (
+            <View key={e} style={{ width: "50%", flexDirection: "row", alignItems: "center", height: 8.6 * MM, paddingRight: 8 }}>
+              <WriteBox>{i === 0 ? String(k) : null}</WriteBox>
+              <Text style={{ ...a(BODY), marginLeft: 6, flex: 1 }}>{e}</Text>
+            </View>
+          ))}
         </View>
       </At>
-      <LessonHead n={11} title="Project: Welcome to 5/C!" skills={["Project"]} y={35} />
-      <At b={B(cx(1), ce(6), ry(42))}>
-        <Ex n={34}>Make a class guide for a new student like Can.</Ex>
+      <LessonHead n={11} title="Project: Welcome to 5/C!" skills={["Project"]} y={40} />
+      <At b={B(cx(1), ce(6), ry(47))}>
+        <Ex n={exN("e34")}>Make a class guide for a new student like Can.</Ex>
         {K.PROJECT_STEPS.map((s, i) => (
-          <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 4 }}>
+          <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 3 }}>
             <View style={{ width: 19, height: 19, borderRadius: 9.5, backgroundColor: [DARK, RED, "#7A5200", "#5B3FA0", "#2E7031"][i], alignItems: "center", justifyContent: "center", marginRight: 6 }}>
               <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 12, color: "#fff", lineHeight: 1, marginTop: LIFTB(12) }}>{i + 1}</Text>
             </View>
-            <Text style={{ ...a(BODY), flex: 1, lineHeight: 1.25 }}>{s}</Text>
+            <Text style={{ ...a(BODY), flex: 1, lineHeight: 1.22 }}>{s}</Text>
           </View>
         ))}
-        <View style={{ marginTop: 3, backgroundColor: C.tealTint, borderRadius: 6, padding: 5 }}>
+        <View style={{ marginTop: 3.3, backgroundColor: C.tealTint, borderRadius: 6, padding: 5 }}>
           {K.PROJECT_FRAME.map((s) => (
             <Text key={s} style={{ ...a(BODY, INK, 700), marginBottom: 1 }}>
               {s}
@@ -1935,29 +2091,40 @@ function SbProject18() {
           ))}
         </View>
       </At>
-      {/* Zehra's example guide */}
+      {/* Zehra's example guide: rules, a map with five words, helpers, a timetable */}
       <Fill b={poster} color="#FFFDF2" r={4} border={C.coral} bw={2} />
-      <At b={B(poster.x + INSET, poster.x + poster.w - INSET, poster.y + 3 * MM)}>
+      <At b={B(poster.x + INSET, poster.x + poster.w - INSET, poster.y + 2.5 * MM)}>
         <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 16, color: RED, lineHeight: 1 }}>Welcome to 5/C, Can!</Text>
-        <Text style={{ ...lab(9, "#3F4A63"), marginTop: 2 }}>BY ZEHRA</Text>
+        <Text style={{ ...lab(11, "#3F4A63"), marginTop: 3 }}>BY ZEHRA</Text>
       </At>
-      <ArtPic id="guide-map" b={B(poster.x + INSET, poster.x + poster.w - INSET, poster.y + 15 * MM, poster.y + 48 * MM)} make={() => guideMap(poster.w - 2 * INSET, 33 * MM)} r={4} />
-      <At b={B(poster.x + INSET, poster.x + poster.w - INSET, poster.y + 50 * MM)}>
-        <Text style={{ ...a(BODY), lineHeight: 1.25 }}>There are twenty-four desks. The coat hooks are next to the door.</Text>
-        <Text style={{ ...a(BODY, DARK, 700), marginTop: 3 }}>Thursday: Turkish, Maths, IT, IT, P.E.</Text>
-        <Text style={{ ...a(BODY, DARK, 700), marginTop: 3 }}>Please raise your hand!</Text>
+      <ArtPic id="guide-map2" b={B(poster.x + INSET, poster.x + poster.w - INSET, poster.y + 16 * MM, poster.y + 47 * MM)} make={() => guideMap(poster.w - 2 * INSET, 31 * MM)} r={4} />
+      {GUIDE_LABELS.map((l) => {
+        const mw = poster.w - 2 * INSET;
+        const x = poster.x + INSET + l.x * mw;
+        const y = poster.y + 16 * MM + l.y * 31 * MM;
+        return (
+          <At key={l.t} b={B(x - 13 * MM, x + 13 * MM, y - 2.4 * MM)}>
+            <Text style={{ ...a(11, INK, 700), textAlign: "center", lineHeight: 1 }}>{l.t}</Text>
+          </At>
+        );
+      })}
+      <At b={B(poster.x + INSET, poster.x + poster.w - INSET, poster.y + 49 * MM)}>
+        <Text style={{ ...a(BODY), lineHeight: 1.2 }}>There are twelve desks. The coat hooks are next to the door.</Text>
+        <Text style={{ ...a(BODY, DARK, 700), marginTop: 2 }}>Thursday: Turkish, Maths, IT, IT, P.E.</Text>
+        <Text style={{ ...a(BODY), marginTop: 2, lineHeight: 1.2 }}>Helpers: Arda – board, Zehra – plants.</Text>
+        <Text style={{ ...a(BODY, DARK, 700), marginTop: 2 }}>Please raise your hand!</Text>
       </At>
       {/* rating scale: self and peer */}
       <Fill b={scale} color="#fff" r={6} border={DARK} bw={1} />
-      <Fill b={B(scale.x, scale.x + scale.w, scale.y, scale.y + 7 * MM)} color={C.tealTint} radii={{ borderTopLeftRadius: 6, borderTopRightRadius: 6 }} />
+      <Fill b={B(scale.x, scale.x + scale.w, scale.y, scale.y + 8 * MM)} color={C.tealTint} radii={{ borderTopLeftRadius: 6, borderTopRightRadius: 6 }} />
       <At b={scale}>
-        <View style={{ flexDirection: "row", height: 7 * MM, alignItems: "center", paddingLeft: INSET }}>
-          <Text style={{ ...lab(9, DARK), flex: 1 }}>HOW GOOD IS OUR GUIDE?</Text>
-          <Text style={{ ...lab(9, DARK), width: 38 * MM, textAlign: "center" }}>ME</Text>
-          <Text style={{ ...lab(9, DARK), width: 38 * MM, textAlign: "center" }}>MY FRIEND</Text>
+        <View style={{ flexDirection: "row", height: 8 * MM, alignItems: "center", paddingLeft: INSET }}>
+          <Text style={{ ...lab(11, DARK), flex: 1 }}>HOW GOOD IS OUR GUIDE?</Text>
+          <Text style={{ ...lab(11, DARK), width: 38 * MM, textAlign: "center" }}>ME</Text>
+          <Text style={{ ...lab(11, DARK), width: 38 * MM, textAlign: "center" }}>MY FRIEND</Text>
         </View>
         {K.PROJECT_SCALE.map((c) => (
-          <View key={c} style={{ flexDirection: "row", height: (scale.h! - 7 * MM) / K.PROJECT_SCALE.length, alignItems: "center", paddingLeft: INSET, borderTopWidth: 0.6, borderTopColor: "#D5DBE3" }}>
+          <View key={c} style={{ flexDirection: "row", height: (scale.h! - 8 * MM) / K.PROJECT_SCALE.length, alignItems: "center", paddingLeft: INSET, borderTopWidth: 0.6, borderTopColor: "#D5DBE3" }}>
             <Text style={{ ...a(BODY), flex: 1 }}>{c}</Text>
             {[0, 1].map((k) => (
               <View key={k} style={{ width: 38 * MM, flexDirection: "row", justifyContent: "center" }}>
@@ -1987,15 +2154,23 @@ function StarOutline() {
     </Svg>
   );
 }
+/** The five words on Zehra's map (fractions of the map). */
+const GUIDE_LABELS = [
+  { t: "board", x: 0.5, y: 0.3 },
+  { t: "desks", x: 0.5, y: 0.86 },
+  { t: "door", x: 0.12, y: 0.86 },
+  { t: "coat hooks", x: 0.17, y: 0.2 },
+  { t: "bookcase", x: 0.86, y: 0.13 },
+];
 function guideMap(wPt: number, hPt: number) {
-  return art.draw("guide-map", wPt, hPt, (Wd, Hd) => {
+  return art.draw("guide-map-12b", wPt, hPt, (Wd, Hd) => {
     const u = Wd / 100;
-    // a child's map of the classroom seen from above
+    // a child's map of the classroom seen from above: 12 desks
     let s = `<rect width="${Wd}" height="${Hd}" fill="#FFFFFF"/><rect x="${u * 2}" y="${Hd * 0.06}" width="${u * 96}" height="${Hd * 0.88}" fill="#FFF7E3" stroke="#C98A00" stroke-width="${u * 0.8}"/>`;
-    s += `<rect x="${u * 30}" y="${Hd * 0.08}" width="${u * 40}" height="${Hd * 0.08}" fill="#1F3B57"/>`;
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) s += `<rect x="${u * (14 + c * 20)}" y="${Hd * (0.32 + r * 0.2)}" width="${u * 12}" height="${Hd * 0.1}" rx="${u}" fill="${C.teal}"/>`;
-    s += `<rect x="${u * 2}" y="${Hd * 0.7}" width="${u * 3}" height="${Hd * 0.2}" fill="${C.coral}"/>`;
-    for (let k = 0; k < 4; k++) s += `<circle cx="${u * 8}" cy="${Hd * (0.24 + k * 0.08)}" r="${u * 1.2}" fill="#607080"/>`;
+    s += `<rect x="${u * 34}" y="${Hd * 0.12}" width="${u * 32}" height="${Hd * 0.07}" fill="#1F3B57"/>`;
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) s += `<rect x="${u * (22 + c * 15)}" y="${Hd * (0.4 + r * 0.15)}" width="${u * 10}" height="${Hd * 0.09}" rx="${u}" fill="${C.teal}"/>`;
+    s += `<rect x="${u * 2}" y="${Hd * 0.62}" width="${u * 3}" height="${Hd * 0.2}" fill="${C.coral}"/>`;
+    for (let k = 0; k < 4; k++) s += `<circle cx="${u * 7}" cy="${Hd * (0.32 + k * 0.07)}" r="${u * 1.1}" fill="#607080"/>`;
     s += `<rect x="${u * 90}" y="${Hd * 0.2}" width="${u * 6}" height="${Hd * 0.3}" fill="#B07A52"/>`;
     return s;
   });
@@ -2014,26 +2189,33 @@ function SectionHead({ l, title, pts }: { l: string; title: string; pts: number 
   );
 }
 function SbCheck19() {
-  const clocks = cells(cx(1), ce(6), 4, 2 * MM);
+  const c3 = cells(cx(1), ce(12), 3, 6 * MM);
   return (
     <BookPage n={19}>
       <LessonHead n={12} title="Check Yourself" skills={["Self-assessment"]} />
-      {/* left column: A, C, E */}
-      <At b={B(cx(1), ce(6), ry(7))}>
-        <SectionHead l="A" title="What time is it?" pts={4} />
+      <At b={B(cx(1), ce(12), ry(7))}>
+        <SectionHead l="A" title="What time is it? Write." pts={3} />
       </At>
       {K.CHECK.times.map((tm, i) => {
-        const x = clocks.at(i);
+        const x = c3.at(i);
         return (
           <React.Fragment key={tm}>
-            <Clock b={B(x, x + clocks.w, ry(11), ry(11) + 19 * MM)} time={tm} rim={[C.teal, C.coral, C.lilac, C.leaf][i]} />
-            <At b={B(x, x + clocks.w, ry(11) + 19 * MM)}>
+            <Clock b={B(x, x + 30 * MM, ry(11), ry(11) + 30 * MM)} time={tm} rim={[C.teal, C.coral, C.lilac][i]} />
+            <At b={B(x, x + c3.w, ry(11) + 31 * MM)}>
               <Line />
             </At>
           </React.Fragment>
         );
       })}
-      <At b={B(cx(1), ce(6), ry(34))}>
+      <At b={B(cx(1), ce(6), ry(30))}>
+        <SectionHead l="B" title="Circle the correct words." pts={4} />
+        {K.CHECK.circle.map((it, i) => (
+          <Row key={i} n={i + 1} h={8 * MM}>
+            <Choice parts={it.parts} />
+          </Row>
+        ))}
+      </At>
+      <At b={B(cx(7), ce(12), ry(30))}>
         <SectionHead l="C" title="Write the school subjects." pts={4} />
         <View style={{ flexDirection: "row" }}>
           {K.CHECK.subjects.map((s) => (
@@ -2044,27 +2226,7 @@ function SbCheck19() {
           ))}
         </View>
       </At>
-      <At b={B(cx(1), ce(6), ry(56))}>
-        <SectionHead l="E" title="Write the numbers in words." pts={4} />
-        {K.CHECK.numbers.map((n) => (
-          <View key={n} style={{ flexDirection: "row", alignItems: "flex-end" }}>
-            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: INK, width: 32, lineHeight: 1, marginBottom: 3 }}>{n}</Text>
-            <View style={{ flex: 1 }}>
-              <Line h={8 * MM} />
-            </View>
-          </View>
-        ))}
-      </At>
-      {/* right column: B, D, reflection */}
-      <At b={B(cx(7), ce(12), ry(7))}>
-        <SectionHead l="B" title="Circle the correct words." pts={4} />
-        {K.CHECK.circle.map((it, i) => (
-          <Row key={i} n={i + 1} h={8 * MM}>
-            <Choice parts={it.parts} />
-          </Row>
-        ))}
-      </At>
-      <At b={B(cx(7), ce(12), ry(26))}>
+      <At b={B(cx(1), ce(6), ry(48))}>
         <SectionHead l="D" title="Look at page 7. Answer." pts={4} />
         {K.CHECK.timetableQs.map((it, i) => (
           <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 1 }}>
@@ -2076,69 +2238,85 @@ function SbCheck19() {
           </View>
         ))}
       </At>
-      <Fill b={B(cx(7), ce(12), ry(53), ry(58))} color={C.sunTint} r={5} />
-      <At b={B(cx(7) + INSET, ce(12) - INSET, ry(53), ry(58))}>
+      <At b={B(cx(7), ce(12), ry(48))}>
+        <SectionHead l="E" title="Write the numbers in words." pts={5} />
+        {K.CHECK.numbers.map((n) => (
+          <View key={n} style={{ flexDirection: "row", alignItems: "flex-end" }}>
+            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 15, color: INK, width: 32, lineHeight: 1, marginBottom: 3 }}>{n}</Text>
+            <View style={{ flex: 1 }}>
+              <Line h={7.8 * MM} />
+            </View>
+          </View>
+        ))}
+      </At>
+      <Fill b={B(cx(7), ce(12), ry(67), ry(72))} color={C.sunTint} r={5} />
+      <At b={B(cx(7) + INSET, ce(12) - INSET, ry(67), ry(72))}>
         <View style={{ flexDirection: "row", alignItems: "center", height: "100%" }}>
           <Text style={a(13, INK, 700)}>My score:   ______ / 20</Text>
         </View>
       </At>
-      <At b={B(cx(7), ce(12), ry(60))}>
-        {K.REFLECT.map((q) => (
-          <View key={q} style={{ marginBottom: 1 }}>
-            <T bold>{q}</T>
-            <Line h={7.5 * MM} />
-          </View>
-        ))}
-      </At>
-      {/* can-do */}
-      <At b={B(cx(1), ce(12), ry(80))}>
-        <View style={{ flexDirection: "row", marginBottom: 3 }}>
+      <At b={B(cx(1), ce(12), ry(73))}>
+        <View style={{ flexDirection: "row", marginBottom: 2 }}>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 16, color: RED, lineHeight: 1, flex: 1 }}>I can ...</Text>
           {["WELL", "OK", "I NEED HELP"].map((h) => (
-            <Text key={h} style={{ ...lab(9, DARK), width: 24 * MM, textAlign: "center" }}>{h}</Text>
+            <Text key={h} style={{ ...lab(11, DARK), width: 28 * MM, textAlign: "center" }}>{h}</Text>
           ))}
         </View>
         {K.CAN_DO.map((c) => (
-          <View key={c} style={{ flexDirection: "row", alignItems: "center", height: 6.3 * MM, borderTopWidth: 0.6, borderTopColor: "#C9D2DC" }}>
-            <Text style={{ ...a(BODY), flex: 1, paddingLeft: 3 }}>{c}</Text>
+          <View key={c} style={{ flexDirection: "row", alignItems: "center", height: 6.4 * MM, borderTopWidth: 0.6, borderTopColor: "#C9D2DC" }}>
+            <Text style={{ ...a(BODY), flex: 1, lineHeight: 1, marginTop: LIFTA(BODY) }}>{c}</Text>
             {[0, 1, 2].map((k) => (
-              <View key={k} style={{ width: 24 * MM, alignItems: "center" }}>
+              <View key={k} style={{ width: 28 * MM, alignItems: "center" }}>
                 <Tick size={12} />
               </View>
             ))}
           </View>
         ))}
       </At>
+      <At b={B(cx(1), ce(12), ry(97.5))}>
+        <View style={{ flexDirection: "row" }}>
+          {K.REFLECT.map((q) => (
+            <View key={q} style={{ width: "50%", paddingRight: 10 }}>
+              <T bold>{q}</T>
+              <Line h={7.5 * MM} />
+            </View>
+          ))}
+        </View>
+      </At>
     </BookPage>
   );
 }
 
-// --- p. 20: word list ----------------------------------------------------------------------------
+// --- p. 20: word list (page numbers found in the rendered book) ------------------------------------------
+/** wordKey -> first Student's Book page (3–19) it appears on; filled after a first render (main). */
+const WORD_PAGES = new Map<string, number>();
 function SbWords20() {
   const col = cells(cx(1), ce(12), 2, 6 * MM);
   const split = 5;
-  const PAIRED = new Set(["Days of the week", "Numbers 50-100"]);
-  const Entry = ({ en, tr, p, w = "47%" }: { en: string; tr: string; p?: number; w?: string }) => (
+  const PAIRED = new Set(["Days of the week", "Numbers 50–100"]);
+  const pageOf = (en: string) => WORD_PAGES.get(K.wordKey(en));
+  const Entry = ({ en, tr, paired }: { en: string; tr: string; paired: boolean }) => (
     <>
-      <Text style={{ ...a(11, INK, 700), width: w, paddingLeft: 3, lineHeight: 1.3 }}>{en}</Text>
-      <Text style={{ ...a(11, "#3F4A63"), flex: 1, lineHeight: 1.3 }}>{tr}</Text>
-      {p !== undefined ? <Text style={{ ...lab(9, "#3F4A63"), width: 14, textAlign: "right", paddingRight: 3, marginTop: 2 }}>{p}</Text> : null}
+      <Text style={{ ...a(11, INK, 700), width: paired ? "54%" : "47%", paddingLeft: 3, lineHeight: 1.18 }}>{en}</Text>
+      <Text style={{ ...a(11, "#3F4A63"), flex: 1, lineHeight: 1.18, paddingRight: 3 }}>{tr}</Text>
+      {!paired ? <Text style={{ ...lab(9, "#3F4A63"), width: 16, textAlign: "right", paddingRight: 3, marginTop: 2 }}>{pageOf(en) ?? ""}</Text> : null}
     </>
   );
   const Group = ({ g }: { g: (typeof K.WORDS)[number] }) => {
     const paired = PAIRED.has(g.topic);
-    const rows: [string, string, number][][] = paired ? Array.from({ length: Math.ceil(g.words.length / 2) }, (_, i) => g.words.slice(i * 2, i * 2 + 2)) : g.words.map((w) => [w]);
+    const rows: [string, string][][] = paired ? Array.from({ length: Math.ceil(g.words.length / 2) }, (_, i) => g.words.slice(i * 2, i * 2 + 2)) : g.words.map((w) => [w]);
+    const pg = paired ? pageOf(g.words[0][0]) : undefined;
     return (
-      <View style={{ marginBottom: 5 }} wrap={false}>
-        <View style={{ backgroundColor: DARK, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2.5, marginBottom: 1, flexDirection: "row" }}>
+      <View style={{ marginBottom: 4 }} wrap={false}>
+        <View style={{ backgroundColor: DARK, borderRadius: 4, paddingHorizontal: 3, paddingVertical: 2.5, marginBottom: 1, flexDirection: "row" }}>
           <Text style={{ ...lab(9.5, "#fff"), flex: 1 }}>{g.topic.toUpperCase()}</Text>
-          <Text style={lab(9, "#fff")}>{paired ? `PAGE ${g.words[0][2]}` : "PAGE"}</Text>
+          <Text style={lab(9, "#fff")}>{paired ? (pg ? `PAGE ${pg}` : "") : "PAGE"}</Text>
         </View>
         {rows.map((r, i) => (
           <View key={i} style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#D5DEE6" }}>
-            {r.map(([en, tr, p]) => (
-              <View key={en} style={{ flexDirection: "row", width: paired ? "50%" : "100%" }}>
-                <Entry en={en} tr={tr} p={paired ? undefined : p} w={paired ? "52%" : "47%"} />
+            {r.map(([en, tr]) => (
+              <View key={en} style={{ flexDirection: "row", width: paired ? "50%" : "100%", paddingRight: paired ? 4 : 0 }}>
+                <Entry en={en} tr={tr} paired={paired} />
               </View>
             ))}
           </View>
@@ -2149,7 +2327,7 @@ function SbWords20() {
   return (
     <BookPage n={20}>
       <At b={B(cx(1), ce(12), ry(0))}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 26, color: DARK, lineHeight: 1 }}>Word List · Unit 2</Text>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 26, color: DARK, lineHeight: 1, paddingLeft: 3 }}>Word List · Unit 2</Text>
       </At>
       <At b={B(col.at(0), col.at(0) + col.w, ry(6))}>
         {K.WORDS.slice(0, split).map((g) => (
@@ -2193,7 +2371,7 @@ function WbTitle() {
           <Text style={{ ...a(BODY), marginRight: 12 }}>more challenge</Text>
           <ExampleTag />
           <Text style={{ ...a(BODY), marginRight: 12 }}>done for you</Text>
-          <Text style={lab(9.5, DARK)}>SB = STUDENT&apos;S BOOK PAGE</Text>
+          <Text style={lab(11, DARK)}>SB = STUDENT&apos;S BOOK PAGE</Text>
         </View>
       </Panel>
       <At b={B(cx(1), ce(12), ry(99))}>
@@ -2231,13 +2409,22 @@ function MyTimetable({ b }: { b: Box }) {
 }
 const WbHead = ({ n, title, sb }: { n: string; title: string; sb: string }) => <LessonHead n={n} title={title} skills={[`SB ${sb}`]} part="wb" />;
 
+/** A small cast picture from the vignette sheet (a labelled placeholder until the sheet exists). */
+function Vig({ k, b }: { k: string; b: Box }) {
+  const src = A.vignette(k);
+  if (src) return <Pic b={b} src={src} fit="contain" name={`vignette ${k}`} />;
+  const d = K.VIGNETTES.find((v) => v.key === k)!.desc;
+  return <ArtPic id={`vig-${k}`} b={b} make={() => art.placeholder(`vig-${k}`, b.w, b.h!, `PICTURE TO COME: ${d}`, "#EEF3F8")} fit="contain" r={6} />;
+}
+
 function Wb2() {
   const draw = [K.WB_DRAW.example, ...K.WB_DRAW.items];
   const read = [K.WB_READ_CLOCKS.example, ...K.WB_READ_CLOCKS.items];
   const g = cells(cx(1), ce(12), 4, 4 * MM);
+  const rc = 30 * MM;
   return (
     <BookPage n={2} part="wb">
-      <WbHead n="1" title="Time" sb="4-7" />
+      <WbHead n="1" title="Time" sb="4–7" />
       <At b={B(cx(1), ce(12), ry(7))}>
         <Ex n={1} stars={1}>
           Draw the hands on the clocks.
@@ -2245,8 +2432,8 @@ function Wb2() {
       </At>
       {draw.map((tm, i) => (
         <React.Fragment key={i}>
-          <Clock b={B(g.at(i), g.at(i) + g.w, ry(12), ry(12) + 38 * MM)} time={i === 0 ? tm : ""} rim={[C.coral, C.teal, C.lilac, C.leaf][i]} />
-          <At b={B(g.at(i), g.at(i) + g.w, ry(12) + 39 * MM)}>
+          <Clock b={B(g.at(i), g.at(i) + g.w, ry(12), ry(12) + 36 * MM)} time={i === 0 ? tm : ""} rim={[C.coral, C.teal, C.lilac, C.leaf][i]} />
+          <At b={B(g.at(i), g.at(i) + g.w, ry(12) + 37 * MM)}>
             <Text style={{ ...a(BODY, i === 0 ? ANS : INK, 700), textAlign: "center" }}>
               {i === 0 ? "" : `${i}  `}
               {K.timeWords(tm)}
@@ -2254,15 +2441,15 @@ function Wb2() {
           </At>
         </React.Fragment>
       ))}
-      <At b={B(cx(1), ce(12), ry(31))}>
+      <At b={B(cx(1), ce(12), ry(31.5))}>
         <Ex n={2} stars={1}>
           What time is it? Write.
         </Ex>
       </At>
       {read.map((tm, i) => (
         <React.Fragment key={i}>
-          <Clock b={B(g.at(i), g.at(i) + g.w, ry(36), ry(36) + 27 * MM)} time={tm} rim={[C.teal, C.coral, C.leaf, C.lilac][i]} />
-          <At b={B(g.at(i), g.at(i) + g.w, ry(36) + 27 * MM)}>
+          <Clock b={B(g.at(i) + (g.w - rc) / 2, g.at(i) + (g.w + rc) / 2, ry(36.5), ry(36.5) + rc)} time={tm} rim={[C.teal, C.coral, C.leaf, C.lilac][i]} />
+          <At b={B(g.at(i), g.at(i) + g.w, ry(36.5) + rc)}>
             <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
               <Num n={i === 0 ? "" : i} w={i === 0 ? 0 : 14} />
               <View style={{ flex: 1 }}>
@@ -2272,33 +2459,34 @@ function Wb2() {
           </At>
         </React.Fragment>
       ))}
-      <At b={B(cx(1), ce(12), ry(52))}>
+      <At b={B(cx(1), ce(9), ry(54))}>
         <Ex n={3} stars={2}>
           Write the times in words. Use &quot;in the morning&quot; or &quot;in the afternoon&quot;.
         </Ex>
         <Row ex>
           <DigiTime t={K.WB_WORDS.example} />
-          <Line w={110 * MM}>{K.timeWords(K.WB_WORDS.example, true)}</Line>
+          <Line w={92 * MM}>{K.timeWords(K.WB_WORDS.example, true)}</Line>
         </Row>
         {K.WB_WORDS.items.map((tm, i) => (
           <Row key={tm} n={i + 1}>
             <DigiTime t={tm} />
-            <Line w={110 * MM} />
+            <Line w={92 * MM} />
           </Row>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(80))}>
+      <At b={B(cx(1), ce(12), ry(82))}>
         <Ex n={4} stars={1}>
           Look at the timetable on SB page 7. Complete the sentences.
         </Ex>
         {K.WB_TT_SENTENCES.map((it, i) => (
           <Row key={i} n={i} ex={i === 0}>
-            <T>{it.s[0]}</T>
-            <Line w={46 * MM}>{i === 0 ? K.wbTtAnswer(it) : null}</Line>
-            <T>{it.s[1]}</T>
+            <Ws s={it.s[0]} />
+            <Line w={34 * MM}>{i === 0 ? K.wbTtAnswer(it) : null}</Line>
+            <Ws s={it.s[1]} />
           </Row>
         ))}
       </At>
+      <Vig k="wb2" b={B(cx(10), ce(12), ry(57), ry(77))} />
     </BookPage>
   );
 }
@@ -2318,9 +2506,10 @@ function Wb3() {
   const subjectOf: Record<string, string> = { MATHS: "Maths", MUSIC: "Music", SCIENCE: "Science", ENGLISH: "English", ART: "Art", TURKISH: "Turkish" };
   const clues = [...K.CROSS].sort((p, q) => clue(p) - clue(q) || Number(p.down) - Number(q.down));
   const ex = K.CROSS[0];
+  const odd = K.WB_ODD;
   return (
     <BookPage n={3} part="wb">
-      <WbHead n="2-3" title="School Subjects and Days" sb="8-9" />
+      <WbHead n="2–3" title="School Subjects and Days" sb="8–9" />
       <At b={B(cx(1), ce(12), ry(7))}>
         <Ex n={1} stars={1}>
           Look at the pictures. Complete the crossword.
@@ -2357,13 +2546,13 @@ function Wb3() {
           </View>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(48))}>
+      <At b={B(cx(1), ce(12), ry(47))}>
         <Ex n={2} stars={1}>
           Write the missing letters.
         </Ex>
         <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
           {["M_nday", ...K.WB_DAYS_GAPS].map((d, i) => (
-            <View key={d} style={{ width: "50%", flexDirection: "row", alignItems: "center", height: 10 * MM }}>
+            <View key={d} style={{ width: "50%", flexDirection: "row", alignItems: "center", height: 9.4 * MM }}>
               {i === 0 ? <ExampleTag /> : <Num n={i} />}
               {[...d].map((ch, j) =>
                 ch === "_" ? (
@@ -2380,7 +2569,7 @@ function Wb3() {
           ))}
         </View>
       </At>
-      <At b={B(cx(1), ce(12), ry(70))}>
+      <At b={B(cx(1), ce(12), ry(66.5))}>
         <Ex n={3} stars={2}>
           Read and write the day.
         </Ex>
@@ -2391,6 +2580,22 @@ function Wb3() {
           </Row>
         ))}
       </At>
+      <At b={B(cx(1), ce(9), ry(83.5))}>
+        <Ex n={4} stars={1}>
+          Which word is different? Circle it.
+        </Ex>
+        {odd.map((it, i) => (
+          <View key={i} style={{ flexDirection: "row", alignItems: "center", height: 8 * MM }}>
+            {i === 0 ? <ExampleTag /> : <Num n={i} />}
+            {it.w.map((w) => (
+              <View key={w} style={{ borderWidth: i === 0 && w === it.a ? 1.6 : 0, borderColor: ANS, borderRadius: 10, paddingHorizontal: 6, height: 6.4 * MM, justifyContent: "center", marginRight: 4 * MM }}>
+                <Text style={{ ...a(BODY), lineHeight: 1, marginTop: LIFTA(BODY) }}>{w}</Text>
+              </View>
+            ))}
+          </View>
+        ))}
+      </At>
+      <Vig k="wb3" b={B(cx(10), ce(12), ry(84), ry(105))} />
     </BookPage>
   );
 }
@@ -2403,7 +2608,7 @@ function Wb4() {
   const ex = ws.placed[0];
   return (
     <BookPage n={4} part="wb">
-      <WbHead n="3" title="Numbers and Classroom Objects" sb="9-10" />
+      <WbHead n="3" title="Numbers and Classroom Objects" sb="9–10" />
       <At b={B(cx(1), ce(12), ry(7))}>
         <Ex n={1} stars={1}>
           Read and write the numbers.
@@ -2418,7 +2623,7 @@ function Wb4() {
           ))}
         </View>
       </At>
-      <At b={B(cx(1), ce(12), ry(22))}>
+      <At b={B(cx(1), ce(9), ry(22))}>
         <Ex n={2} stars={2}>
           Continue the number patterns. Then say them aloud.
         </Ex>
@@ -2433,6 +2638,7 @@ function Wb4() {
           </View>
         ))}
       </At>
+      <Vig k="wb4" b={B(cx(10), ce(12), ry(20), ry(40))} />
       <At b={B(cx(1), ce(12), ry(40))}>
         <Ex n={3} stars={1}>
           Find eight classroom objects (→ and ↓). Then write the words.
@@ -2486,21 +2692,30 @@ function Wb4() {
 
 function Wb5() {
   const dl = K.WB_DIALOGUE;
+  const pics = K.WB_RIDDLES.filter((r) => r.pic);
   return (
     <BookPage n={5} part="wb">
-      <WbHead n="4" title="Who am I?" sb="10" />
-      <At b={B(cx(1), ce(12), ry(7))}>
+      <WbHead n="4" title="Who am I?" sb="5, 10" />
+      <At b={B(cx(1), ce(10), ry(7))}>
         <Ex n={1} stars={1}>
-          Read and write the classroom object.
+          Read and write the classroom object. The pictures can help you.
         </Ex>
         {K.WB_RIDDLES.map((r, i) => (
           <Row key={i} n={i} ex={i === 0}>
-            <Text style={{ ...a(BODY), width: 112 * MM }}>{r.q}</Text>
+            <Text style={{ ...a(BODY), width: 86 * MM }}>{r.q}</Text>
             <Line w={44 * MM}>{i === 0 ? r.a : null}</Line>
           </Row>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(32))}>
+      <Fill b={B(cx(11), ce(12), ry(8), ry(33))} color={C.sunTint} r={6} />
+      <At b={B(cx(11), ce(12), ry(9))}>
+        {pics.map((r) => (
+          <View key={r.pic} style={{ alignItems: "center", marginBottom: 2 }}>
+            <FlowPic src={A.object(r.pic!)} d={33} />
+          </View>
+        ))}
+      </At>
+      <At b={B(cx(1), ce(12), ry(36))}>
         <Ex n={2} stars={1}>
           Complete the dialogue with the words in the box.
         </Ex>
@@ -2537,26 +2752,26 @@ function Wb5() {
           </Row>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(84))}>
+      <At b={B(cx(1), ce(12), ry(81))}>
         <Ex n={4} stars={1}>
-          Look at the class rules. Which rule is it? Write the number.
+          Look at our class rules (SB page 5). Which rule is it? Write the number.
         </Ex>
         <View style={{ flexDirection: "row" }}>
-          <View style={{ width: "60%" }}>
+          <View style={{ width: cx(8) - cx(1) - 3 * MM }}>
             {[K.WB_RULES_MATCH.example, ...K.WB_RULES_MATCH.items].map((it, i) => (
-              <View key={i} style={{ flexDirection: "row", alignItems: "center", height: 8.4 * MM }}>
+              <View key={i} style={{ flexDirection: "row", alignItems: "center", minHeight: 9 * MM }}>
                 {i === 0 ? <ExampleTag /> : <Num n={i} />}
-                <Text style={{ ...a(BODY), flex: 1 }}>{it.s}</Text>
+                <Text style={{ ...a(BODY), flex: 1, lineHeight: 1.15 }}>{it.s}</Text>
                 <WriteBox>{i === 0 ? String(it.a) : null}</WriteBox>
               </View>
             ))}
           </View>
-          <View style={{ width: "40%", paddingLeft: 10 }}>
+          <View style={{ marginLeft: 3 * MM, flex: 1 }}>
             <View style={{ backgroundColor: C.coralTint, borderRadius: 6, padding: 6 }}>
               {K.RULES.map((r, i) => (
                 <View key={r} style={{ flexDirection: "row", marginBottom: 2 }}>
                   <Text style={{ ...a(BODY, DARK, 700), width: 14 }}>{i + 1}</Text>
-                  <Text style={{ ...a(BODY), flex: 1 }}>{r}</Text>
+                  <Text style={{ ...a(BODY), flex: 1, lineHeight: 1.15 }}>{r}</Text>
                 </View>
               ))}
             </View>
@@ -2568,7 +2783,8 @@ function Wb5() {
 }
 
 function Wb6() {
-  const cup = B(cx(1), ce(6), ry(12), ry(46));
+  const cup = B(cx(1), ce(6), ry(12), ry(51));
+  const right = B(cx(7), ce(12), ry(12));
   return (
     <BookPage n={6} part="wb">
       <WbHead n="5" title="There is / There are · Me, him, her ..." sb="11" />
@@ -2578,25 +2794,28 @@ function Wb6() {
         </Ex>
       </At>
       <ArtPic id="cupboard" b={cup} make={() => art.artCupboard(cup.w, cup.h!)} r={6} />
-      <At b={B(cx(7), ce(12), ry(12))}>
+      <At b={right}>
         {K.WB_CUP_CIRCLE.map((it, i) => (
           <Row key={i} n={i} ex={i === 0}>
             <Choice parts={it.parts} answer={i === 0 ? it.a : undefined} />
           </Row>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(50))}>
+      <At b={B(cx(7), ce(12), ry(31.5))}>
         <Ex n={2} stars={1}>
           Count and answer.
         </Ex>
         {K.WB_CUP_COUNT.map((q, i) => (
-          <Row key={i} n={i} ex={i === 0}>
-            <Text style={{ ...a(BODY), width: 70 * MM }}>{q.q}</Text>
-            <Line w={74 * MM}>{i === 0 ? q.a : null}</Line>
-          </Row>
+          <View key={i} style={{ marginBottom: 3 }}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {i === 0 ? <ExampleTag /> : <Num n={i} />}
+              <Text style={{ ...a(BODY), flex: 1 }}>{q.q}</Text>
+            </View>
+            <Line>{i === 0 ? q.a : null}</Line>
+          </View>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(68))}>
+      <At b={B(cx(1), ce(12), ry(53.5))}>
         <Ex n={3} stars={2}>
           Write him, her, it, us or them for the blue words.
         </Ex>
@@ -2606,9 +2825,29 @@ function Wb6() {
             <Ws s={it.s[1]} color="#1D5BB5" bold />
             <Ws s={`${it.s[2]}  →  `} />
             <Ws s={it.s[0]} />
-            <Line w={26 * MM}>{i === 0 ? it.a : null}</Line>
+            <Line w={30 * MM}>{i === 0 ? it.a : null}</Line>
             <Ws s={it.s[2]} />
           </Row>
+        ))}
+      </At>
+      <At b={B(cx(1), ce(12), ry(76.5))}>
+        <Ex n={4} stars={2}>
+          Put the words in order. Write the questions.
+        </Ex>
+        {K.WB_JUMBLED.map((it, i) => (
+          <View key={i} style={{ marginBottom: 1 }} wrap={false}>
+            <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+              {i === 0 ? <ExampleTag /> : <Num n={i} />}
+              {it.w.map((w, j) => (
+                <View key={j} style={{ borderWidth: 1, borderColor: "#9AA3B5", borderRadius: 4, paddingHorizontal: 5, height: 6.4 * MM, justifyContent: "center", marginRight: 3 * MM, backgroundColor: C.tealTint }}>
+                  <Text style={{ ...a(BODY), lineHeight: 1, marginTop: LIFTA(BODY) }}>{w}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={{ paddingLeft: 18 }}>
+              <Line>{i === 0 ? it.a : null}</Line>
+            </View>
+          </View>
         ))}
       </At>
     </BookPage>
@@ -2616,57 +2855,63 @@ function Wb6() {
 }
 
 function Wb7() {
-  const club = B(cx(1), ce(6), ry(8), ry(40));
+  const club = B(cx(1), ce(12), ry(8), ry(27));
+  const hh = 7 * MM;
+  const rh = (club.h! - hh) / K.CLUBS.length;
+  const cw = [0.34, 0.24, 0.16, 0.26];
+  const heads = ["CLUB", "DAY", "TIME", "MEMBER"];
   return (
     <BookPage n={7} part="wb">
       <WbHead n="5" title="Routines and Time" sb="12" />
       <Fill b={club} color="#fff" r={6} border={C.lilac} bw={1.2} />
-      <Fill b={B(club.x, club.x + club.w, club.y, club.y + 7 * MM)} color={C.lilac} radii={{ borderTopLeftRadius: 6, borderTopRightRadius: 6 }} />
+      <Fill b={B(club.x, club.x + club.w, club.y, club.y + hh)} color="#5B3FA0" radii={{ borderTopLeftRadius: 6, borderTopRightRadius: 6 }} />
       <At b={club}>
-        <View style={{ height: 7 * MM, justifyContent: "center" }}>
-          <Text style={{ ...lab(9.5, "#fff"), textAlign: "center" }}>AFTER-SCHOOL CLUBS</Text>
+        <View style={{ flexDirection: "row", height: hh, alignItems: "center", paddingHorizontal: 8 }}>
+          {heads.map((h, j) => (
+            <Text key={h} style={{ ...lab(11, "#fff"), width: `${cw[j] * 100}%` }}>
+              {j === 0 ? `AFTER-SCHOOL ${h}S` : h}
+            </Text>
+          ))}
         </View>
-        {K.CLUBS.map(([c, d, tm], i) => (
-          <View key={c} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 6, height: (club.h! - 7 * MM) / K.CLUBS.length, borderTopWidth: i ? 0.6 : 0, borderTopColor: "#D9CFF0" }}>
-            <Text style={{ ...a(BODY, INK, 700), flex: 1 }}>{c}</Text>
-            <Text style={{ ...a(BODY), width: 76 }}>{d}</Text>
-            <Text style={a(BODY, "#5B3FA0", 700)}>{tm}</Text>
+        {K.CLUBS.map(([c, d, tm, who], i) => (
+          <View key={c} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: rh, borderTopWidth: i ? 0.6 : 0, borderTopColor: "#D9CFF0" }}>
+            <Text style={{ ...a(BODY, INK, 700), width: `${cw[0] * 100}%` }}>{c}</Text>
+            <Text style={{ ...a(BODY), width: `${cw[1] * 100}%` }}>{d}s</Text>
+            <Text style={{ ...a(BODY, "#5B3FA0", 700), width: `${cw[2] * 100}%` }}>{tm}</Text>
+            <Text style={{ ...a(BODY), width: `${cw[3] * 100}%` }}>{who}</Text>
           </View>
         ))}
       </At>
-      <At b={B(cx(7), ce(12), ry(8))}>
+      <At b={B(cx(1), ce(12), ry(30))}>
         <Ex n={1} stars={1}>
           Look at the clubs. Answer: Yes, he does. / No, she doesn&apos;t.
         </Ex>
         {K.WB_CLUB_DOES.map((q, i) => (
-          <View key={i} style={{ marginBottom: 6 }}>
-            <View style={{ flexDirection: "row" }}>
-              {i === 0 ? <ExampleTag /> : <Num n={i} />}
-              <Text style={{ ...a(BODY), flex: 1 }}>{q.q}</Text>
-            </View>
-            <Line w={50 * MM}>{i === 0 ? q.a : null}</Line>
-          </View>
+          <Row key={i} n={i} ex={i === 0}>
+            <Text style={{ ...a(BODY), width: 104 * MM }}>{q.q}</Text>
+            <Line w={52 * MM}>{i === 0 ? q.a : null}</Line>
+          </Row>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(44))}>
+      <At b={B(cx(1), ce(12), ry(46))}>
         <Ex n={2} stars={1}>
           Write sentences.
         </Ex>
         {[K.WB_CLUB_3RD.example, ...K.WB_CLUB_3RD.items].map((it, i) => (
           <Row key={i} n={i} ex={i === 0}>
-            <Text style={{ ...a(BODY, "#3F4A63"), width: 76 * MM }}>{it.s}</Text>
+            <Text style={{ ...a(BODY, "#3F4A63"), width: 68 * MM }}>{it.s}</Text>
             <View style={{ flex: 1 }}>
               <Line>{i === 0 ? it.a : null}</Line>
             </View>
           </Row>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(63))}>
+      <At b={B(cx(1), ce(12), ry(63.5))}>
         <Ex n={3} stars={1}>
           Match the questions with the answers.
         </Ex>
         <View style={{ flexDirection: "row" }}>
-          <View style={{ width: "54%" }}>
+          <View style={{ width: "56%" }}>
             {K.WB_CLUB_MATCH.qs.map((q, i) => (
               <View key={i} style={{ flexDirection: "row", alignItems: "center", height: LINE_H }}>
                 <Num n={i + 1} />
@@ -2675,7 +2920,7 @@ function Wb7() {
               </View>
             ))}
           </View>
-          <View style={{ width: "46%", paddingLeft: 16 }}>
+          <View style={{ width: "44%", paddingLeft: 16 }}>
             {K.WB_CLUB_MATCH.as.map((s, i) => (
               <View key={i} style={{ flexDirection: "row", alignItems: "center", height: LINE_H }}>
                 <Text style={{ ...a(BODY, DARK, 700), width: 16 }}>{"abcd"[i]}</Text>
@@ -2685,9 +2930,9 @@ function Wb7() {
           </View>
         </View>
       </At>
-      <At b={B(cx(1), ce(12), ry(88))}>
+      <At b={B(cx(1), ce(9), ry(83.5))}>
         <Ex n={4} stars={2}>
-          Write two sentences about your day: get up, have dinner.
+          Write two sentences about your day. Use get up and have dinner.
         </Ex>
         {[1, 2].map((i) => (
           <Row key={i} n={i}>
@@ -2697,6 +2942,7 @@ function Wb7() {
           </Row>
         ))}
       </At>
+      <Vig k="wb7" b={B(cx(10), ce(12), ry(86), ry(106))} />
     </BookPage>
   );
 }
@@ -2704,19 +2950,19 @@ function Wb7() {
 function Wb8() {
   return (
     <BookPage n={8} part="wb">
-      <WbHead n="7-8" title="Read and Write" sb="14-15" />
-      <Fill b={B(cx(1), ce(12), ry(8), ry(39))} color={C.paper} r={6} border="#D9C9A3" bw={1} />
+      <WbHead n="7–8" title="Read and Write" sb="14–15" />
+      <Fill b={B(cx(1), ce(12), ry(8), ry(40))} color={C.paper} r={6} border="#D9C9A3" bw={1} />
       <At b={B(cx(1) + INSET, ce(12) - INSET, ry(9))}>
         <View style={{ borderBottomWidth: 0.8, borderBottomColor: "#D9C9A3", paddingBottom: 3, marginBottom: 4 }}>
-          <Text style={lab(9.5, DARK)}>TO: SELIN · FROM: DEFNE · MY NEW CLASS</Text>
+          <Text style={lab(11, DARK)}>TO: SELIN · FROM: DEFNE · MY NEW CLASS</Text>
         </View>
         {K.DEFNE_EMAIL.map((p, i) => (
-          <Text key={i} style={{ ...a(READ), lineHeight: 1.36, marginBottom: 2 }}>
+          <Text key={i} style={{ ...a(READ), lineHeight: 1.34, marginBottom: 2 }}>
             {p}
           </Text>
         ))}
       </At>
-      <At b={B(cx(1), ce(7), ry(42))}>
+      <At b={B(cx(1), ce(7), ry(43))}>
         <Ex n={1} stars={1}>
           Read Defne&apos;s e-mail. Write T or F.
         </Ex>
@@ -2728,7 +2974,7 @@ function Wb8() {
           </View>
         ))}
       </At>
-      <At b={B(cx(8), ce(12), ry(42))}>
+      <At b={B(cx(8), ce(12), ry(43))}>
         <Ex n={2} stars={2}>
           Answer the questions.
         </Ex>
@@ -2742,7 +2988,7 @@ function Wb8() {
           </View>
         ))}
       </At>
-      <At b={B(cx(1), ce(8), ry(68))}>
+      <At b={B(cx(1), ce(8), ry(70))}>
         <Ex n={3} stars={1}>
           Write a reply to Defne. Tell her about your class and your favourite day.
         </Ex>
@@ -2751,7 +2997,7 @@ function Wb8() {
           <Line key={i} />
         ))}
       </At>
-      <Panel b={B(cx(9), ce(12), ry(72), ry(100))} color={C.leafTint} border={C.leaf} title="CHECK" titleColor="#2E7031">
+      <Panel b={B(cx(9), ce(12), ry(72), ry(92))} color={C.leafTint} border={C.leaf} title="CHECK" titleColor="#2E7031">
         {["Hi ... / Love, ...", "the number of students", "your favourite day and why"].map((c) => (
           <View key={c} style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
             <Tick />
@@ -2759,6 +3005,7 @@ function Wb8() {
           </View>
         ))}
       </Panel>
+      <Vig k="wb8" b={B(cx(9), ce(12), ry(93), ry(106))} />
     </BookPage>
   );
 }
@@ -2767,7 +3014,7 @@ function Wb9() {
   const ex = K.WB_EXPRESSIONS;
   return (
     <BookPage n={9} part="wb">
-      <WbHead n="9-10" title="Around the World · The Story" sb="16-18" />
+      <WbHead n="9–10" title="Around the World · The Story" sb="16–18" />
       <At b={B(cx(1), ce(12), ry(7))}>
         <Ex n={1} stars={1}>
           Write the country: South Korea, Kazakhstan or Australia.
@@ -2776,7 +3023,7 @@ function Wb9() {
           <Row key={i} n={i} ex={i === 0}>
             <T>In </T>
             <Line w={38 * MM}>{i === 0 ? it.a : null}</Line>
-            <T>, {it.s}</T>
+            <Ws s={`, ${it.s}`} />
           </Row>
         ))}
       </At>
@@ -2801,9 +3048,9 @@ function Wb9() {
           Match. Write the letter.
         </Ex>
         {ex.left.map((s, i) => (
-          <View key={i} style={{ flexDirection: "row", alignItems: "center", height: LINE_H }}>
+          <View key={i} style={{ flexDirection: "row", alignItems: "center", minHeight: LINE_H }}>
             <Num n={i + 1} />
-            <Text style={{ ...a(BODY), flex: 1 }}>{s}</Text>
+            <Text style={{ ...a(BODY), flex: 1, lineHeight: 1.15 }}>{s}</Text>
             <WriteBox>{i === 0 ? "abcd"[ex.key[0]] : null}</WriteBox>
           </View>
         ))}
@@ -2816,14 +3063,14 @@ function Wb9() {
           ))}
         </View>
       </At>
-      <At b={B(cx(1), ce(12), ry(70))}>
+      <At b={B(cx(1), ce(12), ry(72))}>
         <Ex n={4} stars={2}>
           Your school in Türkiye: write two sentences about your school day.
         </Ex>
         <Row ex>
           <Text style={a(BODY, ANS, 700)}>In Türkiye, the school year starts in September.</Text>
         </Row>
-        {[1, 2, 3].map((i) => (
+        {[1, 2].map((i) => (
           <Row key={i} n={i}>
             <View style={{ flex: 1 }}>
               <Line />
@@ -2831,171 +3078,320 @@ function Wb9() {
           </Row>
         ))}
       </At>
+      <Vig k="wb9" b={B(cx(5), ce(8), ry(57), ry(70))} />
     </BookPage>
   );
 }
 
 function Wb10() {
   const R = K.WB_REVIEW;
-  const g = cells(cx(1), ce(6), 3, 4 * MM);
+  const half = cells(cx(1), ce(12), 2, 6 * MM);
+  const ck = 30 * MM;
   return (
     <BookPage n={10} part="wb">
-      <WbHead n="R" title="Review" sb="4-19" />
-      <At b={B(cx(1), ce(6), ry(7))}>
-        <SectionHead l="A" title="What time is it?" pts={3} />
+      <WbHead n="R" title="Review" sb="4–19" />
+      <At b={B(cx(1), ce(12), ry(7))}>
+        <SectionHead l="A" title="What time is it? Write." pts={R.times.length} />
       </At>
-      {R.times.map((tm, i) => (
-        <React.Fragment key={tm}>
-          <Clock b={B(g.at(i), g.at(i) + g.w, ry(11), ry(11) + 24 * MM)} time={tm} rim={[C.coral, C.teal, C.lilac][i]} />
-          <At b={B(g.at(i), g.at(i) + g.w, ry(11) + 24 * MM)}>
-            <Line />
-          </At>
-        </React.Fragment>
-      ))}
-      <At b={B(cx(7), ce(12), ry(7))}>
-        <SectionHead l="B" title="Which lesson is it?" pts={3} />
+      {R.times.map((tm, i) => {
+        const x = half.at(i % 2);
+        const y = ry(11) + Math.floor(i / 2) * (ck + 3 * MM);
+        return (
+          <React.Fragment key={tm}>
+            <Clock b={B(x, x + ck, y, y + ck)} time={tm} rim={[C.coral, C.teal, C.lilac, C.leaf][i]} />
+            <At b={B(x + ck + 4 * MM, x + half.w, y + ck / 2 - 2 * MM)}>
+              <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+                <Num n={i + 1} />
+                <View style={{ flex: 1 }}>
+                  <Line />
+                </View>
+              </View>
+            </At>
+          </React.Fragment>
+        );
+      })}
+      <At b={B(half.at(0), half.at(0) + half.w, ry(40))}>
+        <SectionHead l="B" title="Which lesson is it?" pts={R.subjects.length} />
         {R.subjects.map((s, i) => (
           <View key={i} style={{ marginBottom: 1 }}>
             <Text style={a(BODY)}>
               <Bo c={DARK}>{i + 1} </Bo>
               {s.clue}
             </Text>
-            <Line h={8 * MM} w="70%" />
+            <Line w="70%" />
           </View>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(34))}>
-        <SectionHead l="C" title="Circle the correct words." pts={3} />
+      <At b={B(half.at(1), half.at(1) + half.w, ry(40))}>
+        <SectionHead l="C" title="Circle the correct words." pts={R.circle.length} />
         {R.circle.map((it, i) => (
           <Row key={i} n={i + 1}>
             <Choice parts={it.parts} />
           </Row>
         ))}
       </At>
-      <At b={B(cx(1), ce(12), ry(51))}>
-        <SectionHead l="D" title="Write the numbers." pts={3} />
+      <At b={B(cx(1), ce(12), ry(64))}>
+        <SectionHead l="D" title="Write the numbers." pts={R.numbers.length} />
         <View style={{ flexDirection: "row" }}>
           {R.numbers.map((n, i) => (
-            <View key={i} style={{ width: "33.3%", flexDirection: "row", alignItems: "center", height: 10 * MM }}>
-              <Num n={i + 1} />
-              <Text style={{ ...a(BODY), width: 28 * MM }}>{n.w}</Text>
-              <WriteBox w={12 * MM} />
+            <View key={i} style={{ width: "25%", flexDirection: "row", alignItems: "center", height: 10 * MM }}>
+              <Num n={i + 1} w={14} />
+              <Text style={{ ...a(BODY), width: 27 * MM }}>{n.w}</Text>
+              <WriteBox w={11 * MM} />
             </View>
           ))}
         </View>
       </At>
-      <At b={B(cx(1), ce(12), ry(62))}>
+      <At b={B(cx(1), ce(12), ry(74))}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <StarTag n={2} />
           <View style={{ flex: 1 }}>
-            <SectionHead l="E" title={R.write} pts={8} />
+            <SectionHead l="E" title={R.write} pts={20 - R.times.length - R.subjects.length - R.circle.length - R.numbers.length} />
           </View>
         </View>
         {[1, 2, 3].map((i) => (
           <Line key={i} />
         ))}
       </At>
-      <Fill b={B(cx(1), ce(12), ry(98), ry(105))} color={C.sunTint} r={5} />
-      <At b={B(cx(1) + INSET, ce(12) - INSET, ry(98), ry(105))}>
+      <Fill b={B(cx(1), ce(12), ry(97), ry(105))} color={C.sunTint} r={5} />
+      <At b={B(cx(1) + INSET, ce(12) - INSET, ry(97), ry(105))}>
         <View style={{ flexDirection: "row", alignItems: "center", height: "100%", justifyContent: "space-between" }}>
           <Text style={a(13, INK, 700)}>My score:   ______ / 20</Text>
-          <T>Need help? Look at SB pages 6-12 again.</T>
+          <T>Need help? Look at SB pages 6–12 again.</T>
         </View>
       </At>
     </BookPage>
   );
 }
 
-// --- teacher appendix: answer key and audio scripts -------------------------------------------------
+function Wb11() {
+  const keyW = cells(cx(1), ce(12), 10, 2 * MM);
+  const code = Object.entries(K.CODE);
+  const wordBox = 19 * MM;
+  const pc = 26 * MM;
+  const pr = 15 * MM;
+  const px = cx(1) + 2 * MM;
+  const py = ry(57);
+  const path = K.PATH_GRID;
+  return (
+    <BookPage n={11} part="wb">
+      <WbHead n="P" title="Puzzle Time" sb="6–12" />
+      <At b={B(cx(1), ce(12), ry(7))}>
+        <Ex n={1} stars={1}>
+          Secret words! Read the numbers. Find the letters in the code. Write the words.
+        </Ex>
+      </At>
+      {code.map(([ch, n], i) => (
+        <React.Fragment key={ch}>
+          <Fill b={B(keyW.at(i), keyW.at(i) + keyW.w, ry(12), ry(12) + 16 * MM)} color={C.tealTint} r={4} border={C.teal} bw={0.8} />
+          <At b={B(keyW.at(i), keyW.at(i) + keyW.w, ry(12) + 1.5 * MM)}>
+            <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 18, color: INK, textAlign: "center", lineHeight: 1 }}>{ch}</Text>
+            <Text style={{ ...a(BODY, DARK, 700), textAlign: "center", marginTop: 2 }}>{n}</Text>
+          </At>
+        </React.Fragment>
+      ))}
+      {K.CODE_WORDS.map((w, wi) => {
+        const y = ry(22) + wi * 18 * MM;
+        return (
+          <React.Fragment key={w}>
+            <At b={B(cx(1), cx(1) + 10 * MM, y + 2 * MM)}>
+              <Text style={a(BODY, DARK, 700)}>{wi + 1}</Text>
+            </At>
+            {[...w].map((ch, j) => {
+              const x = cx(1) + 7 * MM + j * wordBox;
+              const words = K.numberWords(K.CODE[ch]).split("-");
+              return (
+                <React.Fragment key={j}>
+                  <At b={B(x, x + wordBox - 2 * MM, y)}>
+                    <WriteBox w={wordBox - 2 * MM}>{wi === 0 && j === 0 ? ch : null}</WriteBox>
+                    {words.map((p, k) => (
+                      <Text key={k} style={{ ...a(11, "#3F4A63"), textAlign: "center", lineHeight: 1.05, marginTop: k ? 0 : 1 }}>
+                        {p}
+                        {k < words.length - 1 ? "-" : ""}
+                      </Text>
+                    ))}
+                  </At>
+                </React.Fragment>
+              );
+            })}
+          </React.Fragment>
+        );
+      })}
+      <At b={B(cx(1), ce(12), ry(46))}>
+        <Ex n={2} stars={2}>
+          The time path. Look at the timetable on SB page 7. Colour the start times of the lessons on Mondays, in order. Go → or ↓.
+        </Ex>
+      </At>
+      {path.map((row, r) =>
+        row.map((tm, c) => {
+          const x = px + c * (pc + 3 * MM);
+          const y = py + r * (pr + 3 * MM);
+          const start = r === 0 && c === 0;
+          return (
+            <React.Fragment key={`${r}-${c}`}>
+              <Fill b={B(x, x + pc, y, y + pr)} color={start ? C.sun : "#fff"} r={6} border={DARK} bw={1} />
+              <At b={B(x, x + pc, y, y + pr)}>
+                <View style={{ height: "100%", alignItems: "center", justifyContent: "center" }}>
+                  <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 16, color: INK, lineHeight: 1, marginTop: LIFTB(16) }}>{tm}</Text>
+                </View>
+              </At>
+            </React.Fragment>
+          );
+        }),
+      )}
+      <At b={B(px, px + pc, py - 5 * MM)}>
+        <Text style={{ ...lab(11, RED), textAlign: "center" }}>START</Text>
+      </At>
+      <At b={B(cx(9), ce(12), py)}>
+        <Text style={{ ...a(BODY), lineHeight: 1.3 }}>Which lesson starts at 10:35 on Mondays?</Text>
+        <Line />
+        <Text style={{ ...a(BODY), lineHeight: 1.3, marginTop: 6 }}>How many lessons are on your path?</Text>
+        <Line />
+      </At>
+    </BookPage>
+  );
+}
+
+/** WB p. 12: my picture dictionary (draw, no cutting: the page backs onto the puzzles). */
+const WB_CARDS = ["Maths", "Music", "P.E.", "Art", "ruler", "glue", "scissors", "clock", "notebook", "rubbish bin", "board marker", "Monday"];
+function Wb12() {
+  const g = cells(cx(1), ce(12), 4, 4 * MM);
+  const ch = 50 * MM;
+  const y0 = ry(16);
+  return (
+    <BookPage n={12} part="wb">
+      <WbHead n="D" title="My Picture Dictionary" sb="8–20" />
+      <At b={B(cx(1), ce(12), ry(7))}>
+        <Ex n={1} stars={1}>
+          Draw a picture for each word. Then cover the words and test a friend: &quot;What&apos;s this?&quot;
+        </Ex>
+      </At>
+      {WB_CARDS.map((w, i) => {
+        const x = g.at(i % 4);
+        const y = y0 + Math.floor(i / 4) * (ch + 23 * MM);
+        const pic = i === 0 ? A.subject("Maths") : null;
+        return (
+          <React.Fragment key={w}>
+            <Fill b={B(x, x + g.w, y, y + ch + 19 * MM)} color="#fff" r={8} border={[C.coral, C.teal, C.lilac, C.leaf][i % 4]} bw={1.4} />
+            {pic ? <Pic b={B(x + 6 * MM, x + g.w - 6 * MM, y + 4 * MM, y + ch + 6 * MM)} src={pic} fit="contain" name="Maths card" /> : null}
+            <Fill b={B(x, x + g.w, y + ch + 9 * MM, y + ch + 19 * MM)} color={[C.coralTint, C.tealTint, "#EEE8FA", C.leafTint][i % 4]} radii={{ borderBottomLeftRadius: 8, borderBottomRightRadius: 8 }} />
+            <At b={B(x, x + g.w, y + ch + 9 * MM, y + ch + 19 * MM)}>
+              <View style={{ height: "100%", alignItems: "center", justifyContent: "center" }}>
+                <Text style={{ ...a(14, INK, 700), lineHeight: 1, marginTop: LIFTA(14) }}>{w}</Text>
+              </View>
+            </At>
+            {i === 0 ? (
+              <At b={B(x + 2 * MM, x + 24 * MM, y + 2 * MM)}>
+                <ExampleTag />
+              </At>
+            ) : null}
+          </React.Fragment>
+        );
+      })}
+    </BookPage>
+  );
+}
+
+// --- teacher's pages (a separate file): answer key and audio scripts ------------------------------------
 type KeyGroup = { head: string; lines: string[] };
 function pick(it: { parts: readonly (string | readonly string[])[]; a: number }) {
   return (it.parts.find((p) => typeof p !== "string") as readonly string[])[it.a];
+}
+function pathAnswer() {
+  const mon = K.TIMETABLE.Monday;
+  const at = K.PERIODS.indexOf("10:35");
+  return { times: K.PERIODS.join(" → "), lesson: mon[at], count: K.PERIODS.length };
 }
 function keyGroups(): KeyGroup[] {
   const L = "abcdef";
   const tt = K.TIMETABLE;
   const ws = K.wordSearch();
+  const pa = pathAnswer();
   return [
-    { head: "SB 4-5", lines: [`1  ${K.EX1.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`, `2  ${K.EX2.items.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}`] },
+    { head: "SB 4–5", lines: [`${exN("e1")}  ${K.EX1.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`, `${exN("e2")}  ${K.EX2.items.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}`, `${exN("rules")}  ${K.RULE_PICS.map((r, i) => `${"abcde"[i]} ${r + 1}`).join("  ")}`] },
     {
-      head: "SB 6-7",
+      head: "SB 6–7",
       lines: [
-        `3  ✓ ${K.EX3_TOPICS.filter((x) => x[1]).map((x) => x[0]).join(", ")}`,
-        `4  ${K.EX4_TIMES.map((tm, i) => `${i + 1} ${L[K.EX4_CLOCKS.indexOf(tm)]}`).join("  ")}`,
-        `5  ${K.EX5.items.map((tm, i) => `${i + 1} ${K.timeWords(tm, true)}`).join("; ")}`,
-        `6  ${K.TT_GAPS.map(([d, i]) => `${d.slice(0, 3)} ${K.PERIODS[i]} ${tt[d][i]}`).join("; ")}`,
+        `${exN("e3")}  ticked: ${K.EX3_TOPICS.filter((x) => x[1]).map((x) => x[0]).join(", ")}`,
+        `${exN("e4")}  ${K.EX4_TIMES.map((tm, i) => `${i + 1} ${L[K.EX4_CLOCKS.indexOf(tm)]}`).join("  ")}`,
+        `${exN("e5")}  ${K.EX5.items.map((tm, i) => `${i + 1} ${K.timeWords(tm, true)}`).join("; ")}`,
+        `${exN("e6")}  ${K.TT_GAPS.map(([d, i]) => `${d.slice(0, 3)} ${K.PERIODS[i]} ${tt[d][i]}`).join("; ")}`,
       ],
     },
     {
-      head: "SB 8-10",
+      head: "SB 8–10",
       lines: [
-        `9  ↗ on the negative word, ↘ at the end of every sentence`,
-        `10  ${K.EX11_TILES.map((s, i) => `${i + 1} ${s}`).join(", ")}`,
-        `11  ${K.EX12_CHIPS.map((d) => `${d} ${K.DAYS7.indexOf(d as (typeof K.DAYS7)[number]) + 1}`).join(", ")}; weekend: Saturday and Sunday`,
-        `12  ${K.EX13.numbers.map((n, i) => `${i + 1} ${L[K.EX13.words.indexOf(n)]}`).join("  ")}`,
-        `13  ${K.EX14.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}; in words: ${[K.EX14.example, ...K.EX14.items].map((it) => K.numberWords(it.a)).join(", ")}`,
-        `14  ${K.SCENE_OBJECTS.map((o, i) => `${i + 1} ${o}`).join(", ")}`,
-        `15  ${K.EX16.cards.map((c, i) => `${i + 1} ${K.EX16.defs.find((d) => d[2] === c)![0]}`).join("  ")}`,
+        `${exN("e9")}  a dot (•) over the negative word, ↘ at the end of every sentence`,
+        `${exN("e10")}  ${K.EX11_TILES.map((s, i) => `${i + 1} ${s}`).join(", ")}`,
+        `${exN("e11")}  ${K.EX12_CHIPS.map((d) => `${d} ${K.DAYS7.indexOf(d as (typeof K.DAYS7)[number]) + 1}`).join(", ")}; weekend: Saturday and Sunday`,
+        `${exN("e12")}  ${K.EX13.numbers.map((n, i) => `${i + 1} ${L[K.EX13.words.indexOf(n)]}`).join("  ")}`,
+        `${exN("e13")}  ${K.EX14.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}; in words: ${[K.EX14.example, ...K.EX14.items].map((it) => K.numberWords(it.a)).join(", ")}`,
+        `${exN("e14")}  ${K.SCENE_OBJECTS.map((o, i) => `${i + 1} ${o}`).join(", ")}`,
+        `${exN("e15")}  ${K.EX16.cards.map((c, i) => `${i + 1} ${K.EX16.defs.find((d) => d[2] === c)![0]}`).join("  ")}`,
       ],
     },
     {
-      head: "SB 11-12",
+      head: "SB 11–12",
       lines: [
         `Notice: ${K.NOTICE_THERE.a}; ${K.NOTICE_PRON.a}; ${K.NOTICE_HAVE.a}`,
-        `17  ${K.EX18.items.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}`,
-        `18  ${K.EX_PRON.items.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}`,
-        `19  ${K.EX19.items.map((it, i) => `${i + 1} ${K.has(it.subject, it.day) ? "have" : "don't have"}`).join("  ")}`,
-        `20  ${K.EX_3RD.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`,
-        `21  ${K.EX_DOES.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`,
-        `22  ${K.EX20.items.map((it, i) => `${i + 1} It starts at ${K.timeWords(K.startOf(it.subject, it.day))}.`).join(" ")}`,
+        `${exN("e17")}  ${K.EX18.items.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}`,
+        `${exN("spot")}  ${K.DIFFERENCES.join("; ")}`,
+        `${exN("e18")}  ${K.EX_PRON.items.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}`,
+        `${exN("e19")}  ${K.EX19.items.map((it, i) => `${i + 1} ${K.has(it.subject, it.day) ? "have" : "don't have"}`).join("  ")}`,
+        `${exN("e20")}  ${K.EX_3RD.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`,
+        `${exN("e21")}  ${K.EX_DOES.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`,
+        `${exN("e22")}  ${K.EX20.items.map((it, i) => `${i + 1} It starts at ${K.timeWords(K.startOf(it.subject, it.day))}.`).join(" ")}`,
       ],
     },
     {
-      head: "SB 14-16",
+      head: "SB 14–16",
       lines: [
-        `24  ${K.EX23.a}`,
-        `25  ${K.EX24.items.map((it, i) => `${i + 1} ${it.a ? "T" : "F"}`).join("  ")}`,
-        `29  ${K.CLIL_PICS.map((p, i) => `${i + 1} ${p.k === "-" ? "extra" : p.k}`).join("  ")}`,
-        `30  ${K.EX31.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`,
+        `${exN("e24")}  ${K.EX23.a}`,
+        `${exN("e25")}  ${K.EX24.items.map((it, i) => `${i + 1} ${it.a ? "T" : "F"}`).join("  ")}`,
+        `${exN("survey15")}  one-star table, Zehra: ${K.SURVEY_ROWS.map((r, i) => `${r} ${K.SURVEY_ZEHRA[i]}`).join(", ")}`,
+        `${exN("e29")}  ${K.CLIL_PICS.map((p, i) => `${i + 1} ${p.k === "-" ? "extra" : p.k}`).join("  ")}`,
+        `${exN("e30")}  ${K.EX31.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`,
       ],
     },
     {
-      head: "SB 17-19",
+      head: "SB 17–19",
       lines: [
-        `31  ${K.EX33.a}`,
-        `32  ${K.EX35.items.map((it, i) => `${i + 1} ${it.a}`).join(" ")}`,
+        `${exN("e31")}  ${K.EX33.a}`,
+        `${exN("e32")}  ${K.EX35.items.map((it, i) => `${i + 1} ${it.a}`).join(" ")}`,
+        `${exN("seq")}  ${K.STORY_EVENTS.map(([e, k]) => `${e.split(" ").slice(0, 2).join(" ")} ... ${k}`).join("; ")}`,
         `A  ${K.CHECK.times.map((tm, i) => `${i + 1} ${K.timeWords(tm)}`).join("; ")}`,
         `B  ${K.CHECK.circle.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}   C  ${K.CHECK.subjects.join(", ")}`,
         `D  ${K.CHECK.timetableQs.map((it, i) => `${i + 1} ${it.a}`).join(" ")}`,
         `E  ${K.CHECK.numbers.map((n) => K.numberWords(n)).join(", ")}`,
       ],
     },
-    { head: "WB 2", lines: [`1  clocks: ${K.WB_DRAW.items.map((tm) => `${tm} ${K.timeWords(tm)}`).join(", ")}`, `2  ${K.WB_READ_CLOCKS.items.map((tm, i) => `${i + 1} It's ${K.timeWords(tm)}.`).join(" ")}`, `3  ${K.WB_WORDS.items.map((tm, i) => `${i + 1} ${K.timeWords(tm, true)}`).join("; ")}`, `4  ${K.WB_TT_SENTENCES.slice(1).map((it, i) => `${i + 1} ${K.wbTtAnswer(it)}`).join("  ")}`] },
-    { head: "WB 3", lines: [`1  ${K.CROSS.map((w) => w.word).join(", ")}`, `2  Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday`, `3  ${K.WB_DAY_RIDDLES.map((r, i) => `${i + 1} ${r.a}`).join("  ")}`] },
+    { head: "WB 2", lines: [`1  ${K.WB_DRAW.items.map((tm) => `${K.timeWords(tm)} (${tm})`).join(", ")}`, `2  ${K.WB_READ_CLOCKS.items.map((tm, i) => `${i + 1} It's ${K.timeWords(tm)}.`).join(" ")}`, `3  ${K.WB_WORDS.items.map((tm, i) => `${i + 1} ${K.timeWords(tm, true)}`).join("; ")}`, `4  ${K.WB_TT_SENTENCES.slice(1).map((it, i) => `${i + 1} ${K.wbTtAnswer(it)}`).join("  ")}`] },
+    { head: "WB 3", lines: [`1  ${K.CROSS.map((w) => w.word).join(", ")}`, `2  Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday`, `3  ${K.WB_DAY_RIDDLES.map((r, i) => `${i + 1} ${r.a}`).join("  ")}`, `4  ${K.WB_ODD.slice(1).map((o, i) => `${i + 1} ${o.a} (the others: ${o.why})`).join("; ")}`] },
     { head: "WB 4", lines: [`1  ${K.WB_NUMBERS.items.map((n, i) => `${i + 1} ${n}`).join("  ")}`, `2  ${K.WB_PATTERNS.map((p, i) => `${i + 1} ${p.a.join(", ")}`).join("; ")}`, `3  ${ws.placed.map((p) => `${p.word.toLowerCase()} ${p.down ? "↓" : "→"} (row ${p.r + 1}, column ${p.c + 1})`).join(", ")}`, `4  ${K.WB_SUMS.slice(1).map((q, i) => `${i + 1} ${K.numberWords(q.a)}`).join("  ")}`] },
     { head: "WB 5", lines: [`1  ${K.WB_RIDDLES.slice(1).map((r, i) => `${i + 1} ${r.a}`).join("  ")}`, `2  borrow, please / Here you are / Thank you, lend`, `3  own answers`, `4  ${K.WB_RULES_MATCH.items.map((it, i) => `${i + 1} rule ${it.a}`).join("  ")}`] },
-    { head: "WB 6", lines: [`1  ${K.WB_CUP_CIRCLE.slice(1).map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}`, `2  ${K.WB_CUP_COUNT.slice(1).map((q, i) => `${i + 1} ${q.a}`).join(" ")}`, `3  ${K.WB_PRON.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`] },
+    { head: "WB 6", lines: [`1  ${K.WB_CUP_CIRCLE.slice(1).map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}`, `2  ${K.WB_CUP_COUNT.slice(1).map((q, i) => `${i + 1} ${q.a}`).join(" ")}`, `3  ${K.WB_PRON.items.map((it, i) => `${i + 1} ${it.a}`).join("  ")}`, `4  ${K.WB_JUMBLED.slice(1).map((q, i) => `${i + 1} ${q.a}`).join(" ")}`] },
     { head: "WB 7", lines: [`1  ${K.WB_CLUB_DOES.slice(1).map((q, i) => `${i + 1} ${q.a}`).join("  ")}`, `2  ${K.WB_CLUB_3RD.items.map((it, i) => `${i + 1} ${it.a}`).join(" ")}`, `3  ${K.WB_CLUB_MATCH.key.map((k, i) => `${i + 1} ${"abcd"[k]}`).join("  ")}`, `4  own answers`] },
     { head: "WB 8", lines: [`1  ${K.WB_EMAIL_TF.slice(1).map((it, i) => `${i + 1} ${it.a ? "T" : "F"}`).join("  ")}`, `2  ${K.WB_EMAIL_QS.map((q, i) => `${i + 1} ${q.a}`).join(" ")}`, `3  own answers`] },
-    { head: "WB 9", lines: [`1  ${K.WB_CLIL.slice(1).map((it, i) => `${i + 1} ${it.a}`).join("  ")}`, `2  ${K.WB_WHO.slice(1).map((it, i) => `${i + 1} ${it.a}`).join("  ")}`, `3  ${K.WB_EXPRESSIONS.key.map((k, i) => `${i + 1} ${"abcd"[k]}`).join("  ")}`] },
+    { head: "WB 9", lines: [`1  ${K.WB_CLIL.slice(1).map((it, i) => `${i + 1} ${it.a}`).join("  ")}`, `2  ${K.WB_WHO.slice(1).map((it, i) => `${i + 1} ${it.a}`).join("  ")}`, `3  ${K.WB_EXPRESSIONS.key.map((k, i) => `${i + 1} ${"abcd"[k]}`).join("  ")}`, `4  own answers`] },
     {
       head: "WB 10",
       lines: [
         `A  ${K.WB_REVIEW.times.map((tm, i) => `${i + 1} ${K.timeWords(tm)}`).join("; ")}   B  ${K.WB_REVIEW.subjects.map((s, i) => `${i + 1} ${s.a}`).join("  ")}`,
-        `C  ${K.WB_REVIEW.circle.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}   D  ${K.WB_REVIEW.numbers.map((n, i) => `${i + 1} ${n.a}`).join("  ")}   E  own answers`,
+        `C  ${K.WB_REVIEW.circle.map((it, i) => `${i + 1} ${pick(it)}`).join("  ")}   D  ${K.WB_REVIEW.numbers.map((n, i) => `${i + 1} ${n.a}`).join("  ")}   E  own answers (5 points: 2 for each correct sentence, 1 for a capital letter and full stop)`,
       ],
     },
+    { head: "WB 11–12", lines: [`1  ${K.CODE_WORDS.join(", ")}`, `2  ${pa.times}; ${pa.lesson}; ${pa.count} lessons`, `WB 12  pupils' own drawings`] },
   ];
 }
-const SCRIPTS: [string, string, string][] = [
-  ["2.01", "Get Ready! (SB 4-5, Ex 2)", K.SCENE_BUBBLES.map((b) => `${nameOf(b.who)}: ${b.text}`).join("\n")],
-  ["2.02", "Our timetable (SB 7, Ex 6)", K.EX6_SCRIPT],
-  ["2.03", "Say it right (SB 8, Ex 8)", K.EX9.join("\n")],
-  ["2.04", "Say it right (SB 8, Ex 9)", [K.EX10.example, ...K.EX10.items].join("\n")],
-  ["2.05", "School subjects (SB 8, Ex 10)", K.EX11_SCRIPT],
-  ["2.06", "Numbers (SB 9, Ex 13)", K.EX14.script],
-  ["2.07", "Classroom objects (SB 10, Ex 14)", K.EX15_SCRIPT],
-  ["2.08", `Story: ${K.STORY_TITLE} (SB 17, Ex 31)`, K.STORY.map((p, i) => `Picture ${i + 1}. ${p.bubbles.map((b) => `${nameOf(b.who)}: ${b.text}`).join(" ")}`).join("\n")],
+const SCRIPTS = (): [string, string, string][] => [
+  ["2.01", `Get Ready! (SB 4–5, Ex ${exN("e2")})`, K.SCENE_BUBBLES.map((b) => `${nameOf(b.who)}: ${b.text}`).join("\n")],
+  ["2.02", `Our timetable (SB 7, Ex ${exN("e6")})`, K.EX6_SCRIPT],
+  ["2.03", `Say it right (SB 8, Ex ${exN("e8")})`, K.EX9.join("\n")],
+  ["2.04", `Say it right (SB 8, Ex ${exN("e9")})`, [K.EX10.example, ...K.EX10.items].join("\n")],
+  ["2.05", `School subjects (SB 8, Ex ${exN("e10")})`, K.EX11_SCRIPT],
+  ["2.06", `Numbers (SB 9, Ex ${exN("e13")})`, K.EX14.script],
+  ["2.07", `Classroom objects (SB 9, Ex ${exN("e14")})`, K.EX15_SCRIPT],
+  ["2.08", `Story: ${K.STORY_TITLE} (SB 17, Ex ${exN("e31")})`, K.STORY.map((p, i) => `Picture ${i + 1}. ${p.bubbles.map((b) => `${nameOf(b.who)}: ${b.text}`).join(" ")}`).join("\n")],
 ];
 function KeyCol({ groups }: { groups: KeyGroup[] }) {
   return (
@@ -3006,7 +3402,7 @@ function KeyCol({ groups }: { groups: KeyGroup[] }) {
             <Text style={lab(9, "#fff")}>{g.head}</Text>
           </View>
           {g.lines.map((l, i) => (
-            <Text key={i} style={{ ...a(9.2), lineHeight: 1.28, marginBottom: 1 }}>
+            <Text key={i} style={{ ...a(9.5), lineHeight: 1.28, marginBottom: 1 }}>
               {l}
             </Text>
           ))}
@@ -3015,64 +3411,91 @@ function KeyCol({ groups }: { groups: KeyGroup[] }) {
     </>
   );
 }
-function Wb11() {
-  const groups = keyGroups();
-  const col = cells(cx(1), ce(12), 2, 6 * MM);
-  return (
-    <BookPage n={11} part="wb">
-      <LessonHead n="T" title="Answer Key" skills={["For teachers"]} part="wb" />
-      <At b={B(col.at(0), col.at(0) + col.w, ry(8))}>
-        <KeyCol groups={groups.slice(0, 5)} />
-      </At>
-      <At b={B(col.at(1), col.at(1) + col.w, ry(8))}>
-        <KeyCol groups={groups.slice(5, 11)} />
-      </At>
-    </BookPage>
-  );
-}
 function ScriptBlock({ s }: { s: [string, string, string] }) {
   return (
     <View style={{ marginBottom: 5 }} wrap={false}>
       <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 1 }}>
         <AudioTag track={s[0]} />
-        <Text style={a(9.2, DARK, 700)}>{s[1]}</Text>
+        <Text style={a(9.5, DARK, 700)}>{s[1]}</Text>
       </View>
       {s[2].split("\n").map((l, i) => (
-        <Text key={i} style={{ ...a(9.2), lineHeight: 1.26 }}>
+        <Text key={i} style={{ ...a(9.5), lineHeight: 1.26 }}>
           {l}
         </Text>
       ))}
     </View>
   );
 }
-function Wb12() {
+function TeacherFoot({ n }: { n: number }) {
+  return (
+    <At b={B(cx(1), ce(12), FOOT_Y, FOOT_Y + FOOT_H)}>
+      <View style={{ height: "100%", justifyContent: "center", alignItems: n % 2 ? "flex-end" : "flex-start" }}>
+        <Text style={lab(9, DARK)}>{`TEACHER'S PAGES · UNIT 2 · ${n}`}</Text>
+      </View>
+    </At>
+  );
+}
+function Teacher1() {
   const groups = keyGroups();
   const col = cells(cx(1), ce(12), 2, 6 * MM);
-  const g = cells(col.at(0), col.at(0) + col.w, 3, 3 * MM);
-  const clockY = ry(58);
   return (
-    <BookPage n={12} part="wb">
-      <LessonHead n="T" title="Answer Key · Audio Scripts" skills={["For teachers"]} part="wb" />
+    <BookPage>
+      <LessonHead n="T" title="Answer Key · Student's Book" skills={["For teachers"]} part="wb" />
       <At b={B(col.at(0), col.at(0) + col.w, ry(8))}>
-        <KeyCol groups={groups.slice(11)} />
-        <Text style={{ ...a(9.2, "#3F4A63"), marginTop: 1 }}>Speaking, writing and project tasks: pupils&apos; own answers.</Text>
+        <KeyCol groups={groups.slice(0, 3)} />
       </At>
-      <At b={B(col.at(0), col.at(0) + col.w, clockY - 6 * MM)}>
+      <At b={B(col.at(1), col.at(1) + col.w, ry(8))}>
+        <KeyCol groups={groups.slice(3, 6)} />
+        <Text style={{ ...a(9.5, "#3F4A63"), marginTop: 1 }}>Speaking, writing and project tasks: pupils&apos; own answers.</Text>
+      </At>
+      <TeacherFoot n={1} />
+    </BookPage>
+  );
+}
+function Teacher2() {
+  const groups = keyGroups();
+  const col = cells(cx(1), ce(12), 2, 6 * MM);
+  const g = cells(col.at(1), col.at(1) + col.w, 3, 3 * MM);
+  const clockY = ry(84);
+  return (
+    <BookPage>
+      <LessonHead n="T" title="Answer Key · Workbook" skills={["For teachers"]} part="wb" />
+      <At b={B(col.at(0), col.at(0) + col.w, ry(8))}>
+        <KeyCol groups={groups.slice(6, 12)} />
+      </At>
+      <At b={B(col.at(1), col.at(1) + col.w, ry(8))}>
+        <KeyCol groups={groups.slice(12)} />
+      </At>
+      <At b={B(col.at(1), col.at(1) + col.w, clockY - 6 * MM)}>
         <Text style={lab(9, RED)}>WB 2, EXERCISE 1: THE CLOCKS</Text>
       </At>
       {K.WB_DRAW.items.map((tm, i) => (
-        <Clock key={tm} b={B(g.at(i), g.at(i) + g.w, clockY, clockY + 20 * MM)} time={tm} rim={C.coral} />
+        <Clock key={tm} b={B(g.at(i), g.at(i) + g.w, clockY, clockY + 22 * MM)} time={tm} rim={C.coral} />
       ))}
-      <At b={B(col.at(0), col.at(0) + col.w, clockY + 24 * MM)}>
-        {SCRIPTS.slice(0, 2).map((s) => (
-          <ScriptBlock key={s[0]} s={s} />
+      <TeacherFoot n={2} />
+    </BookPage>
+  );
+}
+function Teacher3() {
+  const col = cells(cx(1), ce(12), 2, 6 * MM);
+  const s = SCRIPTS();
+  return (
+    <BookPage>
+      <LessonHead n="T" title="Audio Scripts" skills={["For teachers"]} part="wb" />
+      <At b={B(cx(1), ce(12), ry(7))}>
+        <Text style={{ ...a(10.5, "#3F4A63"), lineHeight: 1.3 }}>No audio? Read the scripts aloud, or ask two pupils to read a dialogue. Play each one twice.</Text>
+      </At>
+      <At b={B(col.at(0), col.at(0) + col.w, ry(13))}>
+        {s.slice(0, 4).map((x) => (
+          <ScriptBlock key={x[0]} s={x} />
         ))}
       </At>
-      <At b={B(col.at(1), col.at(1) + col.w, ry(8))}>
-        {SCRIPTS.slice(2).map((s) => (
-          <ScriptBlock key={s[0]} s={s} />
+      <At b={B(col.at(1), col.at(1) + col.w, ry(13))}>
+        {s.slice(4).map((x) => (
+          <ScriptBlock key={x[0]} s={x} />
         ))}
       </At>
+      <TeacherFoot n={3} />
     </BookPage>
   );
 }
@@ -3086,21 +3509,20 @@ function CoverFront({ part }: { part: Part }) {
     <>
       <Fill b={FULL} color={sb ? "#BDE3F6" : "#FFD9CF"} />
       <Pic b={FULL} src={sb ? A.cover : A.wbCover} name={`${part} front cover`} ay={0.7} />
-      <Fill b={B(0, W, 0, ry(30))} color="#FFFFFF" opacity={0.88} />
-      <ArtPic id="kite-cover" b={B(cx(1), ce(2), ry(2), ry(26))} make={() => art.kite("cover", ce(2) - cx(1), ry(26) - ry(2))} fit="contain" />
-      <At b={B(cx(3), ce(12), ry(3))}>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 64, color: sb ? DARK : RED, lineHeight: 1 }}>
+      <Fill b={B(0, ce(8) + 4 * MM, 0, ry(29))} color="#FFFFFF" opacity={0.9} radii={{ borderBottomRightRadius: 24 }} />
+      <At b={B(cx(1), ce(8), ry(3))}>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 56, color: sb ? DARK : RED, lineHeight: 1 }}>
           {TITLE} <Text style={{ color: sb ? RED : DARK }}>{LEVEL}</Text>
         </Text>
-        <Text style={{ fontFamily: "Baloo", fontWeight: 500, fontSize: 18, color: INK, marginTop: 10 }}>English for Year 5 · Unit 2 · Our Classroom</Text>
+        <Text style={{ fontFamily: "Baloo", fontWeight: 500, fontSize: 16, color: INK, marginTop: 8, lineHeight: 1.2 }}>English for Year 5 · Unit 2 · Our Classroom</Text>
       </At>
-      <At b={B(cx(3), ce(7), ry(20))}>
+      <At b={B(cx(1), ce(6), ry(21))}>
         <View style={{ backgroundColor: sb ? DARK : RED, borderRadius: 14, paddingVertical: 4, paddingHorizontal: 11, alignSelf: "flex-start" }}>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 18, color: "#fff", lineHeight: 1.1, marginTop: LIFTB(18) }}>{sb ? "Student's Book" : "Workbook"}</Text>
         </View>
       </At>
       <At b={B(cx(11), ce(12), ry(92))}>
-        <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: C.sun, borderWidth: 3, borderColor: "#fff", alignItems: "center", justifyContent: "center", alignSelf: "flex-end" }}>
+        <View style={{ width: 22 * MM, height: 22 * MM, borderRadius: 11 * MM, backgroundColor: C.sun, borderWidth: 3, borderColor: "#fff", alignItems: "center", justifyContent: "center", alignSelf: "flex-end" }}>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 11, color: INK, lineHeight: 1, marginTop: LIFTB(11) }}>CEFR</Text>
           <Text style={{ fontFamily: "Baloo", fontWeight: 700, fontSize: 23, color: INK, lineHeight: 1 }}>A1</Text>
         </View>
@@ -3111,8 +3533,8 @@ function CoverFront({ part }: { part: Part }) {
 function CoverBack({ part }: { part: Part }) {
   const sb = part === "sb";
   const feats = sb
-    ? ["A worked example in every exercise", "Every answer is on the page - no video needed", "Easy and challenge tasks for every learner", "A real Year 5 timetable, a class story and a board game", "Can-do checklist, mini test and word list"]
-    : ["One page of homework after each lesson", "Easy and challenge tasks and a review page", "Clocks to draw, a crossword, a word search, an e-mail", "Answer key and audio scripts for teachers"];
+    ? ["Worked examples to show the way", "No video needed – audio scripts for the teacher", "Easy and challenge tasks for every learner", "A real Year 5 timetable, a class story, a chant and a board game", "Can-do checklist, mini test and word list"]
+    : ["One page of homework after each lesson", "Easy and challenge tasks and a review page", "Clocks to draw, a crossword, a word search, puzzles and an e-mail", "My picture dictionary page"];
   return (
     <>
       <Fill b={FULL} color={sb ? DARK : RED} />
@@ -3163,9 +3585,9 @@ const SB_PAGES: [string, React.FC][] = [
   ["get ready (right)", SbScene5],
   ["1 listen and look", SbFocus6],
   ["1 timetable", SbFocus7],
-  ["2-3 say it right, word bank", SbSay8],
+  ["2–3 say it right, word bank", SbSay8],
   ["3 word bank", SbWords9],
-  ["3-4 word bank, game time", SbWords10],
+  ["3–4 word bank, game time", SbWords10],
   ["5 grammar spot", SbGrammar11],
   ["5 grammar spot 2", SbGrammar12],
   ["6 board game", SbGame13],
@@ -3173,23 +3595,29 @@ const SB_PAGES: [string, React.FC][] = [
   ["8 write", SbWrite15],
   ["9 around the world", SbClil16],
   ["10 story time", SbStory17],
-  ["10-11 story questions, project", SbProject18],
+  ["10–11 story questions, project", SbProject18],
   ["12 check yourself", SbCheck19],
   ["word list", SbWords20],
 ];
 const WB_PAGES: [string, React.FC][] = [
   ["title + my timetable", WbTitle],
   ["1 time", Wb2],
-  ["2-3 subjects and days", Wb3],
+  ["2–3 subjects and days", Wb3],
   ["3 numbers and objects", Wb4],
   ["4 who am I", Wb5],
   ["5 there is / are, pronouns", Wb6],
   ["5 routines and time", Wb7],
-  ["7-8 read and write", Wb8],
-  ["9-10 world and story", Wb9],
+  ["7–8 read and write", Wb8],
+  ["9–10 world and story", Wb9],
   ["review", Wb10],
-  ["teacher: answer key", Wb11],
-  ["teacher: answer key, audio scripts", Wb12],
+  ["puzzle time", Wb11],
+  ["my picture dictionary", Wb12],
+];
+/** The teacher's pages: a separate file (ogretmen-sayfalari.pdf), not bound into the Workbook. */
+const TEACHER_PAGES: [string, React.FC][] = [
+  ["answer key: Student's Book", Teacher1],
+  ["answer key: Workbook", Teacher2],
+  ["audio scripts", Teacher3],
 ];
 if (SB_PAGES.length % 4 || WB_PAGES.length % 4) throw new Error("page counts must be multiples of 4");
 const spineOf = (pages: number) => (pages / 2) * 0.1 * MM;
@@ -3221,13 +3649,13 @@ function CoverSpread({ part }: { part: Part }) {
     </Page>
   );
 }
-function interiorDoc(part: Part) {
-  const pages = part === "sb" ? SB_PAGES : WB_PAGES;
-  const name = part === "sb" ? "Student's Book" : "Workbook";
+function interiorDoc(part: Part | "tg") {
+  const pages = part === "sb" ? SB_PAGES : part === "wb" ? WB_PAGES : TEACHER_PAGES;
+  const name = part === "sb" ? "Student's Book" : part === "wb" ? "Workbook" : "Teacher's Pages";
   const Interior = () => (
-    <Document title={`${TITLE} ${LEVEL} - ${name} - Unit 2 - interior`} author={`${TITLE} editorial and design team`}>
+    <Document title={`${TITLE} ${LEVEL} - ${name} - Unit 2${part === "tg" ? "" : " - interior"}`} author={`${TITLE} editorial and design team`}>
       {pages.map(([label, Pg], i) => (
-        <SlugCtx.Provider key={i} value={`${TITLE} ${LEVEL} ${name} · interior page ${i + 1}/${pages.length} · ${label} · trim 210 x 297 mm, bleed 3 mm`}>
+        <SlugCtx.Provider key={i} value={`${TITLE} ${LEVEL} ${name} · page ${i + 1}/${pages.length} · ${label} · trim 210 x 297 mm, bleed 3 mm`}>
           <Pg />
         </SlugCtx.Provider>
       ))}
@@ -3246,13 +3674,45 @@ function coverDoc() {
 function previewDoc() {
   const sb: React.FC[] = [() => <Cover part="sb" />, () => <InsideCover part="sb" />, ...SB_PAGES.map(([, P]) => P), () => <InsideCover part="sb" />, () => <BackCover part="sb" />];
   const wb: React.FC[] = [() => <Cover part="wb" />, () => <InsideCover part="wb" />, ...WB_PAGES.map(([, P]) => P), () => <InsideCover part="wb" />, () => <BackCover part="wb" />];
+  const tg: React.FC[] = TEACHER_PAGES.map(([, P]) => P);
   return (
     <Document title={`${TITLE} ${LEVEL} - Unit 2 (preview)`} author={`${TITLE} editorial and design team`}>
-      {[...sb, ...wb].map((P, i) => (
+      {[...sb, ...wb, ...tg].map((P, i) => (
         <P key={i} />
       ))}
     </Document>
   );
+}
+/**
+ * A word-list entry as it can appear in a text: plural or third-person -s ("posters", "brings",
+ * "dictionaries"), "someone" as any word, "a" or "the", and "not" also as "n't".
+ */
+function wordRegex(key: string) {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const neg = key.startsWith("not ");
+  const words = (neg ? key.slice(4) : key).split(" ").map((w) => (w === "someone" ? "[A-Za-z]+" : w === "a" ? "(?:a|the)" : /[^aeiou]y$/.test(w) ? `${esc(w.slice(0, -1))}(?:y|ies)` : `${esc(w)}(?:s|es)?`));
+  return new RegExp(`${neg ? "(?:not |n't )" : "(?:^|[^A-Za-z])"}${words.join(" ")}(?:$|[^A-Za-z])`);
+}
+/** The word list's page numbers: the first Student's Book page (3–19) where each word is printed. */
+async function findWordPages(pdf: Buffer) {
+  const mupdf = await import("mupdf");
+  const doc = mupdf.Document.openDocument(pdf, "application/pdf");
+  const raw: string[] = [];
+  for (let i = 0; i < doc.countPages(); i++) raw.push(doc.loadPage(i).toStructuredText("preserve-whitespace").asText().replace(/[‘’]/g, "'").replace(/-\s+/g, "-").replace(/\s+/g, " "));
+  const lower = raw.map((s) => s.toLowerCase());
+  const missing: string[] = [];
+  for (const t of K.WORDS)
+    for (const [en] of t.words) {
+      const key = K.wordKey(en);
+      // names with capitals ("IT", "Art", "Monday") are matched as written, so "it" is not "IT"
+      const cased = /[A-Z]/.test(en.replace(/^(I'd|Hold)\b/, ""));
+      const re = wordRegex(cased ? en.split(" / ")[0].replace(/\([^)]*\)/g, "").replace(/[!?]/g, "").replace(/\s+/g, " ").trim().replace(/\.$/, "") : key);
+      const texts = cased ? raw : lower;
+      const p = texts.findIndex((s, i) => i >= 2 && i <= 18 && re.test(s));
+      if (p < 0) missing.push(en);
+      else WORD_PAGES.set(key, p + 1);
+    }
+  if (missing.length) console.log(`  word list - not printed on pages 3–19: ${missing.join(", ")}`);
 }
 
 async function resolvePictures() {
@@ -3292,9 +3752,12 @@ async function main() {
   K.checkContent();
   A = await loadAssets();
   fs.mkdirSync(OUT_DIR, { recursive: true });
+  // first pass: find on which page each word of the word list is printed
+  await findWordPages(await render(interiorDoc("sb")));
   if (MODE === "print") {
     fs.writeFileSync(path.join(OUT_DIR, "raw-sb.pdf"), await render(interiorDoc("sb")));
     fs.writeFileSync(path.join(OUT_DIR, "raw-wb.pdf"), await render(interiorDoc("wb")));
+    fs.writeFileSync(path.join(OUT_DIR, "raw-tg.pdf"), await render(interiorDoc("tg")));
     fs.writeFileSync(path.join(OUT_DIR, "raw-cover.pdf"), await render(coverDoc));
     const seen = new Set<string>();
     const rows = dpiTable.filter((r) => {

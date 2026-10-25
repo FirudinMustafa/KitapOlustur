@@ -123,9 +123,9 @@ export const EX3_TOPICS: [string, boolean][] = [
   ["timetables", true],
 ];
 /** Ex 4: the sentences in order; the clocks a-f in their printed order. */
-export const EX4_TIMES = ["08:40", "09:35", "11:30", "13:00", "13:55", "14:50"];
-export const EX4_CLOCKS = ["11:30", "14:50", "08:40", "13:00", "09:35", "13:55"];
-export const EX5 = { example: "13:55", items: ["10:35", "12:10", "15:30", "07:50"] };
+export const EX4_TIMES = ["10:35", "09:35", "11:30", "13:00", "13:55", "14:50"];
+export const EX4_CLOCKS = ["11:30", "14:50", "10:35", "13:00", "09:35", "13:55"];
+export const EX5 = { example: "13:55", items: ["10:35", "16:20", "15:30", "07:50"] };
 export const EX6_SCRIPT =
   "Ms Aksoy: Here is our timetable, Can. Let's write the missing lessons together. A lesson is forty minutes. On Tuesdays, we have Music at one o'clock and Art at five to two. On Mondays, there is a Guidance lesson at five to two. On Thursdays, we have IT at twenty-five to eleven. It's a double lesson. And P.E. is at one o'clock. On Fridays, English starts at half past eleven.";
 export const EX7_MODEL = [
@@ -164,7 +164,7 @@ export const EX14 = {
 // --- SB p. 10: classroom objects + riddles ----------------------------------------------------
 export const EX15_SCRIPT = "Listen and say. One – smart board. Two – clock. Three – flag. Four – notice board. Five – bookshelf. Six – coat hooks. Seven – school bag. Eight – pencil case.";
 export const EX16 = {
-  cards: ["scissors", "notebook", "ruler", "crayons", "school bag", "glue", "calculator", "pencil case"] as const,
+  cards: ["scissors", "notebook", "ruler", "crayons", "school bag", "glue", "rubber", "pencil case"] as const,
   defs: [
     ["a", "I cut paper. Be careful with me!", "scissors"],
     ["b", "I'm sticky. Put me on paper.", "glue"],
@@ -173,14 +173,19 @@ export const EX16 = {
     ["e", "You carry me to school on your back.", "school bag"],
     ["f", "You write your homework in me.", "notebook"],
     ["g", "I'm red, blue and green. Colour pictures with me.", "crayons"],
-    ["h", "I've got numbers on me. I help you in Maths.", "calculator"],
+    ["h", "Oops, a pencil mistake? I make it go away!", "rubber"],
   ] as [string, string, string][],
 };
+/** Three more object cards (on the same picture sheet), used by the Workbook riddles. */
+export const EXTRA_OBJECTS = ["board marker", "rubbish bin", "sheet of paper"] as const;
 export const EX17_LESSONS = ["Art", "Maths", "Science", "P.E."];
 
 // --- SB pp. 11-12: grammar (pattern tables + noticing, no rules) ---------------------------------------
 /** The class corner drawn for Ex 18 (handcraft-meb5-art.ts classCorner draws exactly these). */
-export const CORNER = { clocks: 1, posters: 3, bookcases: 1, windows: 2, chairs: 2, computers: 0, plants: 0 };
+export const CORNER = { clocks: 1, posters: 3, bookcases: 1, windows: 2, chairs: 2, computers: 0, plants: 0, bins: 1 };
+/** Picture B of the spot-the-difference pair game: four differences from CORNER. */
+export const CORNER_B = { clocks: 1, posters: 2, bookcases: 1, windows: 2, chairs: 3, computers: 0, plants: 1, bins: 0 };
+export const DIFFERENCES = ["A: three posters / B: two posters", "A: two chairs / B: three chairs", "A: no plant / B: a plant", "A: a rubbish bin / B: no rubbish bin"];
 export const EX18 = {
   example: { parts: ["There ", ["is", "are"], " a clock on the wall."] as const, a: 0 },
   items: [
@@ -192,7 +197,7 @@ export const EX18 = {
   ],
 };
 export const NOTICE_THERE = { q: "Look at the coloured words. Which word goes with one thing? Which word goes with two or more things?", a: "is (one thing) / are (two or more things)" };
-export const NOTICE_PRON = { q: "Find the words for Can, Ms Aksoy, the posters, we and I.", a: "him, her, them, us, me" };
+export const NOTICE_PRON = { q: "Find the words for Can, Ms Aksoy, the ball, the books, we, I and you.", a: "him, her, it, them, us, me, you" };
 export const NOTICE_HAVE = { q: "Look: We have ... and Kerem has ... What is different?", a: "Kerem / he / she: has, uses, doesn't (an -s at the end)" };
 export const EX_PRON = {
   example: { parts: ["Ms Aksoy is our class teacher. We love ", ["her", "him"], "."] as const, a: 0 },
@@ -241,30 +246,30 @@ export const EX20 = {
 };
 
 // --- SB p. 13: board game -----------------------------------------------------------------------
-export const BOARD: { t: string; kind?: "start" | "end" | "fwd" | "back" | "help" }[] = [
+export const BOARD: { t: string; kind?: "start" | "end" | "fwd" | "back" | "help"; icon?: string }[] = [
   { t: "START", kind: "start" },
-  { t: "What time is it? 09:35" },
-  { t: "Name three school subjects." },
-  { t: "Count from 50 to 100 in tens." },
-  { t: "Help a friend! Go forward 1.", kind: "help" },
-  { t: "What do you use in Art?" },
-  { t: "Spell: Wednesday" },
-  { t: "Is there a flag in your classroom?" },
-  { t: "What time is it? 13:55" },
-  { t: "No homework! Go back 2.", kind: "back" },
-  { t: "What day comes after Thursday?" },
-  { t: "Say a class rule." },
-  { t: "Zehra is my friend. I like ..." },
-  { t: "Say the number: 87" },
-  { t: "You tidy up your desk. Go forward 2.", kind: "fwd" },
-  { t: "How many minutes is one lesson?" },
-  { t: "What time is it? 08:15" },
-  { t: "Name four classroom objects." },
-  { t: "When is your English lesson?" },
+  { t: "What time is it? 09:35", icon: "🕘" },
+  { t: "Name three school subjects.", icon: "📚" },
+  { t: "Count from 50 to 100 in tens.", icon: "🔢" },
+  { t: "Help a friend! Go forward 1.", kind: "help", icon: "🤝" },
+  { t: "What do you use in Art?", icon: "🎨" },
+  { t: "Spell: Wednesday", icon: "🔤" },
+  { t: "Is there a flag in your classroom?", icon: "🇹🇷" },
+  { t: "What time is it? 13:55", icon: "🕑" },
+  { t: "You forget your homework. Go back 2.", kind: "back", icon: "📓" },
+  { t: "What day comes after Thursday?", icon: "📅" },
+  { t: "Say a class rule.", icon: "✋" },
+  { t: "Zehra is my friend. I like ...", icon: "💜" },
+  { t: "Say the number: 87", icon: "💯" },
+  { t: "You tidy up your desk. Go forward 2.", kind: "fwd", icon: "🧹" },
+  { t: "How many minutes is one lesson?", icon: "⏱️" },
+  { t: "What time is it? 08:15", icon: "🕗" },
+  { t: "Name four classroom objects.", icon: "✂️" },
+  { t: "When is your English lesson?", icon: "💬" },
   { t: "FINISH", kind: "end" },
 ];
 export const BOARD_RULES = [
-  "Play in groups of two or three. You need a dice and a coin for every player.",
+  "Play in groups of two or three. You need one dice, and every player needs a coin.",
   "Throw the dice and move your coin.",
   "Read the square and answer. Right answer – stay. Wrong answer – go back 1.",
   "Say \"Well done!\" when a friend answers correctly. The first player at FINISH wins.",
@@ -274,8 +279,8 @@ export const BOARD_RULES = [
 export const CAN_BLOG_TITLE = "My first week in 5/C";
 export const CAN_BLOG = [
   "Hello! I'm Can. I'm new at Yeşiltepe Lower Secondary School. My class is 5/C. There are twenty-four students in my class, and our class teacher is Ms Aksoy. She always smiles!",
-  "School starts at twenty to nine. There are seven lessons every day, and a lesson is forty minutes. My favourite day is Thursday because we have IT and a double P.E. lesson.",
-  "We walk slowly in the school, we speak quietly and we raise our hands. Every student has a job, too. On 29 October, it's Republic Day, and our class makes flags for the classroom.",
+  "School starts at twenty to nine, and we leave at half past three. There are seven lessons every weekday, and a lesson is forty minutes. My favourite day is Thursday because we have IT and a double P.E. lesson.",
+  "We walk slowly in the school, and we speak quietly, not loudly. Every student has a job, too. On 29 October, it's Republic Day, and our class makes flags for the classroom.",
 ];
 export const HELPERS: [string, string, string][] = [
   ["Arda", "board helper", "cleans the board after every lesson."],
@@ -284,7 +289,11 @@ export const HELPERS: [string, string, string][] = [
   ["Defne", "tidy-up helper", "tidies up the classroom at the end of the day."],
   ["Can", "window helper", "opens the windows at every break."],
 ];
-export const RULES = ["Raise your hand and wait.", "Walk slowly. Don't run.", "Speak quietly. Don't shout.", "Keep your desk tidy.", "Say \"please\" and \"thank you\"."];
+/** The class rules (SB p. 5 matching, WB p. 5) and the pictogram (Twemoji) for each. */
+export const RULES = ["Listen carefully and raise your hand.", "Walk slowly. Don't run.", "Speak quietly. Don't shout.", "Put rubbish in the rubbish bin.", "Say \"please\" and \"thank you\"."];
+export const RULE_ICONS = ["✋", "🚶", "🤫", "🗑️", "🤝"];
+/** SB p. 5: the pictures a-e in printed order -> the rule each shows. */
+export const RULE_PICS = [2, 4, 0, 3, 1];
 export const EX23 = { q: "Read quickly. Who writes the blog? What is his job?", a: "Can. He is the window helper." };
 export const EX24 = {
   example: { s: "Can is in class 5/C.", a: true },
@@ -300,14 +309,13 @@ export const EX24 = {
 
 // --- SB p. 15: write: what time do you ...? -----------------------------------------------------
 export const SURVEY_ROWS = ["get up", "go to school", "have lunch", "do homework", "go to bed"];
-/** The ★ table: Defne's answers given, the times to choose from in a box. */
-export const SURVEY_DEFNE = ["07:00", "08:10", "12:10", "17:30", "21:30"];
-export const SURVEY_BOX = ["06:45", "07:15", "08:00", "12:10", "16:30", "21:00"];
+/** Zehra's times, told in words in ROUTINE_TEXT; the one-star table asks for them in digits. */
+export const SURVEY_ZEHRA = ["06:45", "08:05", "12:10", "16:30", "21:00"];
 export const ROUTINE_TEXT = [
-  "I get up at seven o'clock. I go to school at ten past eight, and school starts at twenty to nine. We have lunch at ten past twelve.",
-  "My friend Zehra gets up at quarter to seven. She walks to school with her brother. She does her homework at half past four, and she goes to bed at nine o'clock.",
+  "I get up at seven o'clock. School starts at twenty to nine, and we have lunch at ten past twelve.",
+  "My friend Zehra gets up at quarter to seven. She goes to school at five past eight with her brother. She has lunch at ten past twelve, too. She does her homework at half past four, and she goes to bed at nine o'clock.",
 ];
-export const WRITE_CHECK = ["capital letters and full stops", "four times", "-s for your friend: gets, goes, has", "one sentence about school"];
+export const WRITE_CHECK = ["capital letters and full stops", "four clock times (at seven o'clock ...)", "-s for your friend: gets, goes, has", "one sentence about school"];
 
 // --- SB p. 16: around the world -------------------------------------------------------------------
 export const CLIL: { k: string; country: string; text: string }[] = [
@@ -336,26 +344,39 @@ export const EX31 = {
 };
 
 // --- SB pp. 17-18: story ----------------------------------------------------------------------------
+// Six separate panel pictures (handcraft-meb5-images.mts "story-1" ... "story-6"); in each the
+// upper part is plain wall or sky for the bubbles. Panel 4 has an empty clock face: the book
+// draws the time (STORY_CLOCK) on it.
 export const STORY_TITLE = "The Tidy Robot";
+export const STORY_CLOCK = "12:50";
 export const STORY: { scene: string; bubbles: { who: CastKey; text: string }[] }[] = [
-  { scene: "Tuesday morning in the classroom: Kerem shows a drawing of a small cardboard robot to Defne and Zehra.", bubbles: [{ who: "kerem", text: "Look! This is my robot for the Science Fair. It picks up rubbish." }, { who: "defne", text: "Cool! When is the fair?" }, { who: "kerem", text: "On Friday at quarter to four." }] },
-  { scene: "Kerem points at a pile of empty boxes and bottle tops; Zehra smiles, Defne talks to Arda.", bubbles: [{ who: "kerem", text: "It's a big job. Can you give me a hand?" }, { who: "zehra", text: "Sure!" }, { who: "defne", text: "Let's make a robot team. Do you want to join us, Arda?" }, { who: "arda", text: "I'd love to!" }] },
-  { scene: "Lunch break in the classroom: the friends build the robot from boxes with glue, scissors and a ruler; Defne paints it.", bubbles: [{ who: "zehra", text: "There are two boxes and four bottle tops. We need one more box." }, { who: "defne", text: "Pass me the glue, please." }] },
-  { scene: "Arda sits down, holding his head; Ms Aksoy gives him a glass of water.", bubbles: [{ who: "arda", text: "I don't feel all right. My head hurts." }, { who: "aksoy", text: "Drink some water, Arda, and go and see the school nurse." }] },
-  { scene: "The classroom clock shows five to one; Defne points at the half-painted robot, Zehra shakes her head.", bubbles: [{ who: "defne", text: "It's five to one and the robot isn't ready! Let's work in the Music lesson, too." }, { who: "zehra", text: "No! Please don't skip the lesson, Defne. We can finish after school." }] },
-  { scene: "Friday, the Science Fair in the school hall: the robot picks up paper; the friends and Ms Aksoy smile for a photo.", bubbles: [{ who: "aksoy", text: "Well done, team! Your robot makes the grade. Smile for the photo!" }, { who: "kerem", text: "Thank you, friends! We did it together." }, { who: "arda", text: "And my head is fine now, Ms Aksoy!" }] },
+  { scene: "Tuesday morning in the classroom: Arda sits at his desk holding his head; Ms Aksoy bends down to him with a glass of water.", bubbles: [{ who: "arda", text: "I don't feel all right this morning. My head hurts." }, { who: "aksoy", text: "Drink some water, Arda, and go and see the school nurse." }] },
+  { scene: "Later in the classroom: Kerem in his wheelchair shows a drawing of a small cardboard-box robot to Defne and Zehra.", bubbles: [{ who: "kerem", text: "Look! This is my robot for the Science Fair on Friday. It picks up rubbish." }, { who: "defne", text: "Cool! Can I give you a hand?" }] },
+  { scene: "Lunch break in the classroom: Kerem, Defne and Zehra build the robot from one big cardboard box and three paper cups; Zehra holds a roll of sticky tape.", bubbles: [{ who: "zehra", text: "There is one big box, and there are three paper cups. We need tape!" }, { who: "defne", text: "Here you are." }] },
+  { scene: "The classroom with a round wall clock with an EMPTY face (no hands, no numbers): Defne points at the half-finished robot, Zehra shakes her head.", bubbles: [{ who: "defne", text: "It's ten to one. We have Music at one o'clock on Tuesdays. Let's stay here and finish the robot!" }, { who: "zehra", text: "No, please don't skip the lesson, Defne. We can finish after school." }] },
+  { scene: "Friday, the Science Fair in the school hall: the little robot picks up paper; Kerem, Defne, Zehra and Ms Aksoy smile for a photo.", bubbles: [{ who: "aksoy", text: "Well done, Kerem! Your robot makes the grade. Smile for the photo!" }, { who: "kerem", text: "Thank you! It's our robot. We did it together." }] },
+  { scene: "After the fair in the school hall: Kerem talks to Arda, who is well again and smiles; Defne and Zehra hold the robot.", bubbles: [{ who: "kerem", text: "Next year, let's make a robot team. Do you want to join us, Arda?" }, { who: "arda", text: "I'd love to!" }] },
 ];
-export const EX33 = { q: "Look at the pictures quickly. What is Kerem's project?", a: "A robot for the Science Fair." };
+export const EX33 = { q: "Before you read, look at picture 2: what is Kerem's project?", a: "A robot for the Science Fair." };
 export const EX35 = {
   example: { q: "What does the robot do?", a: "It picks up rubbish." },
   items: [
-    { q: "Which lesson starts at one o'clock on Tuesdays?", a: "Music." },
-    { q: "Who says \"I'd love to!\"?", a: "Arda." },
     { q: "Why does Arda go to the school nurse?", a: "Because his head hurts." },
-    { q: "When is the Science Fair?", a: "On Friday at quarter to four." },
-    { q: "Where are the friends in picture 3?", a: "In the classroom." },
+    { q: "What do the friends need in picture 3?", a: "Tape." },
+    { q: "Which lesson is at one o'clock on Tuesdays?", a: "Music." },
+    { q: "When is the Science Fair?", a: "On Friday." },
+    { q: "Who says \"I'd love to!\"?", a: "Arda." },
   ],
 };
+/** Ex 33: story events in printed order and their place in the story (1-6). */
+export const STORY_EVENTS: [string, number][] = [
+  ["Kerem shows his robot plan.", 2],
+  ["Arda's head hurts.", 1],
+  ["Zehra says: \"Don't skip the lesson!\"", 4],
+  ["Arda wants to be in the robot team.", 6],
+  ["The friends build the robot.", 3],
+  ["The robot makes the grade at the fair.", 5],
+];
 
 // --- SB p. 18: project: a class guide for a new student ---------------------------------------------
 export const PROJECT_STEPS = [
@@ -367,15 +388,16 @@ export const PROJECT_STEPS = [
 ];
 export const PROJECT_FRAME = ["Welcome to our classroom!", "There is a ... / There are ...", "We have ... on ... at ...", "Please ... / Don't ..."];
 export const PROJECT_EXAMPLE_DAY: Day5 = "Thursday";
+export const PROJECT_MAP_WORDS = ["board", "door", "desks", "coat hooks", "bookcase"];
 export const PROJECT_SCALE = ["The guide has rules, a map, helpers and a timetable.", "The words and times are correct.", "The guide is tidy and easy to read.", "I speak clearly when I show it."];
 
 // --- SB p. 19: check yourself -----------------------------------------------------------------------
 export const CHECK = {
-  times: ["09:45", "12:20", "15:35", "10:55"],
+  times: ["09:40", "12:20", "15:35"],
   circle: [
     { parts: ["There ", ["is", "are"], " a ruler on my desk."] as const, a: 0 },
     { parts: ["There ", ["isn't", "aren't"], " any computers."] as const, a: 1 },
-    { parts: ["This is Arda. Do you know ", ["he", "him"], "?"] as const, a: 1 },
+    { parts: ["Arda is in the garden. Can you see ", ["he", "him"], "?"] as const, a: 1 },
     { parts: ["Can you help ", ["us", "we"], ", please?"] as const, a: 0 },
   ],
   subjects: ["Science", "Music", "P.E.", "Maths"] as const,
@@ -385,7 +407,7 @@ export const CHECK = {
     { q: "Does Defne have Art on Tuesdays?", a: "Yes, she does." },
     { q: "When is the Art lesson?", a: "On Tuesdays (at five to two)." },
   ],
-  numbers: [65, 76, 81, 100],
+  numbers: [65, 76, 81, 89, 100],
 };
 export const CAN_DO = [
   "I can name ten school subjects.",
@@ -393,25 +415,47 @@ export const CAN_DO = [
   "I can ask: What time does the Maths lesson start?",
   "I can say: There is ... / There are ...",
   "I can talk about routines: Kerem has Science ...",
-  "I can use me, you, him, her, us and them.",
+  "I can use me, you, him, her, it, us and them.",
   "I can count from 50 to 100.",
   "I can write about my day.",
 ];
 export const REFLECT = ["What did I like most in this unit?", "What was difficult for me?"];
 
-// --- SB p. 20: word list ------------------------------------------------------------------------
-export const WORDS: { topic: string; words: [string, string, number][] }[] = [
-  { topic: "School subjects", words: [["Art", "Görsel sanatlar", 8], ["English", "İngilizce", 8], ["Foreign Language", "Yabancı dil", 8], ["Guidance", "Rehberlik", 7], ["IT", "Bilişim teknolojileri", 8], ["Maths", "Matematik", 8], ["Music", "Müzik", 8], ["P.E.", "Beden eğitimi", 8], ["Religion and Morals", "Din kültürü ve ahlak b.", 8], ["Science", "Fen bilimleri", 8], ["Social Studies", "Sosyal bilgiler", 8], ["Turkish", "Türkçe", 8], ["elective lesson", "seçmeli ders", 7]] },
-  { topic: "Timetable", words: [["timetable", "ders programı", 7], ["lesson", "ders", 7], ["double lesson", "iki saatlik ders", 5], ["break", "teneffüs", 7], ["lunch break", "öğle arası", 7], ["minute", "dakika", 7], ["noon", "öğle (12:00)", 6], ["start", "başlamak", 12], ["finish", "bitmek", 14], ["weekday", "hafta içi günü", 9], ["weekend", "hafta sonu", 9]] },
-  { topic: "Days of the week", words: [["Monday", "Pazartesi", 9], ["Tuesday", "Salı", 9], ["Wednesday", "Çarşamba", 9], ["Thursday", "Perşembe", 9], ["Friday", "Cuma", 9], ["Saturday", "Cumartesi", 9], ["Sunday", "Pazar", 9]] },
-  { topic: "Time", words: [["o'clock", "saat tam", 6], ["five / ten past", "beş / on geçiyor", 6], ["quarter past", "çeyrek geçiyor", 6], ["twenty(-five) past", "yirmi (beş) geçiyor", 6], ["half past", "buçuk", 6], ["twenty(-five) to", "yirmi (beş) var", 6], ["quarter to", "çeyrek var", 6], ["five / ten to", "beş / on var", 6], ["in the morning", "sabah", 6], ["in the afternoon", "öğleden sonra", 6]] },
-  { topic: "Numbers 50-100", words: [["fifty", "elli", 9], ["sixty", "altmış", 9], ["seventy", "yetmiş", 9], ["eighty", "seksen", 9], ["ninety", "doksan", 9], ["a hundred", "yüz", 9]] },
-  { topic: "Classroom objects", words: [["bookcase", "kitaplık", 11], ["bookshelf", "kitap rafı", 10], ["calculator", "hesap makinesi", 10], ["chair / seat", "sandalye / oturacak yer", 11], ["clock", "saat", 10], ["coat hook", "askı", 10], ["crayons", "pastel boya", 10], ["desk", "sıra", 11], ["dictionary", "sözlük", 14], ["flag", "bayrak", 10], ["glue", "yapıştırıcı", 10], ["notebook", "defter", 10], ["notice board", "duyuru panosu", 10], ["pencil case", "kalem kutusu", 10], ["poster", "afiş", 11], ["ruler", "cetvel", 10], ["school bag", "okul çantası", 10], ["school material", "okul malzemesi", 10], ["scissors", "makas", 10], ["smart board", "akıllı tahta", 10]] },
-  { topic: "Classroom life", words: [["bring", "getirmek", 14], ["careful", "dikkatli", 10], ["hang (a coat)", "asmak", 5], ["Hold on a minute.", "Bir dakika.", 5], ["helper", "görevli", 14], ["leave", "ayrılmak, bırakmak", 15], ["quietly / loudly", "sessizce / yüksek sesle", 14], ["raise your hand", "parmak kaldır", 14], ["shout", "bağırmak", 4], ["slowly", "yavaşça", 14], ["smile", "gülümsemek", 14], ["tidy / tidy up", "düzenli / toplamak", 14], ["plant", "bitki", 14], ["team", "takım", 17], ["popular", "sevilen", 16], ["Knowledge Day", "Bilgi Günü", 16], ["Science Fair", "bilim şenliği", 17], ["robot", "robot", 17], ["school nurse", "okul hemşiresi", 17]] },
-  { topic: "Useful expressions", words: [["make the grade", "beklentiyi karşılamak", 17], ["give someone a hand", "birine yardım etmek", 17], ["skip a lesson", "dersi asmak", 17], ["I'd love to!", "Çok isterim!", 17], ["not feel all right", "kendini iyi hissetmemek", 17]] },
+/** Small cast pictures for picture-poor pages (one picture sheet). */
+export const VIGNETTES: { key: string; desc: string }[] = [
+  { key: "sb6", desc: "CAN looks at his wristwatch and smiles" },
+  { key: "sb8", desc: "ARDA talks and points to his mouth, practising a sentence" },
+  { key: "sb14", desc: "CAN types on a laptop at a desk" },
+  { key: "sb15", desc: "DEFNE wakes up and stretches next to an alarm clock" },
+  { key: "wb2", desc: "CAN draws the hands on a big paper clock" },
+  { key: "wb3", desc: "ZEHRA writes in a crossword book with a pencil" },
+  { key: "wb4", desc: "ARDA counts on his fingers" },
+  { key: "wb7", desc: "ARDA runs with a football to the football club" },
+  { key: "wb8", desc: "DEFNE writes an e-mail on a tablet" },
+  { key: "wb9", desc: "KEREM holds a small cardboard-box robot and smiles" },
 ];
 
+// --- fun: a chant (SB p. 4) and a rhyme (SB p. 10) -------------------------------------------------
+export const CHANT = { title: "The Week Chant", lines: ["Monday, Tuesday, books and pens,", "Wednesday, Thursday, time with friends,", "Tick, tock, look at the clock,", "Friday's here – goodbye, knock, knock!"] };
+export const RHYME = { title: "Classroom Rhyme", lines: ["There's a desk and there's a chair,", "There are crayons everywhere!", "There's a clock up on the wall,", "And a big smile for us all."] };
+
+// --- SB p. 20: word list (the page numbers are found in the rendered book: handcraft-meb5.tsx) -----
+export const WORDS: { topic: string; words: [string, string][] }[] = [
+  { topic: "School subjects", words: [["Art", "Görsel sanatlar"], ["English", "İngilizce"], ["Foreign Language", "Yabancı dil"], ["Guidance", "Rehberlik"], ["IT", "Bilişim teknolojileri"], ["Maths", "Matematik"], ["Music", "Müzik"], ["P.E.", "Beden eğitimi"], ["Religion and Morals", "Din kültürü ve ahlak b."], ["Science", "Fen bilimleri"], ["Social Studies", "Sosyal bilgiler"], ["Turkish", "Türkçe"], ["elective lesson", "seçmeli ders"]] },
+  { topic: "Timetable", words: [["timetable", "ders programı"], ["lesson", "ders"], ["double lesson", "iki saatlik ders"], ["break", "teneffüs"], ["lunch break", "öğle arası"], ["minute", "dakika"], ["noon", "öğle (12:00)"], ["start", "başlamak"], ["finish", "bitmek"], ["weekday", "hafta içi günü"], ["weekend", "hafta sonu"]] },
+  { topic: "Days of the week", words: [["Monday", "Pazartesi"], ["Tuesday", "Salı"], ["Wednesday", "Çarşamba"], ["Thursday", "Perşembe"], ["Friday", "Cuma"], ["Saturday", "Cumartesi"], ["Sunday", "Pazar"]] },
+  { topic: "Time", words: [["o'clock", "saat tam"], ["five / ten past", "beş / on geçiyor"], ["quarter past", "çeyrek geçiyor"], ["twenty(-five) past", "yirmi (beş) geçiyor"], ["half past", "buçuk"], ["twenty(-five) to", "yirmi (beş) var"], ["quarter to", "çeyrek var"], ["five / ten to", "beş / on var"], ["in the morning", "sabah"], ["in the afternoon", "öğleden sonra"]] },
+  { topic: "Numbers 50–100", words: [["fifty", "elli"], ["sixty", "altmış"], ["seventy", "yetmiş"], ["eighty", "seksen"], ["ninety", "doksan"], ["a hundred", "yüz"]] },
+  { topic: "Classroom objects", words: [["board marker", "tahta kalemi"], ["bookcase", "kitaplık"], ["bookshelf", "kitap rafı"], ["chair", "sandalye"], ["clock", "saat"], ["coat hook", "askı"], ["crayons", "pastel boya"], ["desk", "sıra"], ["dictionary", "sözlük"], ["flag", "bayrak"], ["glue", "yapıştırıcı"], ["notebook", "defter"], ["notice board", "duyuru panosu"], ["pencil case", "kalem kutusu"], ["poster", "afiş"], ["rubber", "silgi"], ["rubbish bin", "çöp kutusu"], ["ruler", "cetvel"], ["school bag", "okul çantası"], ["school material", "okul malzemesi"], ["scissors", "makas"], ["seat", "oturacak yer"], ["sheet of paper", "kâğıt"], ["smart board", "akıllı tahta"]] },
+  { topic: "Classroom life", words: [["bring", "getirmek"], ["carefully", "dikkatlice"], ["hang (a coat)", "asmak"], ["Hold on a minute.", "Bir dakika."], ["helper", "görevli"], ["leave", "ayrılmak"], ["quietly / loudly", "sessizce / yüksek sesle"], ["raise your hand", "parmak kaldır"], ["shout", "bağırmak"], ["slowly", "yavaşça"], ["smile", "gülümsemek"], ["tidy / tidy up", "düzenli / toplamak"], ["plant", "bitki"], ["team", "takım"], ["popular", "sevilen"], ["Knowledge Day", "Bilgi Günü"], ["Science Fair", "bilim şenliği"], ["robot", "robot"], ["school nurse", "okul hemşiresi"]] },
+  { topic: "Useful expressions", words: [["make the grade", "beklentiyi karşılamak"], ["give someone a hand", "yardım etmek"], ["skip a lesson", "dersi asmak"], ["I'd love to!", "Çok isterim!"], ["not feel all right", "iyi hissetmemek"]] },
+];
+/** The words of an entry to look for in the book ("chair / seat" -> "chair", "twenty(-five) past" -> "twenty past"). */
+export const wordKey = (en: string) => en.split(" / ")[0].replace(/\([^)]*\)/g, "").replace(/[!?]/g, "").replace(/\s+/g, " ").trim().replace(/\.$/, "").toLowerCase();
+
 // --- Workbook ---------------------------------------------------------------------------------
+// Workbook student file: 12 pages (title, 9 practice pages, puzzle page, word cards). The answer
+// key and audio scripts are the separate teacher pages (ogretmen-sayfalari.pdf).
 export const WB_DRAW = { example: "08:30", items: ["09:15", "11:50", "15:20"] };
 export const WB_READ_CLOCKS = { example: "07:00", items: ["10:30", "13:15", "16:40"] };
 export const WB_WORDS = { example: "13:00", items: ["08:10", "12:45", "14:20", "09:55"] };
@@ -436,11 +480,19 @@ export const WB_DAY_RIDDLES = [
   { q: "It's the first day of the weekend.", a: "Saturday" },
   { q: "It's the day after Thursday.", a: "Friday" },
 ];
+/** Odd one out (WB p. 3): the words, the odd one, and the group the others belong to. */
+export const WB_ODD = [
+  { w: ["ruler", "glue", "Thursday", "scissors"], a: "Thursday", why: "school things" },
+  { w: ["sixty", "Science", "seventy", "ninety"], a: "Science", why: "numbers" },
+  { w: ["Music", "Art", "clock", "P.E."], a: "clock", why: "school subjects" },
+  { w: ["quarter past", "half past", "desk", "ten to"], a: "desk", why: "time words" },
+  { w: ["Tuesday", "pencil case", "Saturday", "Sunday"], a: "pencil case", why: "days" },
+];
 export const WB_NUMBERS = { example: 57, items: [68, 79, 83, 94, 100] };
 export const WB_PATTERNS: { seq: (number | null)[]; a: number[] }[] = [
   { seq: [50, 55, 60, null, null, 75], a: [65, 70] },
   { seq: [100, 90, 80, null, null, 50], a: [70, 60] },
-  { seq: [51, 61, 71, null, null], a: [81, 91] },
+  { seq: [56, 66, 76, null, null], a: [86, 96] },
 ];
 export const WB_SUMS = [
   { s: "fifty + twenty", a: 70, x: [50, 20] },
@@ -451,12 +503,13 @@ export const WB_SUMS = [
   { s: "eighty + twelve", a: 92, x: [80, 12] },
 ];
 export const WB_SEARCH_WORDS = ["CLOCK", "RULER", "GLUE", "DESK", "POSTER", "CRAYON", "SCISSORS", "CHAIR"];
-export const WB_RIDDLES = [
+/** WB p. 5 riddles; pic = an object card from the picture sheet (EXTRA_OBJECTS). */
+export const WB_RIDDLES: { q: string; a: string; pic?: (typeof EXTRA_OBJECTS)[number] }[] = [
   { q: "I'm on the wall. I've got two hands, but I can't clap!", a: "a clock" },
-  { q: "Put your books on me and sit at me. I've got four legs.", a: "a desk" },
-  { q: "Your teacher shows videos on me.", a: "a smart board" },
+  { q: "My cap is blue. I write big words on the white board.", a: "a board marker", pic: "board marker" },
+  { q: "Old paper and pencil bits go in me at the end of the day.", a: "a rubbish bin", pic: "rubbish bin" },
+  { q: "I'm thin and white. You write and draw on me.", a: "a sheet of paper", pic: "sheet of paper" },
   { q: "You hang your coat on me.", a: "a coat hook" },
-  { q: "I'm red and white. I'm in every classroom in Türkiye.", a: "a flag" },
 ];
 export const WB_DIALOGUE = {
   box: ["borrow", "Here you are", "Thank you", "please", "lend"],
@@ -467,35 +520,43 @@ export const WB_DIALOGUE = {
     { who: "Kerem", parts: ["Sorry, I've only got one. Ask Zehra!"] },
   ] as { who: string; parts: (string | number)[] }[],
 };
-/** The Art cupboard (drawn by artCupboard in handcraft-meb5-art.ts): exactly these things. */
-export const CUPBOARD = { aprons: 1, brushes: 5, paintPots: 3, glueSticks: 2, computers: 0, balls: 0 };
+/** The class cupboard (drawn by artCupboard in handcraft-meb5-art.ts): exactly these things. */
+export const CUPBOARD = { dictionaries: 3, rulers: 2, pencilCases: 1, crayons: 4, clocks: 0, computers: 0 };
 export const WB_CUP_CIRCLE = [
-  { parts: ["There ", ["is", "are"], " an apron in the cupboard."] as const, a: 0 },
-  { parts: ["There ", ["is", "are"], " five brushes."] as const, a: 1 },
-  { parts: ["There ", ["is", "are"], " three paint pots."] as const, a: 1 },
-  { parts: ["There ", ["isn't", "aren't"], " a computer."] as const, a: 0 },
-  { parts: ["There ", ["isn't", "aren't"], " any balls."] as const, a: 1 },
+  { parts: ["There ", ["is", "are"], " a pencil case."] as const, a: 0 },
+  { parts: ["There ", ["is", "are"], " three dictionaries."] as const, a: 1 },
+  { parts: ["There ", ["is", "are"], " two rulers."] as const, a: 1 },
+  { parts: ["There ", ["isn't", "aren't"], " a clock."] as const, a: 0 },
+  { parts: ["There ", ["isn't", "aren't"], " any computers."] as const, a: 1 },
 ];
 export const WB_CUP_COUNT = [
-  { q: "How many brushes are there?", a: "There are five brushes." },
-  { q: "How many paint pots are there?", a: "There are three paint pots." },
-  { q: "How many glue sticks are there?", a: "There are two glue sticks." },
+  { q: "How many dictionaries are there?", a: "There are three dictionaries." },
+  { q: "How many rulers are there?", a: "There are two rulers." },
+  { q: "How many crayons are there?", a: "There are four crayons." },
 ];
 export const WB_PRON = {
   example: { s: ["Zehra helps ", "Kerem", "."], a: "him" },
   items: [
     { s: ["Arda likes ", "Ms Aksoy", "."], a: "her" },
     { s: ["Can you help ", "Defne and me", "?"], a: "us" },
-    { s: ["I use ", "the glue sticks", " in Art."], a: "them" },
+    { s: ["I use ", "the crayons", " in Art."], a: "them" },
     { s: ["We clean ", "the board", " every day."], a: "it" },
   ],
 };
-export const CLUBS: [string, string, string][] = [
-  ["Chess Club", "Monday", "15:45"],
-  ["Drama Club", "Tuesday", "16:00"],
-  ["Football Club", "Wednesday", "15:45"],
-  ["Art Club", "Thursday", "16:15"],
-  ["Science Club", "Friday", "16:00"],
+/** Make the question (WB p. 6): jumbled words -> the question. */
+export const WB_JUMBLED = [
+  { w: ["there", "a", "Is", "clock", "?"], a: "Is there a clock?" },
+  { w: ["chairs", "How many", "there", "are", "?"], a: "How many chairs are there?" },
+  { w: ["have", "Kerem", "Science", "Does", "on Mondays", "?"], a: "Does Kerem have Science on Mondays?" },
+  { w: ["start", "the Art lesson", "does", "What time", "?"], a: "What time does the Art lesson start?" },
+];
+/** After-school clubs: [club, day, time, member]. */
+export const CLUBS: [string, string, string, string][] = [
+  ["Chess Club", "Monday", "15:45", "Zehra"],
+  ["Drama Club", "Tuesday", "16:00", "Can"],
+  ["Football Club", "Wednesday", "15:45", "Arda"],
+  ["Art Club", "Thursday", "16:15", "Defne"],
+  ["Science Club", "Friday", "16:00", "Kerem"],
 ];
 export const WB_CLUB_3RD = {
   example: { s: "Arda / go / Football Club / Wednesday", a: "Arda goes to Football Club on Wednesdays." },
@@ -506,7 +567,7 @@ export const WB_CLUB_3RD = {
 };
 export const WB_CLUB_DOES = [
   { q: "Does Arda go to Football Club on Wednesdays?", a: "Yes, he does." },
-  { q: "Does Defne go to Art Club on Mondays?", a: "No, she doesn't." },
+  { q: "Does Defne go to Chess Club?", a: "No, she doesn't." },
   { q: "Does Kerem go to Science Club on Fridays?", a: "Yes, he does." },
 ];
 export const WB_CLUB_MATCH = {
@@ -530,16 +591,16 @@ export const WB_EMAIL_TF = [
 ];
 export const WB_EMAIL_QS = [
   { q: "Who is Defne's class teacher?", a: "Ms Aksoy." },
-  { q: "How many lessons are there every day?", a: "Seven." },
+  { q: "How many lessons does Defne have every day?", a: "Seven." },
   { q: "What time do they leave school?", a: "At half past three." },
 ];
-/** Rules match (from the class rules on SB p. 14). */
+/** Rules match (WB p. 5): which class rule (SB p. 5) is it? */
 export const WB_RULES_MATCH = {
   example: { s: "Arda wants to say something.", a: 1 },
   items: [
     { s: "Kerem's friends are very noisy.", a: 3 },
     { s: "Defne is late. She runs in the school.", a: 2 },
-    { s: "There are papers all over Zehra's desk.", a: 4 },
+    { s: "There is old paper on Zehra's desk.", a: 4 },
     { s: "Can asks for Kerem's ruler. What does he say?", a: 5 },
   ],
 };
@@ -552,7 +613,7 @@ export const WB_WHO = [
   { s: "This is my robot for the Science Fair.", a: "Kerem" },
   { s: "I'd love to!", a: "Arda" },
   { s: "Drink some water, Arda.", a: "Ms Aksoy" },
-  { s: "Let's work in the Music lesson, too.", a: "Defne" },
+  { s: "Let's stay here and finish the robot!", a: "Defne" },
 ];
 export const WB_EXPRESSIONS = {
   left: ["Oh, I don't feel all right.", "Can you give me a hand, please?", "Do you want to join our team?", "Please don't skip the Music lesson!"],
@@ -560,7 +621,7 @@ export const WB_EXPRESSIONS = {
   key: [2, 3, 0, 1],
 };
 export const WB_REVIEW = {
-  times: ["06:30", "11:45", "14:10"],
+  times: ["06:50", "11:45", "14:40", "09:20"],
   subjects: [
     { clue: "We sing songs in this lesson.", a: "Music" },
     { clue: "We use computers in this lesson.", a: "IT" },
@@ -568,12 +629,23 @@ export const WB_REVIEW = {
   ],
   circle: [
     { parts: ["There ", ["is", "are"], " two clocks in the hall."] as const, a: 1 },
-    { parts: ["Our teacher is kind. We like ", ["her", "she"], "."] as const, a: 0 },
+    { parts: ["Defne is my friend. I like ", ["her", "she"], "."] as const, a: 0 },
     { parts: ["Zehra ", ["have", "has"], " Maths on Fridays."] as const, a: 1 },
+    { parts: ["", ["Is", "Are"], " there a flag in the hall?"] as const, a: 0 },
   ],
-  numbers: [{ w: "seventy-two", a: 72 }, { w: "ninety-eight", a: 98 }, { w: "sixty-one", a: 61 }],
-  write: "Write three sentences about your school day.",
+  numbers: [{ w: "seventy-two", a: 72 }, { w: "ninety-eight", a: 98 }, { w: "sixty-one", a: 61 }, { w: "eighty-five", a: 85 }],
+  write: "Write two sentences about your school day.",
 };
+/** WB p. 12 puzzles: a number code and a time path. */
+export const CODE: Record<string, number> = { C: 55, L: 60, A: 65, S: 70, R: 75, O: 80, M: 85, T: 90, I: 95, E: 100 };
+export const CODE_WORDS = ["CLASSROOM", "TIME"];
+/** The time path: a 4 x 4 grid of times; follow 5/C's Monday lessons in order from START. */
+export const PATH_GRID = [
+  ["08:40", "09:35", "07:15", "16:20"],
+  ["12:05", "10:35", "11:30", "06:10"],
+  ["15:50", "17:45", "13:00", "13:55"],
+  ["10:05", "12:40", "18:20", "14:50"],
+];
 
 // --- checks: every derivable answer recomputed from the facts --------------------------------------
 export function crossGrid() {
@@ -654,11 +726,21 @@ export function checkContent() {
   // the scene (Monday, 08:30)
   if (TIMETABLE.Monday[0] !== "Turkish" || timeWords(PERIODS[0]) !== "twenty to nine" || SCENE_TIME >= PERIODS[0]) errs.push("first lesson bubble");
   if (TIMETABLE.Thursday.filter((x) => x === "P.E.").length !== 2 || DAYS5.filter((d) => has("P.E.", d)).join() !== "Thursday") errs.push("P.E. bubble");
-  // Ex 4 / 5: every time has a clock; times well-formed
+  // clocks: every time well-formed; every clock to read has its hands clearly apart (>= 28 degrees)
   EX4_TIMES.forEach((t) => {
     if (!EX4_CLOCKS.includes(t)) errs.push(`Ex4 ${t} has no clock`);
   });
-  for (const t of [...EX4_TIMES, EX5.example, ...EX5.items, ...CHECK.times, WB_DRAW.example, ...WB_DRAW.items, WB_READ_CLOCKS.example, ...WB_READ_CLOCKS.items, ...WB_REVIEW.times, ...SURVEY_DEFNE, ...SURVEY_BOX]) if (!isTime(t)) errs.push(`bad time ${t}`);
+  const readClocks = [...EX4_CLOCKS, ...CHECK.times, WB_READ_CLOCKS.example, ...WB_READ_CLOCKS.items, ...WB_REVIEW.times, SCENE_TIME, STORY_CLOCK];
+  for (const t of [...readClocks, EX5.example, ...EX5.items, WB_DRAW.example, ...WB_DRAW.items, ...SURVEY_ZEHRA, ...PATH_GRID.flat()]) if (!isTime(t)) errs.push(`bad time ${t}`);
+  for (const t of readClocks) {
+    const [h, m] = t.split(":").map(Number);
+    const ha = (((h % 12) + m / 60) / 12) * 360;
+    const ma = (m / 60) * 360;
+    const d = Math.abs(ha - ma) % 360;
+    if (Math.min(d, 360 - d) < 28) errs.push(`clock ${t}: the hands are too close to read`);
+  }
+  // Ex 5: no time between 12:00 and 12:59 (morning or afternoon is unclear for pupils)
+  for (const t of EX5.items) if (t.startsWith("12:")) errs.push(`Ex5 ${t} is ambiguous`);
   // Ex 6 script names every gap; gaps are short subjects
   for (const [d, p] of TT_GAPS) {
     const s = TIMETABLE[d][p];
@@ -674,23 +756,32 @@ export function checkContent() {
   if (!has("Music", "Tuesday") || has("English", "Thursday") || !has("Maths", "Friday") || has("P.E.", "Monday") || !has("IT", "Thursday")) errs.push("does-questions");
   for (const it of [EX20.example, ...EX20.items]) if (!has(it.subject, it.day)) errs.push(`Ex20 ${it.subject} ${it.day}`);
   // Can's blog
-  if (timeWords(PERIODS[0]) !== "twenty to nine" || LESSON_MIN !== 40 || PERIODS.length !== 7 || !has("IT", "Thursday") || TIMETABLE.Thursday.filter((x) => x === "P.E.").length !== 2) errs.push("Can's blog");
-  // the routine text and survey
-  if (timeWords(PERIODS[3] === "11:30" ? addMin(PERIODS[3], LESSON_MIN) : "") !== "ten past twelve") errs.push("lunch time in the routine text");
-  // story: Tuesday lunch ends, Music at one; fair after school
-  if (startOf("Music", "Tuesday") !== "13:00" || FAIR_TIME <= SCHOOL_END || timeWords(FAIR_TIME) !== "quarter to four") errs.push("story timing");
+  if (timeWords(PERIODS[0]) !== "twenty to nine" || timeWords(SCHOOL_END) !== "half past three" || LESSON_MIN !== 40 || PERIODS.length !== 7 || !has("IT", "Thursday") || TIMETABLE.Thursday.filter((x) => x === "P.E.").length !== 2) errs.push("Can's blog");
+  // the routine text: lunch at ten past twelve; Zehra's times in the text are her table column
+  if (timeWords(addMin(PERIODS[3], LESSON_MIN)) !== "ten past twelve") errs.push("lunch time in the routine text");
+  const zehra = ROUTINE_TEXT[1];
+  for (const t of SURVEY_ZEHRA) if (!zehra.includes(timeWords(t))) errs.push(`Zehra's ${t} (${timeWords(t)}) is not in her text`);
+  // story: Music at one on Tuesdays, the clock at ten to one, the counts in picture 3
+  if (startOf("Music", "Tuesday") !== "13:00" || timeWords(STORY_CLOCK) !== "ten to one" || !STORY[3].bubbles[0].text.includes(timeWords(STORY_CLOCK))) errs.push("story timing");
+  if (!STORY[2].scene.includes("one big cardboard box") || !STORY[2].scene.includes("three paper cups")) errs.push("story picture 3 counts");
+  if ([...STORY_EVENTS.map((e) => e[1])].sort().join() !== "1,2,3,4,5,6") errs.push("story events");
   // check page
   if (has("English", "Thursday") || startOf("P.E.", "Thursday") !== "13:00" || DAYS5.filter((d) => has("Art", d)).join() !== "Tuesday") errs.push("check page timetable questions");
   // the e-mail
   if (timeWords(SCHOOL_END) !== "half past three" || !has("Art", "Tuesday")) errs.push("e-mail facts");
   // project example: Zehra's Thursday
   if (TIMETABLE.Thursday.slice(0, 5).join() !== "Turkish,Maths,IT,IT,P.E.") errs.push("project example day");
-  // numbers (none from the source unit except 100)
+  // numbers: none from the source unit (except 100), anywhere they are printed
   const SOURCE_NUMBERS = [54, 58, 63, 78, 82, 91, 97];
-  for (const n of [...EX13.numbers, ...EX14.items.flatMap((i) => i.pair), ...EX14.example.pair, ...CHECK.numbers, WB_NUMBERS.example, ...WB_NUMBERS.items]) if (SOURCE_NUMBERS.includes(n)) errs.push(`number ${n} is the source's`);
+  const printed = [...EX13.numbers, ...EX14.items.flatMap((i) => i.pair), ...EX14.example.pair, ...CHECK.numbers, WB_NUMBERS.example, ...WB_NUMBERS.items, ...WB_PATTERNS.flatMap((p) => [...p.seq.filter((x): x is number => x !== null), ...p.a]), ...WB_SUMS.flatMap((q) => [q.a, ...q.x]), ...NUMBER_STRIP, ...Object.values(CODE), ...WB_REVIEW.numbers.map((n) => n.a)];
+  for (const n of printed) if (SOURCE_NUMBERS.includes(n)) errs.push(`number ${n} is the source's`);
   for (const q of WB_SUMS) {
-    if (q.x[0] + q.x[1] !== q.a || q.s !== `${numberWords(q.x[0]).replace("forty", "forty")} + ${q.x[1] < 13 ? ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"][q.x[1]] : numberWords(q.x[1])}`) errs.push(`WB sum ${q.s}`);
-    if (SOURCE_NUMBERS.includes(q.a)) errs.push(`WB sum ${q.a} is the source's`);
+    if (q.x[0] + q.x[1] !== q.a || q.s !== `${numberWords(q.x[0])} + ${q.x[1] < 13 ? ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"][q.x[1]] : numberWords(q.x[1])}`) errs.push(`WB sum ${q.s}`);
+  }
+  for (const p of WB_PATTERNS) {
+    const s = p.seq.map((x, i) => x ?? p.a[p.seq.slice(0, i).filter((y) => y === null).length]);
+    const step = s[1] - s[0];
+    if (s.some((x, i) => i > 0 && x - s[i - 1] !== step)) errs.push(`WB pattern ${p.seq.join(",")}`);
   }
   EX13.numbers.forEach((n) => {
     if (!EX13.words.includes(n)) errs.push(`Ex13 ${n}`);
@@ -701,30 +792,53 @@ export function checkContent() {
     const other = it.pair.find((x) => x !== it.a)!;
     if (script14.includes(numberWords(other))) errs.push(`Ex14 distractor ${other} is in the script`);
   }
-  // Ex 16: every card has exactly one riddle; no card from the source's memory game
-  const SOURCE_CARDS = ["dictionary", "rubbish bin", "seat", "rubber", "bookshelf", "pencil", "sheet", "board marker"];
-  for (const c of EX16.cards) {
-    if (EX16.defs.filter((d) => d[2] === c).length !== 1) errs.push(`Ex16 ${c}`);
-    if (SOURCE_CARDS.includes(c)) errs.push(`Ex16 card ${c} is the source's`);
-  }
-  // Ex 18 against the drawn corner
+  // Ex 16: every card has exactly one riddle
+  for (const c of EX16.cards) if (EX16.defs.filter((d) => d[2] === c).length !== 1) errs.push(`Ex16 ${c}`);
+  // the class rules: every rule has one picture
+  if ([...RULE_PICS].sort().join() !== "0,1,2,3,4" || RULE_ICONS.length !== RULES.length) errs.push("rule pictures");
+  // Ex 17 against the drawn corner (picture A), and the four differences of picture B
   const corner = [CORNER.clocks === 1, CORNER.posters === 3, CORNER.bookcases === 1, CORNER.windows === 2, CORNER.computers === 0, CORNER.plants === 0];
-  if (corner.some((x) => !x)) errs.push("Ex18 corner");
-  // Ex 31 against the texts
+  if (corner.some((x) => !x)) errs.push("Ex17 corner");
+  const diffs = (Object.keys(CORNER) as (keyof typeof CORNER)[]).filter((k) => CORNER[k] !== CORNER_B[k]);
+  if (diffs.length !== DIFFERENCES.length) errs.push(`corner A/B: ${diffs.length} differences, the key lists ${DIFFERENCES.length}`);
+  // Ex 30 against the texts
   const kw: Record<string, string> = { "three languages": "C", "on a computer": "D", March: "A", afternoon: "B", "special name": "C", "isn't a school": "D" };
   for (const [k, v] of Object.entries(kw)) {
     const t = CLIL.find((x) => x.text.includes(k));
     if (t?.k !== v) errs.push(`CLIL keyword ${k}`);
   }
   // Workbook
-  if (CUPBOARD.aprons !== 1 || CUPBOARD.brushes !== 5 || CUPBOARD.paintPots !== 3 || CUPBOARD.glueSticks !== 2 || CUPBOARD.computers || CUPBOARD.balls) errs.push("cupboard");
+  if (CUPBOARD.dictionaries !== 3 || CUPBOARD.rulers !== 2 || CUPBOARD.pencilCases !== 1 || CUPBOARD.crayons !== 4 || CUPBOARD.clocks || CUPBOARD.computers) errs.push("cupboard");
   const clubAt = (c: string) => CLUBS.find((x) => x[0] === c)!;
   if (timeWords(clubAt("Drama Club")[2]) !== "four o'clock" || clubAt("Science Club")[1] !== "Friday" || timeWords(clubAt("Art Club")[2]) !== "quarter past four" || clubAt("Chess Club")[1] !== "Monday") errs.push("club answers");
   if (CLUBS.some(([, , t]) => t <= SCHOOL_END)) errs.push("clubs must be after school");
-  if (!clubHave("Football Club", "Wednesday") || clubHave("Art Club", "Monday") || !clubHave("Science Club", "Friday")) errs.push("club does-questions");
+  const member = (club: string) => clubAt(club)[3];
+  if (member("Football Club") !== "Arda" || clubAt("Football Club")[1] !== "Wednesday" || member("Chess Club") === "Defne" || member("Science Club") !== "Kerem" || member("Art Club") !== "Defne" || clubAt("Art Club")[1] !== "Thursday") errs.push("club members");
   if (wbTtAnswer(WB_TT_SENTENCES[0]) !== "one o'clock") errs.push("WB timetable example");
+  for (const o of WB_ODD) if (!o.w.includes(o.a) || o.w.filter((w) => w === o.a).length !== 1) errs.push(`odd one out ${o.a}`);
+  const tokens = (s: string) => s.replace("?", " ").split(" ").filter(Boolean).sort().join("|");
+  for (const j of WB_JUMBLED) if (tokens(j.w.join(" ")) !== tokens(j.a) || !j.a.endsWith("?")) errs.push(`jumbled ${j.a}`);
+  // the time path: the Monday lesson times in order form a path of neighbouring cells
+  const pos = (t: string) => {
+    for (let r = 0; r < PATH_GRID.length; r++) {
+      const c = PATH_GRID[r].indexOf(t);
+      if (c >= 0) return [r, c];
+    }
+    return null;
+  };
+  const steps = [...PERIODS];
+  for (let i = 0; i < steps.length; i++) {
+    const p = pos(steps[i]);
+    if (!p) errs.push(`path: ${steps[i]} not in the grid`);
+    if (i && p) {
+      const q = pos(steps[i - 1])!;
+      if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) !== 1) errs.push(`path: ${steps[i - 1]} -> ${steps[i]} are not neighbours`);
+    }
+  }
+  for (const w of CODE_WORDS) for (const ch of w) if (!(ch in CODE)) errs.push(`code: no number for ${ch}`);
   crossGrid();
   wordSearch();
   if (errs.length) throw new Error(`content check failed:\n - ${errs.join("\n - ")}`);
 }
-export const FAIR_TIME = "15:45";
+/** The tens and the examples printed in the numbers strip on SB p. 9. */
+export const NUMBER_STRIP = [50, 60, 70, 80, 90, 100, 55, 62, 77, 99];
