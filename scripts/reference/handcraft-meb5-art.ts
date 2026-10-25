@@ -175,7 +175,7 @@ export function classCorner(wPt: number, hPt: number, variant: "A" | "B" = "A") 
 
 // --- the class cupboard (WB): exactly CUPBOARD, doors open --------------------------------------------
 export function artCupboard(wPt: number, hPt: number) {
-  return draw(`class-cupboard-${CUPBOARD.dictionaries}-${CUPBOARD.rulers}-${CUPBOARD.pencilCases}-${CUPBOARD.crayons}`, wPt, hPt, (W, H) => {
+  return draw(`class-cupboard2-${CUPBOARD.dictionaries}-${CUPBOARD.rulers}-${CUPBOARD.pencilCases}-${CUPBOARD.crayons}`, wPt, hPt, (W, H) => {
     const u = W / 100;
     const x0 = u * 18;
     const x1 = u * 82;
@@ -206,7 +206,7 @@ export function artCupboard(wPt: number, hPt: number) {
     for (let i = 0; i < CUPBOARD.crayons; i++) {
       const kx = cx0 + u * (1.5 + i * 3.2);
       const col = ["#E53935", "#1E88E5", "#43A047", "#FB8C00"][i];
-      s += `<rect x="${kx}" y="${y1 - H * 0.26}" width="${u * 2.4}" height="${H * 0.16}" fill="${col}"/><polygon points="${kx},${y1 - H * 0.26} ${kx + u * 1.2},${y1 - H * 0.31} ${kx + u * 2.4},${y1 - H * 0.26}" fill="${col}"/>`;
+      s += `<rect x="${kx}" y="${y1 - H * 0.21}" width="${u * 2.4}" height="${H * 0.11}" fill="${col}"/><polygon points="${kx},${y1 - H * 0.21} ${kx + u * 1.2},${y1 - H * 0.25} ${kx + u * 2.4},${y1 - H * 0.21}" fill="${col}"/>`;
     }
     s += `<rect x="${cx0}" y="${y1 - H * 0.15}" width="${u * 15}" height="${H * 0.13}" rx="${u}" fill="#90A4AE"/>`;
     return s;
