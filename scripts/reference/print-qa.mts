@@ -11,6 +11,8 @@
 //              vertical units and their insets, the trim and bleed edges):
 //              a near miss. Edges further than 3 pt from every line are
 //              free-placed (a picture centred in a derived cell) - counted.
+//              Inline pieces under 12 mm (icons, chips, tags, number badges)
+//              sit in the text flow and are not checked against the grid.
 //              Text is checked by the alignment rule; its containers are
 //              placed on the grid by the layout code.
 //   align      two neighbouring left edges (text of different blocks, or
@@ -23,6 +25,14 @@
 //   dpi        a picture below the target resolution at its printed size.
 //   bleed      a picture or painted box reaching the trim edge (or within
 //              2 mm of it) without running on to the bleed edge.
+//   small      (with --child-min <pt>) text a child reads set below that
+//              size; ALL-CAPS labels, numbers and folios are exempt, and so
+//              are the pages given with --skip-small 11-12 (teacher pages).
+//   hairline   a stroked line inside the bleed thinner than 0.25 pt.
+//   overflow   text running into other text on its line (< 0.8 pt apart),
+//              or text that starts in a painted box and runs out of it.
+//   over-text  text that a cut-out picture (with transparency) painted
+//              after it lies over.
 // Writes <out>/report.txt, <out>/report.json and an annotated PNG per page
 // with a warning (red: warning, orange: the other edge of an alignment).
 import fs from "node:fs";
@@ -46,6 +56,16 @@ const opt = (k: string, d: string) => {
   return i >= 0 ? args[i + 1] : d;
 };
 const TARGET_DPI = Number(opt("dpi", "300"));
+const CHILD_MIN = Number(opt("child-min", "0"));
+const SKIP_SMALL = new Set(
+  opt("skip-small", "")
+    .split(",")
+    .filter(Boolean)
+    .flatMap((r) => {
+      const [a, b] = r.split("-").map(Number);
+      return Array.from({ length: (b ?? a) - a + 1 }, (_, i) => a + i);
+    }),
+);
 const OUT = opt("out", path.join(path.dirname(file), "qa", path.basename(file, ".pdf")));
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -152,7 +172,8 @@ for (let p = 0; p < n; p++) {
   // paint order, to find text that something painted later covers
   let z = 0;
   const spans: (R & { z: number; text: string })[] = [];
-  const covers: (R & { z: number; what: string })[] = [];
+  const covers: (R & { z: number; what: string; alpha?: boolean })[] = [];
+  const strokes: (R & { w: number })[] = [];
   const dev = new m.Device({
     fillText: (text: m.Text, ctm: number[]) => {
       const s = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, z: z++, text: "" };
@@ -178,8 +199,8 @@ for (let p = 0; p < n; p++) {
       const pxH = image.getHeight();
       const dpi = Math.min(pxW / ((r.x1 - r.x0) / 72), pxH / ((r.y1 - r.y0) / 72));
       imgs.push({ ...r, pxW, pxH, alpha: !!image.getMask(), dpi });
-      // a cut-out covers only where it is drawn: not measured as a cover
-      if (!image.getMask()) covers.push({ ...r, z: z++, what: "a picture" });
+      // a cut-out covers only where it is drawn: reported apart (over-text)
+      covers.push({ ...r, z: z++, what: image.getMask() ? "a cut-out picture" : "a picture", alpha: !!image.getMask() });
     },
     fillPath: (pathObj: m.Path, _eo: boolean, ctm: number[], cs: m.ColorSpace, color: number[], alpha: number) => {
       if (alpha < 0.1) return;
@@ -208,6 +229,19 @@ for (let p = 0; p < n; p++) {
   });
   page.run(dev, m.Matrix.identity);
   dev.close();
+  // stroked lines and their printed width
+  const sdev = new m.Device({
+    strokePath: (pathObj: m.Path, stroke: m.StrokeState, ctm: number[], _cs: m.ColorSpace, _color: number[], alpha: number) => {
+      if (alpha < 0.1) return;
+      const b = pathObj.getBounds(stroke, ctm as m.Matrix);
+      const a = T(b[0], b[1]);
+      const c = T(b[2], b[3]);
+      const w = stroke.getLineWidth() * Math.sqrt(Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]));
+      strokes.push({ x0: a.x, y0: a.y, x1: c.x, y1: c.y, w });
+    },
+  });
+  page.run(sdev, m.Matrix.identity);
+  sdev.close();
   const pageImgs = imgs.filter((i) => i.x1 > -panel.bl + 0.1 && i.x0 < TRIM.w + panel.br - 0.1);
   // painted boxes of some size inside the bleed (crop marks and hairlines are not boxes)
   const boxes = paints.filter((q) => q.x1 - q.x0 > 6 * MM && q.y1 - q.y0 > 6 * MM && q.x0 > -panel.bl - 1 && q.x1 < TRIM.w + panel.br + 1 && q.y0 > -BLEED - 1 && q.y1 < TRIM.h + BLEED + 1);
@@ -225,11 +259,15 @@ for (let p = 0; p < n; p++) {
       else if (d > 3) free++;
     }
   };
-  for (const i of pageImgs) gridCheck("picture", i, ["l", "r", "t", "b"]);
+  // inline pieces (an icon, a chip, a tag, a number badge: under 12 mm) sit in the text flow, not on the grid
+  const inline = (r: R, both: boolean) => (both ? r.x1 - r.x0 < 12 * MM && r.y1 - r.y0 < 12 * MM : r.y1 - r.y0 < 12 * MM);
+  for (const i of pageImgs) if (!inline(i, true)) gridCheck("picture", i, ["l", "r", "t", "b"]);
   // a painted box is placed by its top-left corner; its size may follow its
   // text (a speech bubble). White fills print no ink - their edge is the
   // border drawn round them, measured as a box of its own.
-  for (const b of boxes) if (b.boxLike && b.color !== "#ffffff") gridCheck(`painted box ${b.color}`, b, ["l", "t"]);
+  // a box inside a panel follows the panel's inset, not the page grid
+  const nested = (b: Paint) => boxes.some((o) => o !== b && !isGround(o) && o.boxLike && o.x0 <= b.x0 + 0.1 && o.x1 >= b.x1 - 0.1 && o.y0 <= b.y0 + 0.1 && o.y1 >= b.y1 - 0.1 && (o.x1 - o.x0) * (o.y1 - o.y0) > 1.2 * (b.x1 - b.x0) * (b.y1 - b.y0));
+  for (const b of boxes) if (b.boxLike && b.color !== "#ffffff" && !inline(b, false) && !nested(b)) gridCheck(`painted box ${b.color}`, b, ["l", "t"]);
 
   // shared alignments that slipped
   const lh = (l: Line) => l.y1 - l.y0;
@@ -250,6 +288,7 @@ for (let p = 0; p < n; p++) {
     for (let j = i + 1; j < pageImgs.length; j++) {
       const a = pageImgs[i];
       const b = pageImgs[j];
+      if (inline(a, true) || inline(b, true)) continue;
       const sameRow = inter(a, b).h > 0 || Math.abs(a.y0 - b.y0) < 3;
       const sameCol = inter(a, b).w > 0 || Math.abs(a.x0 - b.x0) < 3;
       const near = (e: string, d: number, ok: boolean) => ok && d > 1 && d <= 3 && W.push({ kind: "align", msg: `picture ${e} edges ${fmt(d)} pt apart`, box: a, other: b });
@@ -268,6 +307,32 @@ for (let p = 0; p < n; p++) {
       if (a.text.trim() === b.text.trim()) continue; // outlined titles: copies of one text
       const o = inter(a, b);
       if (o.w > 1 && o.h > 0.3 * Math.min(lh(a), lh(b))) W.push({ kind: "overlap", msg: `text "${a.text.trim().slice(0, 24)}" overlaps "${b.text.trim().slice(0, 24)}"`, box: a, other: b });
+    }
+  // text running into text on the same line (two blocks closer than 0.8 pt)
+  for (let i = 0; i < content.length; i++)
+    for (let j = i + 1; j < content.length; j++) {
+      const a = content[i];
+      const b = content[j];
+      if (a.block === b.block || a.text.trim() === b.text.trim()) continue;
+      const o = inter(a, b);
+      if (o.h < 0.5 * Math.min(lh(a), lh(b))) continue;
+      const gap = Math.max(a.x0, b.x0) - Math.min(a.x1, b.x1);
+      if (gap > -1 && gap < 0.8) W.push({ kind: "overflow", msg: `text "${a.text.trim().slice(0, 24)}" runs into "${b.text.trim().slice(0, 24)}" (${fmt(gap)} pt)`, box: a, other: b });
+    }
+  // text that starts inside a painted box and runs out of it
+  for (const l of content)
+    for (const b of boxes) {
+      // badges (an exercise number disc, a lesson number) carry one short
+      // label and the heading text runs on beside them: not text boxes
+      if (!b.boxLike || isGround(b) || b.x1 - b.x0 < 15 * MM) continue;
+      const cy = (l.y0 + l.y1) / 2;
+      const cx = (l.x0 + l.x1) / 2;
+      const startsIn = l.x0 >= b.x0 && l.x0 < b.x1 && cy > b.y0 && cy < b.y1;
+      if (startsIn && l.x1 > b.x1 + 0.8) W.push({ kind: "overflow", msg: `text "${l.text.trim().slice(0, 30)}" runs out of its box (right, ${fmt(l.x1 - b.x1)} pt)`, box: l, other: b });
+      const topIn = l.y0 >= b.y0 && l.y0 < b.y1 - 1 && cx > b.x0 && cx < b.x1 && l.x0 >= b.x0 - 0.5 && l.x1 <= b.x1 + 0.5;
+      // the ink band reaches 0.2 em below the baseline; without descenders the ink stops at it
+      const room = 0.8 + (/[gjpqy(),;]/.test(l.text) ? 0 : 0.2 * l.size);
+      if (topIn && l.y1 > b.y1 + room) W.push({ kind: "overflow", msg: `text "${l.text.trim().slice(0, 30)}" runs out of its box (bottom, ${fmt(l.y1 - b.y1)} pt)`, box: l, other: b });
     }
   for (const l of content)
     for (const i of pageImgs) {
@@ -294,11 +359,21 @@ for (let p = 0; p < n; p++) {
       if (c.z < s.z) continue;
       const o = inter(s, c);
       if (o.w > 0 && o.h > 0 && o.w * o.h > 0.25 * area) {
-        W.push({ kind: "hidden", msg: `text "${s.text.trim().slice(0, 30)}" is covered by ${c.what} painted over it`, box: s, other: c });
+        W.push({ kind: c.alpha ? "over-text" : "hidden", msg: `text "${s.text.trim().slice(0, 30)}" is ${c.alpha ? "under" : "covered by"} ${c.what} painted over it`, box: s, other: c });
         break;
       }
     }
   }
+
+  // child text size: what a child reads at CHILD_MIN pt or more (labels in capitals and numbers exempt)
+  if (CHILD_MIN > 0 && !SKIP_SMALL.has(p + 1))
+    for (const l of content) {
+      const tx = l.text.trim();
+      const label = !/[a-zçğıöşü]/.test(tx);
+      if (!label && l.size < CHILD_MIN - 0.05 && l.x0 > -1 && l.x1 < TRIM.w + 1 && l.y0 > 0 && l.y1 < TRIM.h) W.push({ kind: "small", msg: `text "${tx.slice(0, 30)}" at ${fmt(l.size)} pt (children: ${CHILD_MIN} pt)`, box: l });
+    }
+  // hairlines inside the bleed (crop marks sit outside it)
+  for (const k of strokes) if (k.w < 0.24 && k.x1 > -panel.bl && k.x0 < TRIM.w + panel.br && k.y1 > -BLEED && k.y0 < TRIM.h + BLEED) W.push({ kind: "hairline", msg: `line ${fmt(k.w)} pt wide (min 0.25 pt)`, box: k });
 
   // safe area
   for (const l of content) if (l.x0 < SAFE - 0.1 || l.x1 > TRIM.w - SAFE + 0.1 || l.y0 < SAFE - 0.1 || l.y1 > TRIM.h - SAFE + 0.1) W.push({ kind: "safe", msg: `text "${l.text.trim().slice(0, 30)}" is within 5 mm of the trim`, box: l });
