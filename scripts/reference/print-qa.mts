@@ -23,6 +23,12 @@
 //   dpi        a picture below the target resolution at its printed size.
 //   bleed      a picture or painted box reaching the trim edge (or within
 //              2 mm of it) without running on to the bleed edge.
+//   small      (with --child-min <pt>) text a child reads set below that
+//              size; ALL-CAPS labels, numbers and folios are exempt, and so
+//              are the pages given with --skip-small 11-12 (teacher pages).
+//   hairline   a stroked line inside the bleed thinner than 0.25 pt.
+//   over-text  text that a cut-out picture (with transparency) painted
+//              after it lies over.
 // Writes <out>/report.txt, <out>/report.json and an annotated PNG per page
 // with a warning (red: warning, orange: the other edge of an alignment).
 import fs from "node:fs";
@@ -46,6 +52,16 @@ const opt = (k: string, d: string) => {
   return i >= 0 ? args[i + 1] : d;
 };
 const TARGET_DPI = Number(opt("dpi", "300"));
+const CHILD_MIN = Number(opt("child-min", "0"));
+const SKIP_SMALL = new Set(
+  opt("skip-small", "")
+    .split(",")
+    .filter(Boolean)
+    .flatMap((r) => {
+      const [a, b] = r.split("-").map(Number);
+      return Array.from({ length: (b ?? a) - a + 1 }, (_, i) => a + i);
+    }),
+);
 const OUT = opt("out", path.join(path.dirname(file), "qa", path.basename(file, ".pdf")));
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -152,7 +168,8 @@ for (let p = 0; p < n; p++) {
   // paint order, to find text that something painted later covers
   let z = 0;
   const spans: (R & { z: number; text: string })[] = [];
-  const covers: (R & { z: number; what: string })[] = [];
+  const covers: (R & { z: number; what: string; alpha?: boolean })[] = [];
+  const strokes: (R & { w: number })[] = [];
   const dev = new m.Device({
     fillText: (text: m.Text, ctm: number[]) => {
       const s = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, z: z++, text: "" };
@@ -178,8 +195,8 @@ for (let p = 0; p < n; p++) {
       const pxH = image.getHeight();
       const dpi = Math.min(pxW / ((r.x1 - r.x0) / 72), pxH / ((r.y1 - r.y0) / 72));
       imgs.push({ ...r, pxW, pxH, alpha: !!image.getMask(), dpi });
-      // a cut-out covers only where it is drawn: not measured as a cover
-      if (!image.getMask()) covers.push({ ...r, z: z++, what: "a picture" });
+      // a cut-out covers only where it is drawn: reported apart (over-text)
+      covers.push({ ...r, z: z++, what: image.getMask() ? "a cut-out picture" : "a picture", alpha: !!image.getMask() });
     },
     fillPath: (pathObj: m.Path, _eo: boolean, ctm: number[], cs: m.ColorSpace, color: number[], alpha: number) => {
       if (alpha < 0.1) return;
@@ -208,6 +225,19 @@ for (let p = 0; p < n; p++) {
   });
   page.run(dev, m.Matrix.identity);
   dev.close();
+  // stroked lines and their printed width
+  const sdev = new m.Device({
+    strokePath: (pathObj: m.Path, stroke: m.StrokeState, ctm: number[], _cs: m.ColorSpace, _color: number[], alpha: number) => {
+      if (alpha < 0.1) return;
+      const b = pathObj.getBounds(stroke, ctm as m.Matrix);
+      const a = T(b[0], b[1]);
+      const c = T(b[2], b[3]);
+      const w = stroke.getLineWidth() * Math.sqrt(Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]));
+      strokes.push({ x0: a.x, y0: a.y, x1: c.x, y1: c.y, w });
+    },
+  });
+  page.run(sdev, m.Matrix.identity);
+  sdev.close();
   const pageImgs = imgs.filter((i) => i.x1 > -panel.bl + 0.1 && i.x0 < TRIM.w + panel.br - 0.1);
   // painted boxes of some size inside the bleed (crop marks and hairlines are not boxes)
   const boxes = paints.filter((q) => q.x1 - q.x0 > 6 * MM && q.y1 - q.y0 > 6 * MM && q.x0 > -panel.bl - 1 && q.x1 < TRIM.w + panel.br + 1 && q.y0 > -BLEED - 1 && q.y1 < TRIM.h + BLEED + 1);
@@ -294,11 +324,21 @@ for (let p = 0; p < n; p++) {
       if (c.z < s.z) continue;
       const o = inter(s, c);
       if (o.w > 0 && o.h > 0 && o.w * o.h > 0.25 * area) {
-        W.push({ kind: "hidden", msg: `text "${s.text.trim().slice(0, 30)}" is covered by ${c.what} painted over it`, box: s, other: c });
+        W.push({ kind: c.alpha ? "over-text" : "hidden", msg: `text "${s.text.trim().slice(0, 30)}" is ${c.alpha ? "under" : "covered by"} ${c.what} painted over it`, box: s, other: c });
         break;
       }
     }
   }
+
+  // child text size: what a child reads at CHILD_MIN pt or more (labels in capitals and numbers exempt)
+  if (CHILD_MIN > 0 && !SKIP_SMALL.has(p + 1))
+    for (const l of content) {
+      const tx = l.text.trim();
+      const label = !/[a-zçğıöşü]/.test(tx);
+      if (!label && l.size < CHILD_MIN - 0.05 && l.x0 > -1 && l.x1 < TRIM.w + 1 && l.y0 > 0 && l.y1 < TRIM.h) W.push({ kind: "small", msg: `text "${tx.slice(0, 30)}" at ${fmt(l.size)} pt (children: ${CHILD_MIN} pt)`, box: l });
+    }
+  // hairlines inside the bleed (crop marks sit outside it)
+  for (const k of strokes) if (k.w < 0.24 && k.x1 > -panel.bl && k.x0 < TRIM.w + panel.br && k.y1 > -BLEED && k.y0 < TRIM.h + BLEED) W.push({ kind: "hairline", msg: `line ${fmt(k.w)} pt wide (min 0.25 pt)`, box: k });
 
   // safe area
   for (const l of content) if (l.x0 < SAFE - 0.1 || l.x1 > TRIM.w - SAFE + 0.1 || l.y0 < SAFE - 0.1 || l.y1 > TRIM.h - SAFE + 0.1) W.push({ kind: "safe", msg: `text "${l.text.trim().slice(0, 30)}" is within 5 mm of the trim`, box: l });

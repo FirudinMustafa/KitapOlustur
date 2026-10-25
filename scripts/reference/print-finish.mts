@@ -13,7 +13,7 @@ import * as m from "mupdf";
 const MM = 72 / 25.4;
 const BLEED = 3 * MM;
 const SLUG = 10 * MM;
-const OUT = path.join(process.cwd(), "print");
+let OUT = path.join(process.cwd(), "print");
 
 type Rect = [number, number, number, number];
 
@@ -38,12 +38,14 @@ function dropUnusedFonts(page: m.PDFPage) {
   });
   if (embedded) for (const k of std) fonts.put(k, embedded);
 }
-function finish(src: string, dst: string, trimW: number, cropToBleed = false) {
+/** trimW 0: each page's own trim width (a cover file of spreads with different spines). */
+function finish(src: string, dst: string, trimWidth: number, cropToBleed = false) {
   const doc = new m.PDFDocument(fs.readFileSync(path.join(OUT, src)));
   for (let i = 0; i < doc.countPages(); i++) {
     const page = doc.loadPage(i);
     const [x0, y0, x1, y1] = page.getBounds();
     const off = SLUG + BLEED;
+    const trimW = trimWidth || x1 - x0 - 2 * off;
     const trim: Rect = [x0 + off, y0 + off, x0 + off + trimW, y1 - off];
     const bleed: Rect = [trim[0] - BLEED, trim[1] - BLEED, trim[2] + BLEED, trim[3] + BLEED];
     if (Math.abs(x1 - x0 - (trimW + 2 * off)) > 0.5) throw new Error(`${src} p${i + 1}: unexpected sheet width ${x1 - x0}`);
@@ -83,8 +85,24 @@ function finish(src: string, dst: string, trimW: number, cropToBleed = false) {
   console.log(`  fonts: ${fonts.size} (${[...fonts.keys()].map((f) => f.replace(/^\/[A-Z]{6}\+/, "/")).filter((f, i, a) => a.indexOf(f) === i).join(" ")}), not embedded: ${notEmbedded.length ? notEmbedded.join(" ") : "none"}`);
 }
 
-finish("raw-interior.pdf", "kitap-ic-sayfalar.pdf", 210 * MM);
-finish("raw-interior.pdf", "kitap-ic-sayfalar-isaretsiz.pdf", 210 * MM, true);
-// the spine the cover was drawn with (handcraft-scan.tsx SPINE)
-const { spineMm } = JSON.parse(fs.readFileSync(path.join(OUT, "spec.json"), "utf8")) as { spineMm: number };
-finish("raw-cover.pdf", "kitap-kapak.pdf", (2 * 210 + spineMm) * MM);
+// Other books: --dir <out dir> raw.pdf:final.pdf[:cover or :cover=<spine mm>] ...
+// (an interior also gets a "-isaretsiz" copy cut to the bleed).
+const argv = process.argv.slice(2);
+if (argv[0] === "--dir") {
+  OUT = path.resolve(argv[1]);
+  for (const job of argv.slice(2)) {
+    const [src, dst, cover] = job.split(":");
+    if (cover === "cover") finish(src, dst, 0);
+    else if (cover?.startsWith("cover=")) finish(src, dst, (2 * 210 + Number(cover.slice(6))) * MM);
+    else {
+      finish(src, dst, 210 * MM);
+      finish(src, dst.replace(/\.pdf$/, "-isaretsiz.pdf"), 210 * MM, true);
+    }
+  }
+} else {
+  finish("raw-interior.pdf", "kitap-ic-sayfalar.pdf", 210 * MM);
+  finish("raw-interior.pdf", "kitap-ic-sayfalar-isaretsiz.pdf", 210 * MM, true);
+  // the spine the cover was drawn with (handcraft-scan.tsx SPINE)
+  const { spineMm } = JSON.parse(fs.readFileSync(path.join(OUT, "spec.json"), "utf8")) as { spineMm: number };
+  finish("raw-cover.pdf", "kitap-kapak.pdf", (2 * 210 + spineMm) * MM);
+}
